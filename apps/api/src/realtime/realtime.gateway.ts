@@ -146,9 +146,11 @@ export class RealtimeGateway
     this.clearQuoteTimer(client.id);
     const publishQuotes = async (): Promise<void> => {
       for (const symbol of symbols) {
-        const quote = this.platform.getMarketQuote(symbol, timeframe);
-        await this.platform.processPendingPaperOrders(symbol, quote.price);
-        await this.platform.markPositionsToMarket(client.data.userId, symbol, quote.price);
+        const quote = await this.platform.getMarketQuoteForUser(
+          client.data.userId,
+          symbol,
+          timeframe as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
+        );
         this.eventBus.publish({
           userId: client.data.userId,
           type: "market.price",

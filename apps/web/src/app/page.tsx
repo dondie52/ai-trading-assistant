@@ -48,6 +48,7 @@ import type {
   OrderType,
   PerformanceSummary,
   PerformanceReport,
+  BrokerAccountView,
   Portfolio,
   Position,
   PublicUser,
@@ -131,7 +132,9 @@ export default function Page(): ReactElement {
   const [timeframe, setTimeframe] = useState<MarketTimeframe>("1h");
   const [activeTab, setActiveTab] = useState<TerminalTab>("overview");
   const [selectedStrategyId, setSelectedStrategyId] = useState("");
-  const [watchlistInput, setWatchlistInput] = useState("AAPL, MSFT, NVDA");
+  const [watchlistInput, setWatchlistInput] = useState("");
+  const [alpacaApiKey, setAlpacaApiKey] = useState("");
+  const [alpacaSecret, setAlpacaSecret] = useState("");
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
   const [walkForwardResult, setWalkForwardResult] = useState<WalkForwardResult | null>(null);
   const [notice, setNotice] = useState("");
@@ -190,6 +193,11 @@ export default function Page(): ReactElement {
     queryKey: ["profile", accessToken],
     enabled: authenticated,
     queryFn: () => apiFetch<PublicUser>("/users/profile", {}, token)
+  });
+  const brokerAccounts = useQuery({
+    queryKey: ["broker-accounts", accessToken],
+    enabled: authenticated,
+    queryFn: () => apiFetchPage<BrokerAccountView>("/brokers/accounts", {}, token)
   });
   const marketPrices = useQuery({
     queryKey: ["market-prices", symbol, timeframe, accessToken],
@@ -370,6 +378,7 @@ export default function Page(): ReactElement {
       queryClient.invalidateQueries({ queryKey: ["market-quote"] }),
       queryClient.invalidateQueries({ queryKey: ["market-indicators"] }),
       queryClient.invalidateQueries({ queryKey: ["watchlists"] }),
+      queryClient.invalidateQueries({ queryKey: ["broker-accounts"] }),
       queryClient.invalidateQueries({ queryKey: ["admin-audit"] }),
       queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
       queryClient.invalidateQueries({ queryKey: ["admin-health"] })
@@ -666,6 +675,28 @@ export default function Page(): ReactElement {
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Preference update failed.");
+    }
+  });
+
+  const connectBrokerMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<BrokerAccountView>("/brokers/connect", {
+        method: "POST",
+        body: JSON.stringify({
+          brokerName: "ALPACA",
+          environment: "PAPER",
+          apiKey: alpacaApiKey.trim(),
+          secret: alpacaSecret.trim()
+        })
+      }, token),
+    onSuccess: async () => {
+      setAlpacaApiKey("");
+      setAlpacaSecret("");
+      setNotice("Alpaca paper account connected. Balances and market data will load from your broker.");
+      await invalidateTradingData();
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Broker connection failed.");
     }
   });
 
@@ -1476,6 +1507,60 @@ export default function Page(): ReactElement {
 
       {activeTab === "risk" ? (
         <section data-testid="risk-view" className="grid gap-5 xl:grid-cols-2">
+          <Panel title="Alpaca Broker Connection" icon={<WalletCards className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
+            <div className="space-y-4">
+              <p className="text-sm text-slate-300">
+                Connect your Alpaca paper API keys to load real balances, positions, market data, and route orders to Alpaca.
+              </p>
+              {(brokerAccounts.data ?? []).some((account) => account.brokerName === "ALPACA" && account.hasCredentials) ? (
+                <div
+                  data-testid="alpaca-connected"
+                  className="rounded-md border border-emerald-400/30 bg-emerald-400/5 px-3 py-3 text-sm text-emerald-200"
+                >
+                  Alpaca paper account connected. Portfolio values sync from your broker.
+                </div>
+              ) : (
+                <form
+                  className="space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    connectBrokerMutation.mutate();
+                  }}
+                >
+                  <label className="block text-sm text-slate-300">
+                    API Key ID
+                    <input
+                      data-testid="alpaca-api-key"
+                      className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white"
+                      value={alpacaApiKey}
+                      onChange={(event) => setAlpacaApiKey(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="block text-sm text-slate-300">
+                    Secret Key
+                    <input
+                      data-testid="alpaca-secret-key"
+                      type="password"
+                      className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white"
+                      value={alpacaSecret}
+                      onChange={(event) => setAlpacaSecret(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <button
+                    data-testid="connect-alpaca"
+                    type="submit"
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950"
+                  >
+                    <WalletCards className="h-4 w-4" aria-hidden="true" />
+                    Connect Alpaca Paper
+                  </button>
+                </form>
+              )}
+            </div>
+          </Panel>
+
           <Panel title="Risk Control Matrix" icon={<SlidersHorizontal className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
             {risk.data ? (
               <form
@@ -1673,7 +1758,11 @@ export default function Page(): ReactElement {
                     {timeframes.map((value) => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>
-                <LabInput name="startingEquity" label="Starting equity" value={100000} />
+                <LabInput
+                  name="startingEquity"
+                  label="Starting equity"
+                  value={primaryPortfolio?.portfolioValue && primaryPortfolio.portfolioValue > 0 ? primaryPortfolio.portfolioValue : 1}
+                />
                 <LabInput name="maxPositionPercent" label="Max position %" value={20} />
                 <LabInput name="fastPeriod" label="Fast period" value={10} />
                 <LabInput name="slowPeriod" label="Slow period" value={20} />

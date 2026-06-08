@@ -7,7 +7,18 @@ describe("Alpaca broker connection validation", () => {
   });
 
   it("validates paper credentials against Alpaca without exposing them", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: "acct-1",
+        account_number: "PA123",
+        cash: "10",
+        equity: "10",
+        buying_power: "10",
+        portfolio_value: "10",
+        last_equity: "10"
+      })
+    });
     vi.stubGlobal("fetch", fetchMock);
     const adapter = new AlpacaBrokerAdapter();
 

@@ -265,7 +265,7 @@ export interface MarketQuote {
   readonly ask: number;
   readonly changePercent: number;
   readonly timestamp: string;
-  readonly source: "PAPER_SIMULATED";
+  readonly source: "ALPACA" | "UNAVAILABLE";
 }
 
 export interface IndicatorSnapshot {
