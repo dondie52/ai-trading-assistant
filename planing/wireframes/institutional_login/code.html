@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Quant Core - Secure Login</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Inter & JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary-fixed": "#ffdad7",
+                        "outline": "#958da1",
+                        "inverse-primary": "#732ee4",
+                        "surface-container-low": "#131b2e",
+                        "on-tertiary-fixed-variant": "#930013",
+                        "on-secondary": "#003824",
+                        "primary-fixed-dim": "#d2bbff",
+                        "surface-container-high": "#222a3d",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "on-tertiary-container": "#ffdfdc",
+                        "inverse-surface": "#dae2fd",
+                        "outline-variant": "#4a4455",
+                        "on-secondary-container": "#00311f",
+                        "surface-bright": "#31394d",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-error-container": "#ffdad6",
+                        "tertiary-container": "#c6252b",
+                        "surface-tint": "#d2bbff",
+                        "surface-container-highest": "#2d3449",
+                        "secondary-fixed": "#6ffbbe",
+                        "surface-dim": "#0b1326",
+                        "primary-container": "#7c3aed",
+                        "on-surface": "#dae2fd",
+                        "tertiary": "#ffb3ad",
+                        "on-surface-variant": "#ccc3d8",
+                        "on-secondary-fixed": "#002113",
+                        "on-primary": "#3f008e",
+                        "background": "#0b1326",
+                        "primary-fixed": "#eaddff",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "surface": "#0b1326",
+                        "on-tertiary-fixed": "#410004",
+                        "on-primary-fixed": "#25005a",
+                        "on-error": "#690005",
+                        "surface-container": "#171f33",
+                        "secondary-container": "#00a572",
+                        "on-tertiary": "#68000a",
+                        "error-container": "#93000a",
+                        "surface-variant": "#2d3449",
+                        "surface-container-lowest": "#060e20",
+                        "secondary": "#4edea3",
+                        "inverse-on-surface": "#283044",
+                        "error": "#ffb4ab",
+                        "primary": "#d2bbff",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-background": "#dae2fd",
+                        "on-primary-container": "#ede0ff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    spacing: {
+                        "stack-sm": "8px",
+                        "stack-lg": "32px",
+                        "stack-md": "16px",
+                        "panel-padding": "20px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "container-margin": "24px"
+                    },
+                    fontFamily: {
+                        "display-lg": ["Inter", "sans-serif"],
+                        "headline-lg": ["Inter", "sans-serif"],
+                        "label-sm": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "data-lg": ["JetBrains Mono", "monospace"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "data-md": ["JetBrains Mono", "monospace"],
+                        "body-lg": ["Inter", "sans-serif"]
+                    },
+                    fontSize: {
+                        "display-lg": ["48px", { lineHeight: "56px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "headline-lg": ["32px", { lineHeight: "40px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "label-sm": ["12px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "600" }],
+                        "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
+                        "data-lg": ["18px", { lineHeight: "24px", fontWeight: "500" }],
+                        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+                        "data-md": ["14px", { lineHeight: "20px", fontWeight: "500" }],
+                        "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom styles for atmospheric background effects */
+        .bg-grid-pattern {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+        .glow-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            pointer-events: none;
+            animation: float 20s infinite ease-in-out alternate;
+        }
+        @keyframes float {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(30px, -50px) scale(1.2); }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface min-h-screen w-full overflow-hidden flex items-center justify-center relative">
+<!-- Atmospheric Background Layer -->
+<div class="absolute inset-0 z-0 bg-surface-container-lowest"></div>
+<!-- Image placeholder with detailed data-alt for visual texture -->
+<div class="absolute inset-0 z-0 opacity-20 bg-cover bg-center mix-blend-screen" data-alt="A deeply abstract, high-contrast visualization of financial market data streams in a dark mode environment. The scene features a sparse, geometric grid fading into an abyssal navy blue background, illuminated by subtle, slow-moving particles and faint volumetric light rays emitting an electric violet glow. The aesthetic is highly technical, institutional, and precise, evoking the feeling of an advanced AI processing millions of data points securely. There are no recognizable real-world objects, only sleek, glassmorphic data representations floating in a void." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBTNZc45SIGuVj7jGTqyI2BmOMV4_2V-j6_AHdrvfI2LMA71B2pu9jhb2HVUWxlVVAVCKpbKizHYp8LsyStQpfPb4tz49-sWzfe8DhikLif_uTSZgA58SlAFj-i2E_GULL-AeshEHqRiXg1csbrIIR05OOAf3JT299DXl7UB27jG6599P3sd9KyBRGKHi5AJd3DnU50L-q4x57iXbf3FI1nzbb-QZqEpxIj2FHSQPoFP4K3ErnhjkuRAv8GRm65se_5U24VFUozQgld');">
+</div>
+<!-- CSS Grid Overlay -->
+<div class="absolute inset-0 z-0 bg-grid-pattern opacity-50"></div>
+<!-- Ambient Glowing Orbs for depth -->
+<div class="glow-orb bg-primary-container w-[400px] h-[400px] top-[-100px] left-[-100px]"></div>
+<div class="glow-orb bg-secondary-container w-[300px] h-[300px] bottom-[-50px] right-[-50px]" style="animation-delay: -10s;"></div>
+<!-- Dynamic Canvas Particle Field -->
+<canvas class="absolute inset-0 z-0 opacity-40" id="particleCanvas"></canvas>
+<!-- Main Login Container (Glassmorphism Panel) -->
+<main class="relative z-10 w-full max-w-md px-container-margin">
+<div class="bg-surface-container-low/80 backdrop-blur-2xl border border-white/10 rounded-xl p-8 shadow-[0_0_40px_rgba(0,0,0,0.8)] flex flex-col gap-stack-lg relative overflow-hidden">
+<!-- Subtle top highlight for panel depth -->
+<div class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-primary/50 to-transparent"></div>
+<!-- Header / Branding -->
+<header class="flex flex-col items-center text-center gap-stack-sm">
+<div class="w-12 h-12 rounded-lg bg-surface-bright/50 border border-white/10 flex items-center justify-center mb-2 shadow-inner">
+<span class="material-symbols-outlined text-primary text-[28px]" style="font-variation-settings: 'FILL' 1;">security</span>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-surface tracking-tight">QUANT_CORE</h1>
+<p class="font-body-md text-body-md text-outline">Institutional Secure Login</p>
+</header>
+<!-- Login Form -->
+<form class="flex flex-col gap-stack-md" onsubmit="event.preventDefault();">
+<!-- Email Field -->
+<div class="flex flex-col gap-unit">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest pl-1" for="email">Email Address</label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-outline-variant text-[20px]">mail</span>
+<input class="w-full bg-surface-dim border border-outline-variant/50 rounded-lg py-3 pl-10 pr-4 font-body-md text-body-md text-on-surface placeholder-outline-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="email" placeholder="user@institution.com" required="" type="email"/>
+</div>
+</div>
+<!-- Password Field -->
+<div class="flex flex-col gap-unit">
+<div class="flex justify-between items-center pl-1">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest" for="password">Password</label>
+<a class="font-label-sm text-label-sm text-primary hover:text-primary-fixed transition-colors" href="#">Forgot Password?</a>
+</div>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-outline-variant text-[20px]">lock</span>
+<input class="w-full bg-surface-dim border border-outline-variant/50 rounded-lg py-3 pl-10 pr-4 font-body-md text-body-md text-on-surface placeholder-outline-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="password" placeholder="••••••••" required="" type="password"/>
+</div>
+</div>
+<!-- 2FA Field -->
+<div class="flex flex-col gap-unit">
+<label class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest pl-1" for="totp">Authenticator Code (2FA)</label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-outline-variant text-[20px]">dialpad</span>
+<input class="w-full bg-surface-dim border border-outline-variant/50 rounded-lg py-3 pl-10 pr-4 font-data-lg text-data-lg text-secondary tracking-[0.25em] placeholder-outline-variant focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors" id="totp" inputmode="numeric" maxlength="6" pattern="[0-9]*" placeholder="000000" required="" type="text"/>
+</div>
+</div>
+<!-- Actions -->
+<div class="pt-4 flex flex-col gap-stack-md">
+<button class="w-full bg-primary-container hover:bg-inverse-primary text-on-primary-container font-label-sm text-label-sm uppercase tracking-widest py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-300 active:scale-95 shadow-[0_0_15px_rgba(124,58,237,0.3)] hover:shadow-[0_0_25px_rgba(124,58,237,0.5)]" type="submit">
+<span class="material-symbols-outlined text-[18px]">login</span>
+                        Authenticate
+                    </button>
+<a class="w-full bg-transparent border border-outline-variant/50 hover:bg-white/5 text-on-surface font-label-sm text-label-sm uppercase tracking-widest py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all duration-300" href="#">
+                        Institutional Access
+                        <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+</form>
+<!-- Secure Footer Note -->
+<div class="mt-4 flex items-center justify-center gap-2 text-outline/50 font-data-md text-[10px]">
+<span class="material-symbols-outlined text-[12px]">encrypted</span>
+<span>End-to-End Encrypted Connection</span>
+</div>
+</div>
+</main>
+<!-- Lightweight JS for subtle particle background to enhance the "AI/Data" feel without heavy assets -->
+<script>
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width, height;
+        let particles = [];
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 0.2;
+                this.vy = (Math.random() - 0.5) * 0.2;
+                this.size = Math.random() * 1.5;
+                this.alpha = Math.random() * 0.5 + 0.1;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                if (this.x < 0) this.x = width;
+                if (this.x > width) this.x = 0;
+                if (this.y < 0) this.y = height;
+                if (this.y > height) this.y = 0;
+            }
+            draw() {
+                ctx.fillStyle = `rgba(210, 187, 255, ${this.alpha})`; // Using primary color
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            const numParticles = Math.floor((width * height) / 15000);
+            for (let i = 0; i < numParticles; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw faint connections
+            ctx.strokeStyle = 'rgba(210, 187, 255, 0.03)';
+            ctx.lineWidth = 0.5;
+            for(let i=0; i<particles.length; i++) {
+                for(let j=i+1; j<particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if(dist < 100) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', () => {
+            resize();
+            initParticles();
+        });
+
+        resize();
+        initParticles();
+        animate();
+    </script>
+</body></html>

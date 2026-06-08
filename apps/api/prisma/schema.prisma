@@ -1,0 +1,338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  TRADER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum StrategyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SignalType {
+  BUY
+  SELL
+  HOLD
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+  STOP
+}
+
+enum OrderStatus {
+  PENDING
+  SUBMITTED
+  FILLED
+  PARTIALLY_FILLED
+  CANCELLED
+  REJECTED
+}
+
+enum TradingMode {
+  MANUAL
+  SEMI_AUTO
+  AUTO
+}
+
+enum NotificationType {
+  TRADE
+  SIGNAL
+  RISK
+  SYSTEM
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+
+model User {
+  id           String          @id @default(uuid()) @db.Uuid
+  email        String          @unique
+  passwordHash String          @map("password_hash")
+  firstName    String          @map("first_name")
+  lastName     String          @map("last_name")
+  role         UserRole        @default(TRADER)
+  status       UserStatus      @default(ACTIVE)
+  mfaEnabled   Boolean         @default(false) @map("mfa_enabled")
+  mfaSecretEncrypted String?   @map("mfa_secret_encrypted")
+  notificationPreferences Json @map("notification_preferences")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  brokerAccounts BrokerAccount[]
+  portfolios   Portfolio[]
+  strategies   Strategy[]
+  signals      Signal[]
+  orders       Order[]
+  trades       Trade[]
+  positions    Position[]
+  riskRules    RiskRule[]
+  notifications Notification[]
+  sessions     Session[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model Session {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  refreshTokenHash String   @map("refresh_token_hash")
+  expiresAt        DateTime @map("expires_at")
+  lastActivityAt   DateTime @default(now()) @map("last_activity_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model BrokerAccount {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  brokerName       String   @map("broker_name")
+  accountId        String   @map("account_id")
+  encryptedApiKey  String?  @map("encrypted_api_key")
+  encryptedSecret  String?  @map("encrypted_secret")
+  status           String
+  createdAt        DateTime @default(now()) @map("created_at")
+  user             User     @relation(fields: [userId], references: [id])
+  orders           Order[]
+
+  @@index([userId])
+  @@map("broker_accounts")
+}
+
+model Portfolio {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  portfolioName  String   @map("portfolio_name")
+  portfolioValue Decimal  @map("portfolio_value") @db.Decimal(18, 4)
+  cashBalance    Decimal  @map("cash_balance") @db.Decimal(18, 4)
+  realizedPnl    Decimal  @default(0) @map("realized_pnl") @db.Decimal(18, 4)
+  unrealizedPnl  Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(18, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("portfolios")
+}
+
+model Strategy {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  name          String
+  description   String
+  version       String
+  status        StrategyStatus @default(INACTIVE)
+  configuration Json           @map("configuration_json")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  user          User           @relation(fields: [userId], references: [id])
+  signals       Signal[]
+  orders        Order[]
+
+  @@index([userId])
+  @@map("strategies")
+}
+
+model Signal {
+  id              String     @id @default(uuid()) @db.Uuid
+  userId          String     @map("user_id") @db.Uuid
+  strategyId      String     @map("strategy_id") @db.Uuid
+  symbol          String
+  signalType      SignalType @map("signal_type")
+  confidenceScore Int        @map("confidence_score")
+  modelVersion    String     @map("model_version")
+  features        Json       @map("features_json")
+  generatedAt     DateTime   @default(now()) @map("generated_at")
+  user            User       @relation(fields: [userId], references: [id])
+  strategy        Strategy   @relation(fields: [strategyId], references: [id])
+  orders          Order[]
+
+  @@index([userId])
+  @@index([strategyId])
+  @@map("signals")
+}
+
+model Order {
+  id              String      @id @default(uuid()) @db.Uuid
+  userId          String      @map("user_id") @db.Uuid
+  brokerAccountId String      @map("broker_account_id") @db.Uuid
+  strategyId      String?     @map("strategy_id") @db.Uuid
+  signalId        String?     @map("signal_id") @db.Uuid
+  symbol          String
+  side            OrderSide
+  orderType       OrderType   @map("order_type")
+  mode            TradingMode
+  quantity        Decimal     @db.Decimal(18, 6)
+  price           Decimal     @db.Decimal(18, 4)
+  stopLoss        Decimal     @map("stop_loss") @db.Decimal(18, 4)
+  takeProfit      Decimal     @map("take_profit") @db.Decimal(18, 4)
+  status          OrderStatus
+  riskDecision    Json        @map("risk_decision_json")
+  submittedAt     DateTime    @default(now()) @map("submitted_at")
+  user            User        @relation(fields: [userId], references: [id])
+  brokerAccount   BrokerAccount @relation(fields: [brokerAccountId], references: [id])
+  strategy        Strategy?   @relation(fields: [strategyId], references: [id])
+  signal          Signal?     @relation(fields: [signalId], references: [id])
+  trades          Trade[]
+  statusEvents    OrderStatusEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderStatusEvent {
+  id         String      @id @default(uuid()) @db.Uuid
+  orderId    String      @map("order_id") @db.Uuid
+  userId     String      @map("user_id") @db.Uuid
+  status     OrderStatus
+  metadata   Json        @map("metadata_json")
+  occurredAt DateTime    @default(now()) @map("occurred_at")
+  order      Order       @relation(fields: [orderId], references: [id])
+
+  @@index([orderId, occurredAt])
+  @@index([userId])
+  @@map("order_status_events")
+}
+
+model Trade {
+  id         String    @id @default(uuid()) @db.Uuid
+  orderId    String    @map("order_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  symbol     String
+  side       OrderSide
+  quantity   Decimal   @db.Decimal(18, 6)
+  entryPrice Decimal   @map("entry_price") @db.Decimal(18, 4)
+  exitPrice  Decimal?  @map("exit_price") @db.Decimal(18, 4)
+  pnl        Decimal   @default(0) @db.Decimal(18, 4)
+  openedAt   DateTime  @default(now()) @map("opened_at")
+  closedAt   DateTime? @map("closed_at")
+  order      Order     @relation(fields: [orderId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+  @@map("trades")
+}
+
+model Position {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  symbol        String
+  quantity      Decimal  @db.Decimal(18, 6)
+  averagePrice  Decimal  @map("average_price") @db.Decimal(18, 4)
+  unrealizedPnl Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(18, 4)
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, symbol])
+  @@map("positions")
+}
+
+model RiskRule {
+  id                         String   @id @default(uuid()) @db.Uuid
+  userId                     String   @map("user_id") @db.Uuid
+  maxRiskPerTradePercent     Decimal  @map("max_risk_per_trade") @db.Decimal(8, 4)
+  maxDailyLossPercent        Decimal  @map("max_daily_loss") @db.Decimal(8, 4)
+  maxDrawdownPercent         Decimal  @map("max_drawdown") @db.Decimal(8, 4)
+  maxPositionSizePercent     Decimal  @map("max_position_size") @db.Decimal(8, 4)
+  stopTrading                Boolean  @default(false) @map("stop_trading")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+  user                       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId])
+  @@map("risk_rules")
+}
+
+model Notification {
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String             @map("user_id") @db.Uuid
+  notificationType NotificationType   @map("notification_type")
+  title            String
+  message          String
+  status           NotificationStatus @default(UNREAD)
+  createdAt        DateTime           @default(now()) @map("created_at")
+  user             User               @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id") @db.Uuid
+  metadata    Json     @map("metadata_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model Watchlist {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  name      String
+  symbols   String[]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("watchlists")
+}
+
+model MarketPrice {
+  id        String   @id @default(uuid()) @db.Uuid
+  symbol    String
+  timeframe String   @default("1m")
+  timestamp DateTime
+  open      Decimal  @db.Decimal(18, 4)
+  high      Decimal  @db.Decimal(18, 4)
+  low       Decimal  @db.Decimal(18, 4)
+  close     Decimal  @db.Decimal(18, 4)
+  volume    BigInt
+
+  @@unique([symbol, timeframe, timestamp])
+  @@map("market_prices")
+}

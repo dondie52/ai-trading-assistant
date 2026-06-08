@@ -1,0 +1,40 @@
+{
+  "name": "ai-trading-platform-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@10.9.8",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "overrides": {
+    "postcss": "8.5.15"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @trading/api\" \"npm run dev -w @trading/web\"",
+    "build:packages": "npm run build -w @trading/types && npm run build -w @trading/shared",
+    "e2e:servers": "npm run build:packages && concurrently -k -s first -n api,web \"npm run dev:e2e -w @trading/api\" \"npm run dev:e2e -w @trading/web\"",
+    "lint": "eslint \"{apps,packages,tests}/**/*.{ts,tsx}\" --max-warnings=0",
+    "test": "vitest run --coverage",
+    "test:fast": "vitest run",
+    "test:e2e": "playwright test",
+    "build": "npm run build:packages && npm run build -w @trading/api && npm run build -w @trading/web",
+    "validate": "npm run lint && npm run test && npm run test:e2e && npm run build",
+    "seed": "npm run seed -w @trading/api",
+    "prisma:migrate": "npm run prisma:migrate -w @trading/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.36.0",
+    "@playwright/test": "1.55.1",
+    "@types/node": "22.18.6",
+    "@vitest/coverage-v8": "^4.1.8",
+    "concurrently": "9.2.1",
+    "eslint": "9.36.0",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.44.0",
+    "vitest": "^4.1.8",
+    "wait-on": "8.0.4",
+    "yaml": "^2.9.0"
+  }
+}

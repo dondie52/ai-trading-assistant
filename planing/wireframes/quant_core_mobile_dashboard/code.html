@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Quant Core - Mobile Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        /* Hide scrollbar for horizontal scrolling containers */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdad7",
+                        "outline": "#958da1",
+                        "inverse-primary": "#732ee4",
+                        "surface-container-low": "#131b2e",
+                        "on-tertiary-fixed-variant": "#930013",
+                        "on-secondary": "#003824",
+                        "primary-fixed-dim": "#d2bbff",
+                        "surface-container-high": "#222a3d",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "on-tertiary-container": "#ffdfdc",
+                        "inverse-surface": "#dae2fd",
+                        "outline-variant": "#4a4455",
+                        "on-secondary-container": "#00311f",
+                        "surface-bright": "#31394d",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-error-container": "#ffdad6",
+                        "tertiary-container": "#c6252b",
+                        "surface-tint": "#d2bbff",
+                        "surface-container-highest": "#2d3449",
+                        "secondary-fixed": "#6ffbbe",
+                        "surface-dim": "#0b1326",
+                        "primary-container": "#7c3aed",
+                        "on-surface": "#dae2fd",
+                        "tertiary": "#ffb3ad",
+                        "on-surface-variant": "#ccc3d8",
+                        "on-secondary-fixed": "#002113",
+                        "on-primary": "#3f008e",
+                        "background": "#0b1326",
+                        "primary-fixed": "#eaddff",
+                        "on-primary-fixed-variant": "#5a00c6",
+                        "surface": "#0b1326",
+                        "on-tertiary-fixed": "#410004",
+                        "on-primary-fixed": "#25005a",
+                        "on-error": "#690005",
+                        "surface-container": "#171f33",
+                        "secondary-container": "#00a572",
+                        "on-tertiary": "#68000a",
+                        "error-container": "#93000a",
+                        "surface-variant": "#2d3449",
+                        "surface-container-lowest": "#060e20",
+                        "secondary": "#4edea3",
+                        "inverse-on-surface": "#283044",
+                        "error": "#ffb4ab",
+                        "primary": "#d2bbff",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-background": "#dae2fd",
+                        "on-primary-container": "#ede0ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "stack-lg": "32px",
+                        "stack-md": "16px",
+                        "panel-padding": "20px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "container-margin": "24px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "data-lg": ["JetBrains Mono"],
+                        "body-md": ["Inter"],
+                        "data-md": ["JetBrains Mono"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "data-lg": ["18px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "data-md": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md text-body-md min-h-screen pb-24 pt-16 antialiased overflow-x-hidden">
+<!-- TopNavBar (Mobile Anchor) -->
+<nav class="fixed top-0 w-full z-50 flex justify-between items-center px-panel-padding h-16 bg-surface-container-low/80 backdrop-blur-xl border-b border-white/10 shadow-sm lg:hidden">
+<div class="text-headline-md font-headline-md font-black tracking-tighter text-primary">QUANT_CORE</div>
+<div class="flex items-center gap-3">
+<span class="text-label-sm font-label-sm text-secondary bg-secondary/10 px-2 py-1 rounded-DEFAULT border border-secondary/20">LIVE</span>
+<button class="material-symbols-outlined text-outline hover:text-primary transition-colors duration-200">account_circle</button>
+</div>
+</nav>
+<!-- SideNavBar (Hidden on Mobile per JSON, included for structural completeness if requested, but instructions say prioritize mobile. Will omit to save token space and focus on mobile payload.) -->
+<!-- Main Content Canvas -->
+<main class="flex flex-col gap-container-margin w-full max-w-[600px] mx-auto">
+<!-- Key Stats Vertical Stack -->
+<section class="px-panel-padding flex flex-col gap-stack-sm pt-stack-md">
+<!-- Total Value Panel -->
+<div class="bg-surface-container p-panel-padding rounded-xl border border-white/10 shadow-sm relative overflow-hidden">
+<div class="absolute -right-10 -top-10 w-32 h-32 bg-primary/10 rounded-full blur-2xl"></div>
+<div class="text-label-sm font-label-sm text-outline tracking-wider uppercase">Net Value</div>
+<div class="text-display-lg font-display-lg text-on-surface mt-1 tracking-tight">$4.28M</div>
+<div class="flex items-center gap-1 mt-2 text-label-sm font-label-sm text-secondary">
+<span class="material-symbols-outlined" style="font-size: 14px;">arrow_upward</span>
+<span>+2.4% (24h)</span>
+</div>
+</div>
+<!-- Secondary Stats Row -->
+<div class="flex gap-stack-sm">
+<div class="flex-1 bg-surface-container p-panel-padding rounded-xl border border-white/10">
+<div class="text-label-sm font-label-sm text-outline tracking-wider uppercase">Day P/L</div>
+<div class="text-headline-md font-headline-md text-secondary mt-1">+$102.5K</div>
+</div>
+<div class="flex-1 bg-surface-container p-panel-padding rounded-xl border border-white/10">
+<div class="text-label-sm font-label-sm text-outline tracking-wider uppercase">Risk Exposure</div>
+<div class="text-headline-md font-headline-md text-tertiary mt-1">Elevated</div>
+</div>
+</div>
+</section>
+<!-- Simplified Performance Chart -->
+<section class="px-panel-padding">
+<div class="bg-surface-container p-panel-padding rounded-xl border border-white/10 h-56 relative overflow-hidden flex flex-col">
+<div class="flex justify-between items-center z-10 mb-4">
+<h2 class="text-data-lg font-data-lg text-on-surface">Alpha Generation</h2>
+<div class="text-label-sm font-label-sm text-outline flex gap-2">
+<span class="text-primary cursor-pointer border-b border-primary">1D</span>
+<span class="cursor-pointer hover:text-on-surface transition-colors">1W</span>
+<span class="cursor-pointer hover:text-on-surface transition-colors">1M</span>
+</div>
+</div>
+<!-- CSS Based Chart Abstraction -->
+<div class="absolute bottom-0 left-0 w-full h-3/4 bg-gradient-to-t from-primary/20 to-transparent"></div>
+<svg class="absolute bottom-0 left-0 w-full h-3/4" preserveaspectratio="none" viewbox="0 0 100 100">
+<path d="M0 100 L 0 80 Q 10 70, 20 85 T 40 60 T 60 40 T 80 50 T 100 20 L 100 100 Z" fill="none" stroke="url(#line-grad)" stroke-width="2"></path>
+<defs>
+<lineargradient id="line-grad" x1="0%" x2="100%" y1="0%" y2="0%">
+<stop offset="0%" stop-color="#732ee4"></stop>
+<stop offset="100%" stop-color="#d2bbff"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+</section>
+<!-- Swipeable AI Signals -->
+<section class="pl-panel-padding">
+<div class="flex justify-between items-center pr-panel-padding mb-stack-sm">
+<h2 class="text-headline-md font-headline-md text-on-surface">Active Signals</h2>
+<span class="text-label-sm font-label-sm text-primary cursor-pointer hover:text-primary-fixed-dim">View All</span>
+</div>
+<div class="flex gap-gutter overflow-x-auto pb-4 snap-x snap-mandatory pr-panel-padding no-scrollbar">
+<!-- Signal Card 1 -->
+<div class="snap-start shrink-0 w-64 bg-surface-container p-panel-padding rounded-xl border border-white/10 relative overflow-hidden shadow-lg">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary shadow-[0_0_10px_#4edea3]"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="text-data-lg font-data-lg text-on-surface">BTC/USDT</span>
+<div class="bg-secondary/10 p-1 rounded-DEFAULT">
+<span class="material-symbols-outlined text-secondary" style="font-size: 18px;">trending_up</span>
+</div>
+</div>
+<div class="flex justify-between items-end mt-4">
+<div>
+<div class="text-label-sm font-label-sm text-outline">Action</div>
+<div class="text-data-md font-data-md text-on-surface">LONG</div>
+</div>
+<div class="text-right">
+<div class="text-label-sm font-label-sm text-outline">Conviction</div>
+<div class="text-data-md font-data-md text-secondary">94.2%</div>
+</div>
+</div>
+</div>
+<!-- Signal Card 2 -->
+<div class="snap-start shrink-0 w-64 bg-surface-container p-panel-padding rounded-xl border border-white/10 relative overflow-hidden shadow-lg">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-error shadow-[0_0_10px_#ffb4ab]"></div>
+<div class="flex justify-between items-start mb-2">
+<span class="text-data-lg font-data-lg text-on-surface">ETH/USDT</span>
+<div class="bg-error/10 p-1 rounded-DEFAULT">
+<span class="material-symbols-outlined text-error" style="font-size: 18px;">trending_down</span>
+</div>
+</div>
+<div class="flex justify-between items-end mt-4">
+<div>
+<div class="text-label-sm font-label-sm text-outline">Action</div>
+<div class="text-data-md font-data-md text-on-surface">SHORT</div>
+</div>
+<div class="text-right">
+<div class="text-label-sm font-label-sm text-outline">Conviction</div>
+<div class="text-data-md font-data-md text-error">88.5%</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Collapsible Open Positions -->
+<section class="px-panel-padding pb-stack-lg">
+<h2 class="text-headline-md font-headline-md text-on-surface mb-stack-sm">Open Positions</h2>
+<div class="bg-surface-container rounded-xl border border-white/10 overflow-hidden flex flex-col">
+<!-- Position 1 -->
+<details class="group border-b border-white/10 last:border-0" open="">
+<summary class="flex justify-between items-center p-panel-padding cursor-pointer list-none bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex flex-col gap-1">
+<span class="text-data-md font-data-md text-on-surface flex items-center gap-2">
+                                SOL-PERP <span class="text-label-sm font-label-sm text-secondary bg-secondary/10 px-1.5 py-0.5 rounded-DEFAULT">LONG</span>
+</span>
+<span class="text-label-sm font-label-sm text-outline">Size: $450,000</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-data-md font-data-md text-secondary">+$12.4K</span>
+<span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform duration-300">expand_more</span>
+</div>
+</summary>
+<div class="p-panel-padding bg-surface-container-lowest border-t border-white/5 flex flex-col gap-2">
+<div class="flex justify-between text-label-sm font-label-sm">
+<span class="text-outline">Entry Price</span>
+<span class="text-data-md font-data-md text-on-surface-variant">$102.45</span>
+</div>
+<div class="flex justify-between text-label-sm font-label-sm">
+<span class="text-outline">Mark Price</span>
+<span class="text-data-md font-data-md text-on-surface-variant">$105.20</span>
+</div>
+<div class="flex justify-between text-label-sm font-label-sm">
+<span class="text-outline">Liq. Price</span>
+<span class="text-data-md font-data-md text-tertiary">$85.00</span>
+</div>
+<button class="mt-2 w-full py-2 border border-outline/30 rounded-lg text-label-sm font-label-sm text-on-surface hover:bg-white/5 transition-colors">Manage Position</button>
+</div>
+</details>
+<!-- Position 2 -->
+<details class="group border-b border-white/10 last:border-0">
+<summary class="flex justify-between items-center p-panel-padding cursor-pointer list-none bg-surface-container hover:bg-surface-container-high transition-colors">
+<div class="flex flex-col gap-1">
+<span class="text-data-md font-data-md text-on-surface flex items-center gap-2">
+                                ARB-PERP <span class="text-label-sm font-label-sm text-error bg-error/10 px-1.5 py-0.5 rounded-DEFAULT">SHORT</span>
+</span>
+<span class="text-label-sm font-label-sm text-outline">Size: $120,000</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="text-data-md font-data-md text-error">-$1.2K</span>
+<span class="material-symbols-outlined text-outline group-open:rotate-180 transition-transform duration-300">expand_more</span>
+</div>
+</summary>
+<div class="p-panel-padding bg-surface-container-lowest border-t border-white/5 flex flex-col gap-2">
+<div class="flex justify-between text-label-sm font-label-sm">
+<span class="text-outline">Entry Price</span>
+<span class="text-data-md font-data-md text-on-surface-variant">$1.85</span>
+</div>
+<div class="flex justify-between text-label-sm font-label-sm">
+<span class="text-outline">Mark Price</span>
+<span class="text-data-md font-data-md text-on-surface-variant">$1.87</span>
+</div>
+<button class="mt-2 w-full py-2 border border-outline/30 rounded-lg text-label-sm font-label-sm text-on-surface hover:bg-white/5 transition-colors">Manage Position</button>
+</div>
+</details>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (from JSON) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 px-2 pb-safe bg-surface-container-highest/95 backdrop-blur-xl rounded-t-xl border-t border-white/10 shadow-[0_-4px_20px_rgba(0,0,0,0.5)] lg:hidden">
+<!-- Active Tab: Home -->
+<button class="flex flex-col items-center justify-center text-primary tap-highlight-none scale-95 transition-transform w-16">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="text-label-sm font-label-sm mt-1">Home</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline hover:text-on-surface tap-highlight-none scale-95 transition-transform hover:bg-white/5 w-16 rounded-lg py-1">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+<span class="text-label-sm font-label-sm mt-1">Port</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline hover:text-on-surface tap-highlight-none scale-95 transition-transform hover:bg-white/5 w-16 rounded-lg py-1">
+<span class="material-symbols-outlined">sensors</span>
+<span class="text-label-sm font-label-sm mt-1">Sigs</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline hover:text-on-surface tap-highlight-none scale-95 transition-transform hover:bg-white/5 w-16 rounded-lg py-1">
+<span class="material-symbols-outlined">smart_toy</span>
+<span class="text-label-sm font-label-sm mt-1">Bots</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline hover:text-on-surface tap-highlight-none scale-95 transition-transform hover:bg-white/5 w-16 rounded-lg py-1">
+<span class="material-symbols-outlined">gpp_maybe</span>
+<span class="text-label-sm font-label-sm mt-1">Risk</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline hover:text-on-surface tap-highlight-none scale-95 transition-transform hover:bg-white/5 w-16 rounded-lg py-1">
+<span class="material-symbols-outlined">history</span>
+<span class="text-label-sm font-label-sm mt-1">Hist</span>
+</button>
+</nav>
+</body></html>
