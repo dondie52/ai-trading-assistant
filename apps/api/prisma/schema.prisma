@@ -127,6 +127,7 @@ model BrokerAccount {
   userId           String   @map("user_id") @db.Uuid
   brokerName       String   @map("broker_name")
   accountId        String   @map("account_id")
+  environment      String   @default("PAPER")
   encryptedApiKey  String?  @map("encrypted_api_key")
   encryptedSecret  String?  @map("encrypted_secret")
   status           String

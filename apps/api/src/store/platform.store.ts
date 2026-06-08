@@ -20,7 +20,6 @@ import type {
   UserStatus,
   UUID
 } from "@trading/types";
-import { generateHistoricalPrices } from "@trading/shared";
 import type { AuditSink } from "../audit/audit-sink.js";
 
 export interface UserRecord extends PublicUser {
@@ -47,6 +46,7 @@ export interface BrokerAccount {
   readonly status: "CONNECTED" | "DISCONNECTED";
   readonly encryptedApiKey?: string;
   readonly encryptedSecret?: string;
+  readonly environment?: "PAPER" | "LIVE";
   readonly createdAt: string;
 }
 
@@ -115,12 +115,6 @@ export class PlatformStore {
   readonly marketData = new Map<string, readonly MarketCandle[]>();
   readonly auditLogs: AuditLog[] = [];
   private auditSink?: AuditSink;
-
-  constructor() {
-    this.marketData.set("AAPL:1m", generateHistoricalPrices("AAPL", 80, 185, "1m"));
-    this.marketData.set("MSFT:1m", generateHistoricalPrices("MSFT", 80, 410, "1m"));
-    this.marketData.set("NVDA:1m", generateHistoricalPrices("NVDA", 80, 122, "1m"));
-  }
 
   setAuditSink(auditSink: AuditSink): void {
     this.auditSink = auditSink;
@@ -239,9 +233,9 @@ export class PlatformStore {
       const portfolio: Portfolio = {
         id: randomUUID(),
         userId,
-        portfolioName: "Paper Trading Account",
-        portfolioValue: 100_000,
-        cashBalance: 100_000,
+        portfolioName: "Broker Account",
+        portfolioValue: 0,
+        cashBalance: 0,
         realizedPnl: 0,
         unrealizedPnl: 0,
         createdAt: now
@@ -283,8 +277,8 @@ export class PlatformStore {
       const watchlist: Watchlist = {
         id: randomUUID(),
         userId,
-        name: "Core Tech",
-        symbols: ["AAPL", "MSFT", "NVDA"],
+        name: "Watchlist",
+        symbols: [],
         createdAt: now
       };
       this.watchlists.set(watchlist.id, watchlist);

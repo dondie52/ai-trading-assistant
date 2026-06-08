@@ -39,9 +39,9 @@ const main = async (): Promise<void> => {
     await prisma.portfolio.create({
       data: {
         userId: user.id,
-        portfolioName: "Paper Trading Account",
-        portfolioValue: 100000,
-        cashBalance: 100000
+        portfolioName: "Broker Account",
+        portfolioValue: 0,
+        cashBalance: 0
       }
     });
   }
@@ -73,8 +73,8 @@ const main = async (): Promise<void> => {
     await prisma.watchlist.create({
       data: {
         userId: user.id,
-        name: "Core Tech",
-        symbols: ["AAPL", "MSFT", "NVDA"]
+        name: "Watchlist",
+        symbols: []
       }
     });
   }

@@ -19,7 +19,7 @@ describe("real-time event bus", () => {
           ask: 200.01,
           changePercent: 0.5,
           timestamp: new Date().toISOString(),
-          source: "PAPER_SIMULATED"
+          source: "ALPACA"
         }
       }
     });

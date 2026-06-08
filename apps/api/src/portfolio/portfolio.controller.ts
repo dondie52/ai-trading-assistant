@@ -10,21 +10,26 @@ export class PortfolioController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
 
   @Get()
-  list(
+  async list(
     @CurrentUser() user: AuthenticatedPrincipal,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string
-  ): ReturnType<typeof ok> {
-    return ok(paginate(this.platform.listPortfolios(user.sub), page, pageSize));
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(paginate(await this.platform.listPortfoliosFresh(user.sub), page, pageSize));
   }
 
   @Get(":id")
-  detail(@CurrentUser() user: AuthenticatedPrincipal, @Param("id") id: string): ReturnType<typeof ok> {
+  async detail(@CurrentUser() user: AuthenticatedPrincipal, @Param("id") id: string): Promise<ReturnType<typeof ok>> {
+    await this.platform.syncAlpacaState(user.sub);
     return ok(this.platform.getPortfolio(user.sub, id));
   }
 
   @Get(":id/performance")
-  performance(@CurrentUser() user: AuthenticatedPrincipal, @Param("id") id: string): ReturnType<typeof ok> {
+  async performance(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Param("id") id: string
+  ): Promise<ReturnType<typeof ok>> {
+    await this.platform.syncAlpacaState(user.sub);
     this.platform.getPortfolio(user.sub, id);
     return ok(this.platform.getPerformance(user.sub));
   }
