@@ -10,6 +10,7 @@
     "start": "node build-output/apps/api/src/main.js",
     "seed": "tsx prisma/seed.ts",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
