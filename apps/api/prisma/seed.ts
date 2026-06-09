@@ -3,6 +3,13 @@ import { hash } from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+const defaultNotificationPreferences = {
+  trade: true,
+  signal: true,
+  risk: true,
+  system: true
+} as const;
+
 const main = async (): Promise<void> => {
   const adminEmail = process.env.SEED_ADMIN_EMAIL;
   const adminPassword = process.env.SEED_ADMIN_PASSWORD;
@@ -24,7 +31,8 @@ const main = async (): Promise<void> => {
       passwordHash,
       firstName: "Platform",
       lastName: "Admin",
-      role: UserRole.ADMIN
+      role: UserRole.ADMIN,
+      notificationPreferences: defaultNotificationPreferences
     }
   });
 

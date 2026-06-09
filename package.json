@@ -21,7 +21,12 @@
     "build": "npm run build:packages && npm run build -w @trading/api && npm run build -w @trading/web",
     "validate": "npm run lint && npm run test && npm run test:e2e && npm run build",
     "seed": "npm run seed -w @trading/api",
-    "prisma:migrate": "npm run prisma:migrate -w @trading/api"
+    "prisma:migrate": "npm run prisma:migrate -w @trading/api",
+    "prisma:deploy": "npm run prisma:deploy -w @trading/api",
+    "db:push": "bash scripts/push-supabase-migrations.sh",
+    "supabase": "supabase",
+    "supabase:login": "supabase login",
+    "supabase:link": "supabase link --project-ref lefwmtncducblybyvyze"
   },
   "devDependencies": {
     "@eslint/js": "9.36.0",
@@ -30,6 +35,7 @@
     "@vitest/coverage-v8": "^4.1.8",
     "concurrently": "9.2.1",
     "eslint": "9.36.0",
+    "supabase": "2.105.0",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
     "typescript-eslint": "8.44.0",
