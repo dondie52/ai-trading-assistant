@@ -11,7 +11,7 @@ Paper execution is implemented and automated, but a strategy is not approved for
 
 ## Daily Checks
 
-1. Confirm API, database, Redis, web, and AI-service health.
+1. Confirm API, Supabase, web, and AI-service health.
 2. Review rejected and executed orders against their risk decisions.
 3. Reconcile paper broker cash, positions, orders, and platform state.
 4. Review signal confidence, model version, API/signal/trade latency, errors, queue depth, and alerts from `/api/v1/admin/metrics`.

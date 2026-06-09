@@ -1,0 +1,1 @@
+-- Production seed data is created through `npm run seed` with explicit admin credentials.

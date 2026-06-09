@@ -94,8 +94,7 @@ interface WatchlistView {
 interface SystemHealthView {
   readonly api?: string;
   readonly persistenceMode?: string;
-  readonly database?: JsonObject;
-  readonly redis?: JsonObject;
+  readonly supabase?: JsonObject;
   readonly broker?: string;
   readonly aiService?: string;
   readonly uptimeSeconds?: number;
@@ -1871,8 +1870,7 @@ export default function Page(): ReactElement {
         <section data-testid="admin-view" className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <SmallStat label="API" value={systemHealth.data?.api ?? "loading"} />
-            <SmallStat label="Database" value={jsonText(systemHealth.data?.database, "status")} />
-            <SmallStat label="Redis" value={jsonText(systemHealth.data?.redis, "status")} />
+            <SmallStat label="Supabase" value={jsonText(systemHealth.data?.supabase, "status")} />
             <SmallStat label="Uptime" value={`${systemHealth.data?.uptimeSeconds ?? 0}s`} />
           </div>
           <div data-testid="operational-metrics" className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

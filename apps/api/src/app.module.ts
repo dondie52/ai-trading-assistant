@@ -29,9 +29,7 @@ import { HealthController } from "./health/health.controller.js";
 import { DatabaseHealthService } from "./infrastructure/database-health.service.js";
 import { PrismaPlatformRepository } from "./infrastructure/prisma-platform.repository.js";
 import { PrismaService } from "./infrastructure/prisma.service.js";
-import { RedisCacheQueueService } from "./infrastructure/redis-cache-queue.service.js";
-import { RedisHealthService } from "./infrastructure/redis-health.service.js";
-import { RedisService } from "./infrastructure/redis.service.js";
+import { SupabaseCacheQueueService } from "./infrastructure/supabase-cache-queue.service.js";
 import { RealtimeEventBus } from "./realtime/realtime-event-bus.js";
 import { RealtimeGateway } from "./realtime/realtime.gateway.js";
 import { PlatformStore } from "./store/platform.store.js";
@@ -75,9 +73,7 @@ import { UsersController } from "./users/users.controller.js";
     PrismaAuditSink,
     PrismaPlatformRepository,
     PrismaService,
-    RedisCacheQueueService,
-    RedisHealthService,
-    RedisService,
+    SupabaseCacheQueueService,
     RealtimeEventBus,
     RealtimeGateway,
     SessionActivityService,

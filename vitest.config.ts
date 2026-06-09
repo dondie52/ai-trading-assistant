@@ -14,6 +14,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
+      exclude: ["**/test/**", "**/*.spec.ts", "**/*.test.ts"],
       thresholds: {
         statements: 80,
         branches: 60,

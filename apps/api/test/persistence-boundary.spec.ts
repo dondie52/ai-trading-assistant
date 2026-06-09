@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MarketCandle, Notification, Order, OrderStatusEvent } from "@trading/types";
 import { PrismaPlatformRepository } from "../src/infrastructure/prisma-platform.repository.js";
 import type { PrismaService } from "../src/infrastructure/prisma.service.js";
-import { RedisCacheQueueService } from "../src/infrastructure/redis-cache-queue.service.js";
-import type { RedisService } from "../src/infrastructure/redis.service.js";
+import { SupabaseCacheQueueService } from "../src/infrastructure/supabase-cache-queue.service.js";
 
 const previousDatabaseUrl = process.env.DATABASE_URL;
 
@@ -262,14 +261,17 @@ describe("platform persistence boundary", () => {
   });
 });
 
-describe("Redis cache and queue boundary", () => {
-  it("queues notifications and caches market candles when Redis is configured", async () => {
-    const redis = {
-      isConfigured: () => true,
-      rpush: vi.fn().mockResolvedValue(undefined),
-      setJson: vi.fn().mockResolvedValue(undefined)
-    } as unknown as RedisService;
-    const service = new RedisCacheQueueService(redis);
+describe("Supabase cache and queue boundary", () => {
+  it("queues notifications and caches market candles in Supabase", async () => {
+    const create = vi.fn().mockResolvedValue(undefined);
+    const count = vi.fn().mockResolvedValue(1);
+    const upsert = vi.fn().mockResolvedValue(undefined);
+    const service = new SupabaseCacheQueueService({
+      client: () => ({
+        notificationQueueItem: { create, count },
+        marketDataCache: { upsert }
+      })
+    } as unknown as PrismaService);
     const notification: Notification = {
       id: "77777777-7777-4777-8777-777777777777",
       userId: "11111111-1111-4111-8111-111111111111",
@@ -295,10 +297,24 @@ describe("Redis cache and queue boundary", () => {
     await service.enqueueNotification(notification);
     await service.cacheMarketData("aapl", "1m", candles);
 
-    expect(redis.rpush).toHaveBeenCalledWith(
-      "queue:notifications",
-      expect.stringContaining("NOTIFICATION_CREATED")
-    );
-    expect(redis.setJson).toHaveBeenCalledWith("cache:market:AAPL:1m:candles", candles, 300);
+    await expect(service.getNotificationQueueDepth()).resolves.toBe(1);
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        notificationId: notification.id,
+        payload: expect.objectContaining({ type: "NOTIFICATION_CREATED" })
+      })
+    });
+    expect(upsert).toHaveBeenCalledWith({
+      where: { cacheKey: "AAPL:1m:candles" },
+      create: expect.objectContaining({
+        cacheKey: "AAPL:1m:candles",
+        candles,
+        expiresAt: expect.any(Date)
+      }),
+      update: expect.objectContaining({
+        candles,
+        expiresAt: expect.any(Date)
+      })
+    });
   });
 });

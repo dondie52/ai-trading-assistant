@@ -33,22 +33,18 @@ describe("local container stack definition", () => {
   it("defines the required MVP services with health checks and ports", () => {
     const services = readServices();
 
-    expect(Object.keys(services).sort()).toEqual(["ai-service", "api", "postgres", "redis", "web"]);
-    expect(services.postgres?.image).toBe("postgres:16-alpine");
-    expect(services.redis?.image).toBe("redis:7-alpine");
+    expect(Object.keys(services).sort()).toEqual(["ai-service", "api", "web"]);
     expect(services.api?.build).toMatchObject({ dockerfile: "infrastructure/docker/api.Dockerfile" });
     expect(services.web?.build).toMatchObject({ dockerfile: "infrastructure/docker/web.Dockerfile" });
     expect(services["ai-service"]?.build).toMatchObject({
       dockerfile: "infrastructure/docker/ai-service.Dockerfile"
     });
 
-    expect(services.postgres?.ports).toContain("5432:5432");
-    expect(services.redis?.ports).toContain("6379:6379");
     expect(services.api?.ports).toContain("3001:3001");
     expect(services.web?.ports).toContain("3000:3000");
     expect(services["ai-service"]?.ports).toContain("8000:8000");
 
-    for (const name of ["postgres", "redis", "api", "web", "ai-service"]) {
+    for (const name of ["api", "web", "ai-service"]) {
       expect(services[name]?.healthcheck, `${name} must define a healthcheck`).toBeTruthy();
       expect(services[name]?.restart, `${name} must define an automatic restart policy`).toBe("unless-stopped");
     }
@@ -59,10 +55,10 @@ describe("local container stack definition", () => {
     const envExample = readText(".env.example");
     const services = readServices();
 
-    expect(composeText).not.toContain("postgres:postgres");
-    expect(envExample).not.toContain("postgres:postgres");
-    expect(envValue(services.postgres, "POSTGRES_PASSWORD")).toContain("${POSTGRES_PASSWORD:?");
-    expect(envValue(services.api, "DATABASE_URL")).toContain("${POSTGRES_PASSWORD:?");
+    expect(composeText).not.toContain("redis:");
+    expect(composeText).not.toContain("postgres:");
+    expect(envExample).toContain("pooler.supabase.com");
+    expect(envValue(services.api, "DATABASE_URL")).toContain("${DATABASE_URL:?");
     expect(envValue(services.api, "JWT_ACCESS_SECRET")).toContain("${JWT_ACCESS_SECRET:?");
     expect(envValue(services.api, "JWT_REFRESH_SECRET")).toContain("${JWT_REFRESH_SECRET:?");
     expect(envValue(services.api, "MFA_ENCRYPTION_KEY")).toContain("${MFA_ENCRYPTION_KEY:?");
@@ -77,7 +73,7 @@ describe("local container stack definition", () => {
 
   it("enforces append-only audit records at the PostgreSQL layer", () => {
     const migration = readText(
-      "apps/api/prisma/migrations/20260606110000_mfa_and_immutable_audit/migration.sql"
+      "supabase/migrations/20260606110000_mfa_and_immutable_audit.sql"
     );
 
     expect(migration).toContain("mfa_secret_encrypted");
@@ -88,7 +84,7 @@ describe("local container stack definition", () => {
 
   it("migrates append-only order lifecycle history", () => {
     const migration = readText(
-      "apps/api/prisma/migrations/20260606120000_order_status_events/migration.sql"
+      "supabase/migrations/20260606120000_order_status_events.sql"
     );
 
     expect(migration).toContain('CREATE TABLE "public"."order_status_events"');
@@ -98,31 +94,40 @@ describe("local container stack definition", () => {
 
   it("migrates server-enforced session activity tracking", () => {
     const migration = readText(
-      "apps/api/prisma/migrations/20260606130000_session_idle_expiry/migration.sql"
+      "supabase/migrations/20260606130000_session_idle_expiry.sql"
     );
 
     expect(migration).toContain("last_activity_at");
     expect(migration).toContain("sessions_last_activity_at_idx");
   });
 
-  it("runs migrations before API startup and wires dependent services", () => {
+  it("connects the API to Supabase and wires dependent services", () => {
     const services = readServices();
     const api = services.api;
     const web = services.web;
 
-    expect(api?.command).toContain("prisma migrate deploy");
-    expect(api?.command).toContain("apps/api/prisma/schema.prisma");
-    expect(envValue(api, "DATABASE_URL")).toContain("@postgres:5432");
-    expect(envValue(api, "REDIS_URL")).toBe("redis://redis:6379");
+    expect(api?.command).toBe("npm run start -w @trading/api");
+    expect(envValue(api, "DATABASE_URL")).toContain("${DATABASE_URL:?");
     expect(envValue(api, "AI_SERVICE_URL")).toBe("http://ai-service:8000");
     expect(asRecord(api?.depends_on, "api depends_on")).toMatchObject({
-      postgres: { condition: "service_healthy" },
-      redis: { condition: "service_healthy" },
       "ai-service": { condition: "service_started" }
     });
     expect(asRecord(web?.depends_on, "web depends_on")).toMatchObject({
       api: { condition: "service_healthy" }
     });
+  });
+
+  it("keeps Supabase migrations and runtime tables under version control", () => {
+    const config = readText("supabase/config.toml");
+    const runtimeMigration = readText(
+      "supabase/migrations/20260609110258_supabase_runtime.sql"
+    );
+
+    expect(config).toContain('major_version = 17');
+    expect(runtimeMigration).toContain('"notification_queue"');
+    expect(runtimeMigration).toContain('"market_data_cache"');
+    expect(runtimeMigration).toContain("ENABLE ROW LEVEL SECURITY");
+    expect(runtimeMigration).toContain('FROM "anon", "authenticated"');
   });
 
   it("keeps Dockerfiles aligned with exposed service ports and build commands", () => {
@@ -138,6 +143,19 @@ describe("local container stack definition", () => {
     expect(aiDockerfile).toContain("pip install --no-cache-dir -r requirements.txt");
     expect(aiDockerfile).toContain("EXPOSE 8000");
     expect(aiDockerfile).toContain("uvicorn");
+  });
+
+  it("builds the Vercel web deployment from the monorepo workspace", () => {
+    const rootConfig = asRecord(JSON.parse(readText("vercel.json")), "root Vercel config");
+    const webConfig = asRecord(JSON.parse(readText("apps/web/vercel.json")), "web Vercel config");
+
+    expect(rootConfig.framework).toBe("nextjs");
+    expect(rootConfig.installCommand).toBe("npm ci");
+    expect(rootConfig.buildCommand).toContain("npm run build:packages");
+    expect(rootConfig.buildCommand).toContain("npm run build -w @trading/web");
+    expect(rootConfig.outputDirectory).toBe("apps/web/.next");
+    expect(webConfig.installCommand).toBe("cd ../.. && npm ci");
+    expect(webConfig.buildCommand).toContain("cd ../..");
   });
 
   it("keeps CI wired to install Playwright browsers and run validation", () => {

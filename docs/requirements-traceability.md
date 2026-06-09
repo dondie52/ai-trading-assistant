@@ -19,13 +19,13 @@ This matrix maps the requested MVP to implementation and automated evidence. "Im
 | Analytics | Implemented | Win rate, profit factor, Sharpe, Sortino, drawdown, return, average trade, risk/reward, equity curve, realized/unrealized PnL | `analytics.test.ts`, position and mark-to-market integration tests |
 | Backtesting | Implemented | Historical replay and walk-forward parameter selection with out-of-sample windows, fees, and slippage | `backtest.test.ts`, integration and Playwright Simulation Lab |
 | Admin dashboard | Implemented | Users, suspend/reactivate, system health, runtime metrics, audit log search | Metrics/admin integration tests and Playwright Admin flow |
-| Notifications | Implemented | Trade, signal, risk, system preferences and Redis notification queue | Notification preference and Redis boundary tests |
+| Notifications | Implemented | Trade, signal, risk, system preferences and Supabase notification queue | Notification preference and Supabase persistence tests |
 | Immutable audit logging | Implemented | Redacted frozen records plus PostgreSQL update/delete rejection trigger | Audit store and infrastructure migration tests |
 | `/api/v1` routes | Implemented | Versioned Nest controllers | `docs/api.md`, integration and E2E traffic |
 | Pagination standard | Implemented | Collection routes return data/page/pageSize/total with validated limits | `pagination.spec.ts`, web collection client |
 | Real-time updates | Implemented | Authenticated `/ws` Socket.IO gateway with user rooms and polling fallback | Event-bus unit test and Playwright WebSocket assertion |
-| Operational monitoring | Implemented in application | API/signal/trade latency, error rate, throughput, model versions, trade outcomes, Redis queue depth | `operational-metrics.service.spec.ts`, Redis protocol tests, Admin UI |
-| Full Docker Compose stack | Defined and statically validated | PostgreSQL, Redis, API, web, and AI service with health checks | `tests/infrastructure/stack.spec.ts` |
+| Operational monitoring | Implemented in application | API/signal/trade latency, error rate, throughput, model versions, trade outcomes, Supabase queue depth | `operational-metrics.service.spec.ts`, Supabase boundary tests, Admin UI |
+| Full Docker Compose stack | Defined and statically validated | API, web, and AI service with Supabase persistence | `tests/infrastructure/stack.spec.ts` |
 | GitHub Actions CI | Implemented | Install, Playwright browser install, and `npm run validate` | Infrastructure CI test |
 
 ## Security Controls
@@ -45,7 +45,7 @@ This matrix maps the requested MVP to implementation and automated evidence. "Im
 ## Test Coverage
 
 - Unit: auth validation, MFA, indicators, signal scoring, position sizing/risk, analytics, historical/walk-forward backtesting, pagination, and operational metrics.
-- Integration: auth/portfolio, signal-to-trade, trade-to-risk, broker abstraction/credentials, persistence, Redis, admin, reports, health, mark-to-market, and pending-order triggers.
+- Integration: auth/portfolio, signal-to-trade, trade-to-risk, broker abstraction/credentials, Supabase persistence, admin, reports, health, mark-to-market, and pending-order triggers.
 - E2E: registration, login, dashboard, strategies, manual/semi/auto paper trades, blocked risk, portfolio/history, watchlist, historical/walk-forward backtests, WebSocket updates, MFA, risk preferences, metrics, and admin audit visibility.
 - Infrastructure: Compose topology, health checks, secret interpolation, migrations, Dockerfiles, and CI commands.
 - Coverage gate: statements/lines/functions at least 80%; branches at least 60%.

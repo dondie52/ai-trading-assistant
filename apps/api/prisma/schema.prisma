@@ -67,41 +67,41 @@ enum NotificationStatus {
 }
 
 model User {
-  id           String          @id @default(uuid()) @db.Uuid
-  email        String          @unique
-  passwordHash String          @map("password_hash")
-  firstName    String          @map("first_name")
-  lastName     String          @map("last_name")
-  role         UserRole        @default(TRADER)
-  status       UserStatus      @default(ACTIVE)
-  mfaEnabled   Boolean         @default(false) @map("mfa_enabled")
-  mfaSecretEncrypted String?   @map("mfa_secret_encrypted")
-  notificationPreferences Json @map("notification_preferences")
-  createdAt    DateTime        @default(now()) @map("created_at")
-  updatedAt    DateTime        @updatedAt @map("updated_at")
-  brokerAccounts BrokerAccount[]
-  portfolios   Portfolio[]
-  strategies   Strategy[]
-  signals      Signal[]
-  orders       Order[]
-  trades       Trade[]
-  positions    Position[]
-  riskRules    RiskRule[]
-  notifications Notification[]
-  sessions     Session[]
-  passwordResetTokens PasswordResetToken[]
+  id                      String               @id @default(uuid()) @db.Uuid
+  email                   String               @unique
+  passwordHash            String               @map("password_hash")
+  firstName               String               @map("first_name")
+  lastName                String               @map("last_name")
+  role                    UserRole             @default(TRADER)
+  status                  UserStatus           @default(ACTIVE)
+  mfaEnabled              Boolean              @default(false) @map("mfa_enabled")
+  mfaSecretEncrypted      String?              @map("mfa_secret_encrypted")
+  notificationPreferences Json                 @map("notification_preferences")
+  createdAt               DateTime             @default(now()) @map("created_at")
+  updatedAt               DateTime             @updatedAt @map("updated_at")
+  brokerAccounts          BrokerAccount[]
+  portfolios              Portfolio[]
+  strategies              Strategy[]
+  signals                 Signal[]
+  orders                  Order[]
+  trades                  Trade[]
+  positions               Position[]
+  riskRules               RiskRule[]
+  notifications           Notification[]
+  sessions                Session[]
+  passwordResetTokens     PasswordResetToken[]
 
   @@map("users")
 }
 
 model PasswordResetToken {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  tokenHash String   @unique @map("token_hash")
-  expiresAt DateTime @map("expires_at")
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([expiresAt])
@@ -109,31 +109,31 @@ model PasswordResetToken {
 }
 
 model Session {
-  id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @map("user_id") @db.Uuid
-  refreshTokenHash String   @map("refresh_token_hash")
-  expiresAt        DateTime @map("expires_at")
-  lastActivityAt   DateTime @default(now()) @map("last_activity_at")
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at")
+  lastActivityAt   DateTime  @default(now()) @map("last_activity_at")
   revokedAt        DateTime? @map("revoked_at")
-  createdAt        DateTime @default(now()) @map("created_at")
-  user             User     @relation(fields: [userId], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+  user             User      @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("sessions")
 }
 
 model BrokerAccount {
-  id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @map("user_id") @db.Uuid
-  brokerName       String   @map("broker_name")
-  accountId        String   @map("account_id")
-  environment      String   @default("PAPER")
-  encryptedApiKey  String?  @map("encrypted_api_key")
-  encryptedSecret  String?  @map("encrypted_secret")
-  status           String
-  createdAt        DateTime @default(now()) @map("created_at")
-  user             User     @relation(fields: [userId], references: [id])
-  orders           Order[]
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  brokerName      String   @map("broker_name")
+  accountId       String   @map("account_id")
+  environment     String   @default("PAPER")
+  encryptedApiKey String?  @map("encrypted_api_key")
+  encryptedSecret String?  @map("encrypted_secret")
+  status          String
+  createdAt       DateTime @default(now()) @map("created_at")
+  user            User     @relation(fields: [userId], references: [id])
+  orders          Order[]
 
   @@index([userId])
   @@map("broker_accounts")
@@ -192,26 +192,26 @@ model Signal {
 }
 
 model Order {
-  id              String      @id @default(uuid()) @db.Uuid
-  userId          String      @map("user_id") @db.Uuid
-  brokerAccountId String      @map("broker_account_id") @db.Uuid
-  strategyId      String?     @map("strategy_id") @db.Uuid
-  signalId        String?     @map("signal_id") @db.Uuid
+  id              String             @id @default(uuid()) @db.Uuid
+  userId          String             @map("user_id") @db.Uuid
+  brokerAccountId String             @map("broker_account_id") @db.Uuid
+  strategyId      String?            @map("strategy_id") @db.Uuid
+  signalId        String?            @map("signal_id") @db.Uuid
   symbol          String
   side            OrderSide
-  orderType       OrderType   @map("order_type")
+  orderType       OrderType          @map("order_type")
   mode            TradingMode
-  quantity        Decimal     @db.Decimal(18, 6)
-  price           Decimal     @db.Decimal(18, 4)
-  stopLoss        Decimal     @map("stop_loss") @db.Decimal(18, 4)
-  takeProfit      Decimal     @map("take_profit") @db.Decimal(18, 4)
+  quantity        Decimal            @db.Decimal(18, 6)
+  price           Decimal            @db.Decimal(18, 4)
+  stopLoss        Decimal            @map("stop_loss") @db.Decimal(18, 4)
+  takeProfit      Decimal            @map("take_profit") @db.Decimal(18, 4)
   status          OrderStatus
-  riskDecision    Json        @map("risk_decision_json")
-  submittedAt     DateTime    @default(now()) @map("submitted_at")
-  user            User        @relation(fields: [userId], references: [id])
-  brokerAccount   BrokerAccount @relation(fields: [brokerAccountId], references: [id])
-  strategy        Strategy?   @relation(fields: [strategyId], references: [id])
-  signal          Signal?     @relation(fields: [signalId], references: [id])
+  riskDecision    Json               @map("risk_decision_json")
+  submittedAt     DateTime           @default(now()) @map("submitted_at")
+  user            User               @relation(fields: [userId], references: [id])
+  brokerAccount   BrokerAccount      @relation(fields: [brokerAccountId], references: [id])
+  strategy        Strategy?          @relation(fields: [strategyId], references: [id])
+  signal          Signal?            @relation(fields: [signalId], references: [id])
   trades          Trade[]
   statusEvents    OrderStatusEvent[]
 
@@ -269,15 +269,15 @@ model Position {
 }
 
 model RiskRule {
-  id                         String   @id @default(uuid()) @db.Uuid
-  userId                     String   @map("user_id") @db.Uuid
-  maxRiskPerTradePercent     Decimal  @map("max_risk_per_trade") @db.Decimal(8, 4)
-  maxDailyLossPercent        Decimal  @map("max_daily_loss") @db.Decimal(8, 4)
-  maxDrawdownPercent         Decimal  @map("max_drawdown") @db.Decimal(8, 4)
-  maxPositionSizePercent     Decimal  @map("max_position_size") @db.Decimal(8, 4)
-  stopTrading                Boolean  @default(false) @map("stop_trading")
-  updatedAt                  DateTime @updatedAt @map("updated_at")
-  user                       User     @relation(fields: [userId], references: [id])
+  id                     String   @id @default(uuid()) @db.Uuid
+  userId                 String   @map("user_id") @db.Uuid
+  maxRiskPerTradePercent Decimal  @map("max_risk_per_trade") @db.Decimal(8, 4)
+  maxDailyLossPercent    Decimal  @map("max_daily_loss") @db.Decimal(8, 4)
+  maxDrawdownPercent     Decimal  @map("max_drawdown") @db.Decimal(8, 4)
+  maxPositionSizePercent Decimal  @map("max_position_size") @db.Decimal(8, 4)
+  stopTrading            Boolean  @default(false) @map("stop_trading")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+  user                   User     @relation(fields: [userId], references: [id])
 
   @@unique([userId])
   @@map("risk_rules")
@@ -336,4 +336,29 @@ model MarketPrice {
 
   @@unique([symbol, timeframe, timestamp])
   @@map("market_prices")
+}
+
+model NotificationQueueItem {
+  id             String    @id @default(uuid()) @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  payload        Json
+  processedAt    DateTime? @map("processed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([processedAt, createdAt])
+  @@index([userId])
+  @@map("notification_queue")
+}
+
+model MarketDataCache {
+  cacheKey  String   @id @map("cache_key")
+  symbol    String
+  timeframe String
+  candles   Json
+  expiresAt DateTime @map("expires_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("market_data_cache")
 }

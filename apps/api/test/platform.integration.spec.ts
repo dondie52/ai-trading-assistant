@@ -8,9 +8,7 @@ import { PrismaAuditSink } from "../src/audit/prisma-audit.sink.js";
 import { DatabaseHealthService } from "../src/infrastructure/database-health.service.js";
 import { PrismaPlatformRepository } from "../src/infrastructure/prisma-platform.repository.js";
 import { PrismaService } from "../src/infrastructure/prisma.service.js";
-import { RedisCacheQueueService } from "../src/infrastructure/redis-cache-queue.service.js";
-import { RedisHealthService } from "../src/infrastructure/redis-health.service.js";
-import { RedisService } from "../src/infrastructure/redis.service.js";
+import { SupabaseCacheQueueService } from "../src/infrastructure/supabase-cache-queue.service.js";
 import { PlatformService } from "../src/platform.service.js";
 import { PlatformStore } from "../src/store/platform.store.js";
 import { TokenService } from "../src/auth/token.service.js";
@@ -22,7 +20,6 @@ import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
 
 const createPlatform = (): { readonly platform: PlatformService; readonly store: PlatformStore } => {
   const prisma = new PrismaService();
-  const redis = new RedisService();
   const store = new PlatformStore();
   const repository = new PrismaPlatformRepository(prisma);
   const platform = new PlatformService(
@@ -34,10 +31,9 @@ const createPlatform = (): { readonly platform: PlatformService; readonly store:
     new BrokerCredentialService(),
     new SessionActivityService(store, repository),
     new DatabaseHealthService(prisma),
-    new RedisHealthService(redis),
     new PrismaAuditSink(prisma),
     repository,
-    new RedisCacheQueueService(redis),
+    new SupabaseCacheQueueService(prisma),
     new OperationalMetricsService(),
     new RealtimeEventBus()
   );
@@ -138,7 +134,7 @@ describe("platform integration", () => {
 
   it("resets passwords with hashed tokens and revokes active sessions", async () => {
     process.env.EXPOSE_PASSWORD_RESET_TOKEN_FOR_TESTS = "true";
-    const { platform, store } = createPlatform();
+    const { platform } = createPlatform();
     const email = `reset-${randomUUID()}@example.com`;
     await platform.register({
       email,
@@ -172,7 +168,7 @@ describe("platform integration", () => {
   });
 
   it("enforces TOTP MFA before issuing a login session", async () => {
-    const { platform, store } = createPlatform();
+    const { platform } = createPlatform();
     const email = `mfa-${randomUUID()}@example.com`;
     await platform.register({
       email,
@@ -236,7 +232,6 @@ describe("platform integration", () => {
     process.env.ENABLE_E2E_SEED = "true";
     process.env.E2E_ADMIN_EMAIL = "seeded-admin@example.com";
     process.env.E2E_ADMIN_PASSWORD = "SeededAdmin123!";
-    const redis = new RedisService();
     const persistUserBootstrap = vi.fn().mockResolvedValue(undefined);
     const fakeRepository = {
       hydrate: vi.fn().mockResolvedValue(undefined),
@@ -254,10 +249,9 @@ describe("platform integration", () => {
       new BrokerCredentialService(),
       new SessionActivityService(store, fakeRepository),
       new DatabaseHealthService(new PrismaService()),
-      new RedisHealthService(redis),
       new PrismaAuditSink(new PrismaService()),
       fakeRepository,
-      new RedisCacheQueueService(redis),
+      new SupabaseCacheQueueService(new PrismaService()),
       new OperationalMetricsService(),
       new RealtimeEventBus()
     );
@@ -512,7 +506,7 @@ describe("platform integration", () => {
     expect(platform.listAuditLogs().filter((log) => log.action === "PERFORMANCE_REPORT_EXPORTED")).toHaveLength(2);
   });
 
-  it("exposes audited operational metrics without requiring Redis", async () => {
+  it("exposes audited operational metrics without requiring Supabase", async () => {
     const { platform, store } = createPlatform();
     const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
     const strategy = platform.createStrategy(userId, {
@@ -704,17 +698,13 @@ describe("platform integration", () => {
     expect(serializedAudit).not.toContain("validated-secret");
   });
 
-  it("reports PostgreSQL and Redis readiness without logging secrets", async () => {
-    const { platform, store } = createPlatform();
+  it("reports Supabase readiness without logging secrets", async () => {
+    const { platform } = createPlatform();
     const health = await platform.getSystemHealth();
 
     expect(health.api).toBe("ok");
-    expect(health.database).toMatchObject({
-      mode: "postgresql",
-      configured: false,
-      status: "not_configured"
-    });
-    expect(health.redis).toMatchObject({
+    expect(health.supabase).toMatchObject({
+      mode: "supabase",
       configured: false,
       status: "not_configured"
     });

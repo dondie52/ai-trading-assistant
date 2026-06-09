@@ -428,7 +428,10 @@ export type RealtimeEvent =
         readonly statusEvent: OrderStatusEvent;
       }
     >
-  | RealtimeEventBase<"trade.executed", { readonly trade: Trade }>
+  | RealtimeEventBase<
+      "trade.executed",
+      { readonly trade: Trade } | { readonly order: Order; readonly portfolio: Portfolio }
+    >
   | RealtimeEventBase<"notification.created", { readonly notification: Notification }>;
 
 export interface RealtimeError {
