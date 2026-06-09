@@ -10,6 +10,8 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.0",
     "@tanstack/react-query": "5.90.2",
     "@trading/shared": "0.1.0",
     "@trading/types": "0.1.0",

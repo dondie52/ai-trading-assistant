@@ -5,6 +5,10 @@
     "noEmit": true,
     "allowJs": false,
     "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "plugins": [
       {
         "name": "next"
