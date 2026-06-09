@@ -13,7 +13,8 @@ Risk-first AI trading platform MVP built as a modular monolith:
 
 - Node.js 22+
 - npm 10+
-- Docker Desktop for PostgreSQL, Redis, API, web, and AI service containers
+- A Supabase project and its database password
+- Docker Desktop only when running the API, web, and AI service containers
 - Python 3.12 only if running `apps/ai-service` outside Docker
 
 ## Environment
@@ -22,9 +23,8 @@ Copy `.env.example` to `.env` and set real values for local or deployed environm
 
 Required production values:
 
-- `POSTGRES_PASSWORD`
 - `DATABASE_URL`
-- `REDIS_URL`
+- `SUPABASE_DB_PASSWORD` for CLI migration commands
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
 - `MFA_ENCRYPTION_KEY`
@@ -46,7 +46,7 @@ Optional API safety values:
 - `RATE_LIMIT_DISABLED=true` for controlled local test environments only
 
 Do not commit real secrets. Empty JWT secrets are replaced by per-process random values for local development only.
-Docker Compose requires `POSTGRES_PASSWORD`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `MFA_ENCRYPTION_KEY`, and `BROKER_CREDENTIAL_ENCRYPTION_KEY` to be set in `.env`; it does not provide default secret values. Authentication, MFA, and broker-credential encryption keys must each be at least 32 characters.
+Docker Compose requires `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `MFA_ENCRYPTION_KEY`, and `BROKER_CREDENTIAL_ENCRYPTION_KEY` to be set in `.env`; it does not provide default secret values. Authentication, MFA, and broker-credential encryption keys must each be at least 32 characters.
 
 Password reset tokens are stored only as hashes. In production, `POST /api/v1/auth/password-reset/request` returns a generic response and expects an email delivery integration to send the raw token. For local automated tests only, `EXPOSE_PASSWORD_RESET_TOKEN_FOR_TESTS=true` exposes the raw token in the response.
 
@@ -58,20 +58,24 @@ npm install
 
 ## Database
 
-The Prisma schema is in `apps/api/prisma/schema.prisma`.
+The Prisma schema is in `apps/api/prisma/schema.prisma`. Supabase CLI migrations are the deployment source of truth in `supabase/migrations`.
 
-```bash
-docker compose up -d postgres redis
-npm run prisma:migrate
-SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=<set-locally> npm run seed
+```powershell
+npm run db:link
+$env:SUPABASE_DB_PASSWORD="<project-database-password>"
+npm run db:push
+$env:DATABASE_URL="<supabase-session-pooler-url>"
+$env:SEED_ADMIN_EMAIL="admin@example.com"
+$env:SEED_ADMIN_PASSWORD="<set-locally>"
+npm run seed
 ```
 
-Docker Compose runs `prisma migrate deploy` for the API container before the NestJS server starts.
+`npm run db:push` deploys pending SQL migrations to the linked `ai-trading-assistant` Supabase project.
 The seed command creates or refreshes the admin user and ensures it has a default paper portfolio, risk rules, paper broker account, and watchlist.
 
-The default no-env API runtime uses an in-memory store for deterministic MVP validation. When `DATABASE_URL` is configured, the API hydrates users, sessions, portfolios, strategies, signals, orders, trades, positions, risk rules, broker accounts, watchlists, notifications, market prices, and audit logs from PostgreSQL and persists state changes through Prisma.
+The default no-env API runtime uses an in-memory store for deterministic MVP validation. When `DATABASE_URL` is configured, the API hydrates users, sessions, portfolios, strategies, signals, orders, trades, positions, risk rules, broker accounts, watchlists, notifications, market prices, and audit logs from Supabase Postgres and persists state changes through Prisma.
 
-When `REDIS_URL` is configured, notifications are pushed to `queue:notifications` and market candles are cached under `cache:market:<SYMBOL>:<timeframe>:candles`. `/api/v1/health` probes PostgreSQL through Prisma and Redis with `PING`.
+Notification delivery events are stored in `notification_queue`, and short-lived market candle snapshots are stored in `market_data_cache`. `/api/v1/health` probes Supabase through Prisma.
 
 ## Run Locally
 
@@ -87,7 +91,7 @@ Run the full container stack:
 docker compose up --build
 ```
 
-Container healthchecks are defined for the AI service, API, and web app. The API exposes `GET /api/v1/health`, which reports PostgreSQL/Prisma and Redis readiness when `DATABASE_URL` and `REDIS_URL` are configured.
+Container healthchecks are defined for the AI service, API, and web app. The API exposes `GET /api/v1/health`, which reports Supabase/Prisma readiness when `DATABASE_URL` is configured.
 Every service uses Compose's `unless-stopped` restart policy. Backup, restore, alerting, and recovery procedures are documented in `docs/operations.md`.
 `npm run test` also includes a static infrastructure check that verifies the Compose services, healthchecks, required secret interpolation, migration command, Dockerfiles, and CI validation steps. This does not replace a real container runtime startup check.
 
@@ -155,7 +159,7 @@ npx playwright install --with-deps
 - Rejected trades are stored as rejected orders and produce risk audit events.
 - Orders retain append-only status history for pending, submission, fill, rejection, and cancellation transitions.
 - Successful trading actions create immutable audit logs.
-- PostgreSQL rejects `UPDATE` and `DELETE` operations against `audit_logs` through an append-only trigger.
+- Supabase Postgres rejects `UPDATE` and `DELETE` operations against `audit_logs` through an append-only trigger.
 - Broker access is isolated behind `BrokerAdapter`; paper broker is the default.
 - Alpaca credentials are validated against Alpaca before storage and encrypted with AES-256-GCM; public responses expose only whether credentials exist.
 - Audit metadata redacts password, token, secret, credential, authorization, and API key fields.

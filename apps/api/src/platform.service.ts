@@ -73,8 +73,7 @@ import { SessionActivityService } from "./auth/session-activity.service.js";
 import { PrismaAuditSink } from "./audit/prisma-audit.sink.js";
 import { DatabaseHealthService } from "./infrastructure/database-health.service.js";
 import { PrismaPlatformRepository } from "./infrastructure/prisma-platform.repository.js";
-import { RedisCacheQueueService } from "./infrastructure/redis-cache-queue.service.js";
-import { RedisHealthService } from "./infrastructure/redis-health.service.js";
+import { SupabaseCacheQueueService } from "./infrastructure/supabase-cache-queue.service.js";
 import { OperationalMetricsService } from "./monitoring/operational-metrics.service.js";
 import { RealtimeEventBus } from "./realtime/realtime-event-bus.js";
 import {
@@ -369,14 +368,12 @@ export class PlatformService implements OnModuleInit {
     private readonly sessionActivity: SessionActivityService,
     @Inject(DatabaseHealthService)
     private readonly databaseHealth: DatabaseHealthService,
-    @Inject(RedisHealthService)
-    private readonly redisHealth: RedisHealthService,
     @Inject(PrismaAuditSink)
     private readonly auditSink: PrismaAuditSink,
     @Inject(PrismaPlatformRepository)
     private readonly platformRepository: PrismaPlatformRepository,
-    @Inject(RedisCacheQueueService)
-    private readonly redisCacheQueue: RedisCacheQueueService,
+    @Inject(SupabaseCacheQueueService)
+    private readonly supabaseCacheQueue: SupabaseCacheQueueService,
     @Inject(OperationalMetricsService)
     private readonly operationalMetrics: OperationalMetricsService,
     @Inject(RealtimeEventBus)
@@ -415,7 +412,7 @@ export class PlatformService implements OnModuleInit {
     this.persist(
       Promise.all([
         this.platformRepository.persistNotification(notification),
-        this.redisCacheQueue.enqueueNotification(notification)
+        this.supabaseCacheQueue.enqueueNotification(notification)
       ])
     );
     return notification;
@@ -1419,12 +1416,12 @@ export class PlatformService implements OnModuleInit {
       this.persist(
         Promise.all([
           this.platformRepository.persistMarketData(normalizedSymbol, timeframe, candles),
-          this.redisCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles)
+          this.supabaseCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles)
         ])
       );
     }
     const candles = this.store.marketData.get(key) ?? [];
-    this.persist(this.redisCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles));
+    this.persist(this.supabaseCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles));
     return candles;
   }
 
@@ -2170,23 +2167,18 @@ export class PlatformService implements OnModuleInit {
   }
 
   async getSystemHealth(actorUserId?: UUID): Promise<JsonObject> {
-    const [database, redis] = await Promise.all([
-      this.databaseHealth.check(),
-      this.redisHealth.check()
-    ]);
+    const database = await this.databaseHealth.check();
 
     if (actorUserId) {
       this.recordAdminAction(actorUserId, "ADMIN_SYSTEM_HEALTH_VIEWED", "SYSTEM", {
-        databaseStatus: database.status,
-        redisStatus: redis.status
+        supabaseStatus: database.status
       });
     }
 
     return {
       api: "ok",
-      persistenceMode: process.env.DATABASE_URL ? "postgresql-prisma" : "in-memory-test",
-      database: database as unknown as JsonObject,
-      redis: redis as unknown as JsonObject,
+      persistenceMode: process.env.DATABASE_URL ? "supabase-prisma" : "in-memory-test",
+      supabase: database as unknown as JsonObject,
       broker: "paper",
       aiService: process.env.AI_SERVICE_URL ? "configured" : "fallback-local-model",
       uptimeSeconds: Math.round(process.uptime())
@@ -2194,9 +2186,9 @@ export class PlatformService implements OnModuleInit {
   }
 
   async getOperationalMetrics(actorUserId: UUID): Promise<OperationalMetricsSnapshot> {
-    const queueDepth = await this.redisCacheQueue.getNotificationQueueDepth();
+    const queueDepth = await this.supabaseCacheQueue.getNotificationQueueDepth();
     const snapshot = this.operationalMetrics.snapshot({
-      queueConfigured: this.redisCacheQueue.isConfigured(),
+      queueConfigured: this.supabaseCacheQueue.isConfigured(),
       queueDepth
     });
     this.recordAdminAction(actorUserId, "ADMIN_METRICS_VIEWED", "SYSTEM", {

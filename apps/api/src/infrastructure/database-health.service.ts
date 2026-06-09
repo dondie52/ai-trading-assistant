@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "./prisma.service.js";
 
 export interface DatabaseHealth {
-  readonly mode: "postgresql";
+  readonly mode: "supabase";
   readonly configured: boolean;
   readonly reachable: boolean;
   readonly status: "not_configured" | "ok" | "error";
@@ -15,7 +15,7 @@ export class DatabaseHealthService {
   async check(): Promise<DatabaseHealth> {
     if (!process.env.DATABASE_URL) {
       return {
-        mode: "postgresql",
+        mode: "supabase",
         configured: false,
         reachable: false,
         status: "not_configured"
@@ -25,14 +25,14 @@ export class DatabaseHealthService {
     try {
       await this.prisma.client().$queryRaw`SELECT 1`;
       return {
-        mode: "postgresql",
+        mode: "supabase",
         configured: true,
         reachable: true,
         status: "ok"
       };
     } catch {
       return {
-        mode: "postgresql",
+        mode: "supabase",
         configured: true,
         reachable: false,
         status: "error"
