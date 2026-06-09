@@ -265,7 +265,7 @@ export interface MarketQuote {
   readonly ask: number;
   readonly changePercent: number;
   readonly timestamp: string;
-  readonly source: "PAPER_SIMULATED";
+  readonly source: "ALPACA" | "UNAVAILABLE";
 }
 
 export interface IndicatorSnapshot {
@@ -428,7 +428,10 @@ export type RealtimeEvent =
         readonly statusEvent: OrderStatusEvent;
       }
     >
-  | RealtimeEventBase<"trade.executed", { readonly trade: Trade }>
+  | RealtimeEventBase<
+      "trade.executed",
+      { readonly trade: Trade } | { readonly order: Order; readonly portfolio: Portfolio }
+    >
   | RealtimeEventBase<"notification.created", { readonly notification: Notification }>;
 
 export interface RealtimeError {

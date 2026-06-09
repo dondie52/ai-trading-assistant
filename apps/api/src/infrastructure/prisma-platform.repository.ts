@@ -138,6 +138,7 @@ export class PrismaPlatformRepository {
         status: account.status === "CONNECTED" ? "CONNECTED" : "DISCONNECTED",
         ...(account.encryptedApiKey ? { encryptedApiKey: account.encryptedApiKey } : {}),
         ...(account.encryptedSecret ? { encryptedSecret: account.encryptedSecret } : {}),
+        environment: account.environment === "LIVE" ? "LIVE" : "PAPER",
         createdAt: account.createdAt.toISOString()
       });
     }
@@ -678,6 +679,7 @@ export class PrismaPlatformRepository {
         userId: account.userId,
         brokerName: account.brokerName,
         accountId: account.accountId,
+        environment: account.environment ?? "PAPER",
         encryptedApiKey: account.encryptedApiKey ?? null,
         encryptedSecret: account.encryptedSecret ?? null,
         status: account.status,
@@ -685,6 +687,7 @@ export class PrismaPlatformRepository {
       },
       update: {
         accountId: account.accountId,
+        environment: account.environment ?? "PAPER",
         encryptedApiKey: account.encryptedApiKey ?? null,
         encryptedSecret: account.encryptedSecret ?? null,
         status: account.status

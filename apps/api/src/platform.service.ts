@@ -51,7 +51,6 @@ import type {
 } from "@trading/types";
 import {
   calculateIndicators,
-  generateHistoricalPrices,
   generateSignal,
   normalizeEmail,
   runHistoricalBacktest,
@@ -66,7 +65,8 @@ import {
 import { PaperBrokerAdapter } from "./brokers/paper-broker.adapter.js";
 import { AlpacaBrokerAdapter } from "./brokers/alpaca-broker.adapter.js";
 import { BrokerCredentialService } from "./brokers/broker-credential.service.js";
-import type { BrokerExecutionResult } from "./brokers/broker.interface.js";
+import type { BrokerAdapter, BrokerCredentials, BrokerExecutionResult } from "./brokers/broker.interface.js";
+import { resolveEnvAlpacaCredentials } from "./brokers/alpaca-client.js";
 import { MfaService } from "./auth/mfa.service.js";
 import { TokenService } from "./auth/token.service.js";
 import { SessionActivityService } from "./auth/session-activity.service.js";
@@ -91,16 +91,6 @@ const canExposePasswordResetToken = (): boolean =>
   process.env.NODE_ENV !== "production" && process.env.EXPOSE_PASSWORD_RESET_TOKEN_FOR_TESTS === "true";
 const marketTimeframes = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const marketDataKey = (symbol: string, timeframe: MarketTimeframe): string => `${symbol.toUpperCase()}:${timeframe}`;
-const seedPriceForSymbol = (symbol: string): number => {
-  switch (symbol.toUpperCase()) {
-    case "MSFT":
-      return 410;
-    case "NVDA":
-      return 122;
-    default:
-      return 258;
-  }
-};
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -529,8 +519,8 @@ export class PlatformService implements OnModuleInit {
     this.addNotification({
       userId: user.id,
       notificationType: "SYSTEM",
-      title: "Paper account ready",
-      message: "Your simulated trading account has been provisioned."
+      title: "Account ready",
+      message: "Connect Alpaca in Settings to load your broker balance and market data."
     });
 
     return { user: sanitizeUser(user) };
@@ -1031,6 +1021,11 @@ export class PlatformService implements OnModuleInit {
     return [...this.store.portfolios.values()].filter((portfolio) => portfolio.userId === userId);
   }
 
+  async listPortfoliosFresh(userId: UUID): Promise<readonly Portfolio[]> {
+    await this.syncAlpacaState(userId);
+    return this.listPortfolios(userId);
+  }
+
   deleteAccount(userId: UUID): { readonly deleted: true } {
     const existing = this.requireUser(userId);
     this.store.users.set(userId, {
@@ -1069,10 +1064,12 @@ export class PlatformService implements OnModuleInit {
 
     let encryptedApiKey: string | undefined;
     let encryptedSecret: string | undefined;
+    let resolvedAccountId = accountId;
     if (brokerName === "ALPACA") {
       const apiKey = readString(body, "apiKey", { required: true, max: 256 });
       const secret = readString(body, "secret", { required: true, max: 256 });
-      const valid = await this.alpacaBroker.validateConnection({ apiKey, secret, environment });
+      const credentials: BrokerCredentials = { apiKey, secret, environment };
+      const valid = await this.alpacaBroker.validateConnection(credentials);
       if (!valid) {
         this.store.appendAudit({
           userId,
@@ -1086,19 +1083,25 @@ export class PlatformService implements OnModuleInit {
           message: "Broker credentials could not be validated."
         });
       }
+      const alpacaAccount = await this.alpacaBroker.getAccount(credentials);
+      resolvedAccountId = alpacaAccount.accountNumber || accountId;
       encryptedApiKey = this.brokerCredentials.encrypt(apiKey);
       encryptedSecret = this.brokerCredentials.encrypt(secret);
     }
 
+    const existingAlpaca = this.listBrokerAccountRecords(userId).find(
+      (candidate) => candidate.brokerName === "ALPACA"
+    );
     const account: BrokerAccount = {
-      id: randomUUID(),
+      id: existingAlpaca?.id ?? randomUUID(),
       userId,
       brokerName,
-      accountId,
+      accountId: resolvedAccountId,
       status: "CONNECTED",
+      ...(brokerName === "ALPACA" ? { environment } : {}),
       ...(encryptedApiKey ? { encryptedApiKey } : {}),
       ...(encryptedSecret ? { encryptedSecret } : {}),
-      createdAt: isoNow()
+      createdAt: existingAlpaca?.createdAt ?? isoNow()
     };
     this.store.brokerAccounts.set(account.id, account);
     await this.platformRepository.persistBrokerAccount(account);
@@ -1110,11 +1113,14 @@ export class PlatformService implements OnModuleInit {
       entityId: account.id,
       metadata: {
         brokerName,
-        accountId,
+        accountId: resolvedAccountId,
         environment,
         credentialsEncrypted: brokerName === "ALPACA"
       }
     });
+    if (brokerName === "ALPACA") {
+      await this.syncAlpacaState(userId);
+    }
     return this.sanitizeBrokerAccount(account);
   }
 
@@ -1208,22 +1214,23 @@ export class PlatformService implements OnModuleInit {
     return report;
   }
 
-  runBacktest(userId: UUID, bodyValue: unknown): BacktestResult {
+  async runBacktest(userId: UUID, bodyValue: unknown): Promise<BacktestResult> {
     const body = asRecord(bodyValue);
     const symbol = readString(body, "symbol", { required: true, max: 16 }).toUpperCase();
     const strategyId = readString(body, "strategyId");
     const timeframe = normalizeMarketTimeframe(body.timeframe);
     const strategy = strategyId ? this.requireStrategy(userId, strategyId) : undefined;
     const configuration = strategy?.configuration ?? {};
+    const portfolioEquity = this.getPrimaryPortfolio(userId).portfolioValue;
     const readSetting = (key: string, fallback: number, min: number): number =>
       body[key] === undefined ? readConfigNumber(configuration, key, fallback) : readNumber(body, key, { min });
 
     let result: BacktestResult;
     try {
-      result = runHistoricalBacktest(this.listMarketData(symbol, timeframe), {
+      result = runHistoricalBacktest(await this.listMarketData(userId, symbol, timeframe), {
         symbol,
         timeframe,
-        startingEquity: readSetting("startingEquity", 100_000, 1),
+        startingEquity: readSetting("startingEquity", portfolioEquity > 0 ? portfolioEquity : 1, 1),
         fastPeriod: readSetting("fastPeriod", 10, 1),
         slowPeriod: readSetting("slowPeriod", 20, 2),
         maxPositionPercent: readSetting("maxPositionPercent", 20, 0.01),
@@ -1269,13 +1276,14 @@ export class PlatformService implements OnModuleInit {
     return backtest;
   }
 
-  runWalkForwardBacktest(userId: UUID, bodyValue: unknown): WalkForwardResult {
+  async runWalkForwardBacktest(userId: UUID, bodyValue: unknown): Promise<WalkForwardResult> {
     const body = asRecord(bodyValue);
     const symbol = readString(body, "symbol", { required: true, max: 16 }).toUpperCase();
     const strategyId = readString(body, "strategyId");
     const timeframe = normalizeMarketTimeframe(body.timeframe);
     const strategy = strategyId ? this.requireStrategy(userId, strategyId) : undefined;
     const configuration = strategy?.configuration ?? {};
+    const portfolioEquity = this.getPrimaryPortfolio(userId).portfolioValue;
     const readSetting = (key: string, fallback: number, min: number): number =>
       body[key] === undefined
         ? readConfigNumber(configuration, key, fallback)
@@ -1283,10 +1291,10 @@ export class PlatformService implements OnModuleInit {
 
     let result: WalkForwardResult;
     try {
-      result = runWalkForwardBacktest(this.listMarketData(symbol, timeframe), {
+      result = runWalkForwardBacktest(await this.listMarketData(userId, symbol, timeframe), {
         symbol,
         timeframe,
-        startingEquity: readSetting("startingEquity", 100_000, 1),
+        startingEquity: readSetting("startingEquity", portfolioEquity > 0 ? portfolioEquity : 1, 1),
         trainSize: readSetting("trainSize", 45, 10),
         testSize: readSetting("testSize", 20, 5),
         maxPositionPercent: readSetting("maxPositionPercent", 20, 0.01),
@@ -1407,48 +1415,72 @@ export class PlatformService implements OnModuleInit {
     return { deleted: true };
   }
 
-  listMarketData(symbol = "AAPL", timeframe: MarketTimeframe = "1m"): readonly MarketCandle[] {
+  async listMarketData(
+    userId: UUID | undefined,
+    symbol = "AAPL",
+    timeframe: MarketTimeframe = "1m"
+  ): Promise<readonly MarketCandle[]> {
+    const credentials = this.resolveAlpacaCredentials(userId);
+    if (!credentials) {
+      throw new NotFoundException({
+        code: "BROKER_NOT_CONNECTED",
+        message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
+      });
+    }
     const normalizedSymbol = symbol.toUpperCase();
     const key = marketDataKey(normalizedSymbol, timeframe);
-    if (!this.store.marketData.has(key)) {
-      const candles = generateHistoricalPrices(normalizedSymbol, 80, seedPriceForSymbol(normalizedSymbol), timeframe);
-      this.store.marketData.set(key, candles);
-      this.persist(
-        Promise.all([
-          this.platformRepository.persistMarketData(normalizedSymbol, timeframe, candles),
-          this.supabaseCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles)
-        ])
-      );
+    const candles = await this.alpacaBroker.getBars(normalizedSymbol, timeframe, credentials);
+    if (candles.length === 0) {
+      throw new NotFoundException({
+        code: "MARKET_DATA_UNAVAILABLE",
+        message: `Market data is unavailable for ${normalizedSymbol}.`
+      });
     }
-    const candles = this.store.marketData.get(key) ?? [];
-    this.persist(this.supabaseCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles));
+    this.store.marketData.set(key, candles);
+    this.persist(
+      Promise.all([
+        this.platformRepository.persistMarketData(normalizedSymbol, timeframe, candles),
+        this.supabaseCacheQueue.cacheMarketData(normalizedSymbol, timeframe, candles)
+      ])
+    );
     return candles;
   }
 
-  getIndicators(symbol = "AAPL", timeframe: MarketTimeframe = "1m"): IndicatorSnapshot {
-    return calculateIndicators(this.listMarketData(symbol, timeframe));
+  async getIndicators(
+    userId: UUID | undefined,
+    symbol = "AAPL",
+    timeframe: MarketTimeframe = "1m"
+  ): Promise<IndicatorSnapshot> {
+    return calculateIndicators(await this.listMarketData(userId, symbol, timeframe));
   }
 
-  getMarketQuote(symbol = "AAPL", timeframe: MarketTimeframe = "1m"): MarketQuote {
+  async getMarketQuote(
+    userId: UUID | undefined,
+    symbol = "AAPL",
+    timeframe: MarketTimeframe = "1m"
+  ): Promise<MarketQuote> {
     const normalizedSymbol = symbol.toUpperCase();
-    const candles = this.listMarketData(normalizedSymbol, timeframe);
-    const latest = candles[candles.length - 1];
-    if (!latest) {
-      throw new NotFoundException({ code: "MARKET_DATA_UNAVAILABLE", message: "Market data is unavailable." });
+    const credentials = this.resolveAlpacaCredentials(userId);
+    if (!credentials) {
+      throw new NotFoundException({
+        code: "BROKER_NOT_CONNECTED",
+        message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
+      });
     }
-    const minuteBucket = Math.floor(Date.now() / 60_000);
-    const movement = Math.sin(minuteBucket + normalizedSymbol.length) * 0.0015;
-    const price = Number((latest.close * (1 + movement)).toFixed(2));
-    const previousClose = candles[candles.length - 2]?.close ?? latest.close;
-    const spread = Math.max(0.01, price * 0.0002);
+    const candles = await this.listMarketData(userId, normalizedSymbol, timeframe);
+    const latestQuote = await this.alpacaBroker.getLatestQuote(normalizedSymbol, credentials);
+    const previousClose = candles[candles.length - 2]?.close ?? candles[candles.length - 1]?.close ?? latestQuote.price;
     return {
       symbol: normalizedSymbol,
-      price,
-      bid: Number((price - spread / 2).toFixed(2)),
-      ask: Number((price + spread / 2).toFixed(2)),
-      changePercent: Number((((price - previousClose) / previousClose) * 100).toFixed(2)),
-      timestamp: isoNow(),
-      source: "PAPER_SIMULATED"
+      price: Number(latestQuote.price.toFixed(2)),
+      bid: Number(latestQuote.bid.toFixed(2)),
+      ask: Number(latestQuote.ask.toFixed(2)),
+      changePercent:
+        previousClose > 0
+          ? Number((((latestQuote.price - previousClose) / previousClose) * 100).toFixed(2))
+          : 0,
+      timestamp: latestQuote.timestamp,
+      source: "ALPACA"
     };
   }
 
@@ -1490,7 +1522,7 @@ export class PlatformService implements OnModuleInit {
       throw new BadRequestException({ code: "STRATEGY_INACTIVE", message: "Strategy must be active." });
     }
 
-    const candles = this.listMarketData(symbol, timeframe);
+    const candles = await this.listMarketData(userId, symbol, timeframe);
     const generated = await this.generateSignalViaAiService(symbol, candles);
     const signal: Signal = {
       id: randomUUID(),
@@ -1596,7 +1628,7 @@ export class PlatformService implements OnModuleInit {
       };
     }
 
-    const price = readLatestClose(signal, this.listMarketData(symbol, timeframe));
+    const price = readLatestClose(signal, await this.listMarketData(userId, symbol, timeframe));
     const side = signal.signalType;
     const stopLoss =
       side === "BUY" ? price * (1 - stopLossPercent / 100) : price * (1 + stopLossPercent / 100);
@@ -1696,7 +1728,8 @@ export class PlatformService implements OnModuleInit {
     const orderType = readEnum<OrderType>(body, "orderType", ["MARKET", "LIMIT", "STOP"], "MARKET");
     const mode = readEnum<TradingMode>(body, "mode", ["MANUAL", "SEMI_AUTO", "AUTO"], "MANUAL");
     const requestedPrice = readNumber(body, "price", { required: true, min: 0.01 });
-    const marketPrice = this.getMarketQuote(symbol, "1m").price;
+    await this.syncAlpacaState(userId);
+    const marketPrice = (await this.getMarketQuote(userId, symbol, "1m")).price;
     const price = orderType === "MARKET" ? marketPrice : requestedPrice;
     const stopLoss = readNumber(body, "stopLoss", { required: true, min: 0.01 });
     const takeProfit = readNumber(body, "takeProfit", { required: true, min: 0.01 });
@@ -1729,10 +1762,11 @@ export class PlatformService implements OnModuleInit {
       requestedQuantity
     });
     const quantity = requestedQuantity ?? riskDecision.calculatedQuantity;
+    const executionTarget = this.resolveExecutionBroker(userId);
     const baseOrder = {
       id: randomUUID(),
       userId,
-      brokerAccountId: this.requirePaperBrokerAccount(userId).id,
+      brokerAccountId: executionTarget.account.id,
       symbol,
       side,
       orderType,
@@ -1791,7 +1825,7 @@ export class PlatformService implements OnModuleInit {
       metadata: { symbol, side, quantity, mode }
     });
 
-    const brokerReady = await this.paperBroker.validateConnection();
+    const brokerReady = await executionTarget.adapter.validateConnection(executionTarget.credentials);
     if (!brokerReady) {
       const rejectedOrder: Order = { ...order, status: "REJECTED" };
       this.store.orders.set(rejectedOrder.id, rejectedOrder);
@@ -1803,20 +1837,26 @@ export class PlatformService implements OnModuleInit {
         action: "BROKER_REJECTED_ORDER",
         entityType: "ORDER",
         entityId: order.id,
-        metadata: { broker: this.paperBroker.name, reason: "unavailable" }
+        metadata: { broker: executionTarget.adapter.name, reason: "unavailable" }
       });
       this.operationalMetrics.recordTrade(performance.now() - startedAt, "rejected");
-      throw new UnprocessableEntityException({ code: "BROKER_UNAVAILABLE", message: "Paper broker is unavailable." });
+      throw new UnprocessableEntityException({
+        code: "BROKER_UNAVAILABLE",
+        message: "Broker connection is unavailable."
+      });
     }
 
     const submittedOrder: Order = { ...order, status: "SUBMITTED" };
     this.store.orders.set(submittedOrder.id, submittedOrder);
     await this.platformRepository.persistOrder(submittedOrder);
-    await this.trackOrderStatus(submittedOrder, { broker: this.paperBroker.name });
+    await this.trackOrderStatus(submittedOrder, { broker: executionTarget.adapter.name });
 
     let execution: BrokerExecutionResult;
     try {
-      execution = await this.paperBroker.submitOrder(submittedOrder, marketPrice);
+      execution =
+        executionTarget.adapter.name === "ALPACA"
+          ? await this.alpacaBroker.submitOrder(submittedOrder, marketPrice, executionTarget.credentials)
+          : await this.paperBroker.submitOrder(submittedOrder, marketPrice);
     } catch {
       const rejectedOrder: Order = { ...submittedOrder, status: "REJECTED" };
       this.store.orders.set(rejectedOrder.id, rejectedOrder);
@@ -1828,7 +1868,7 @@ export class PlatformService implements OnModuleInit {
         action: "BROKER_REJECTED_ORDER",
         entityType: "ORDER",
         entityId: order.id,
-        metadata: { broker: this.paperBroker.name, reason: "submission_failed" }
+        metadata: { broker: executionTarget.adapter.name, reason: "submission_failed" }
       });
       this.operationalMetrics.recordTrade(performance.now() - startedAt, "rejected");
       throw new UnprocessableEntityException({
@@ -1836,7 +1876,10 @@ export class PlatformService implements OnModuleInit {
         message: "Broker order submission failed."
       });
     }
-    const result = await this.applyPaperExecution(submittedOrder, execution, portfolio, existingPosition);
+    const result =
+      executionTarget.adapter.name === "ALPACA"
+        ? await this.applyBrokerExecution(submittedOrder, execution, executionTarget.adapter.name)
+        : await this.applyPaperExecution(submittedOrder, execution, portfolio, existingPosition);
     this.operationalMetrics.recordTrade(
       performance.now() - startedAt,
       result.order.status === "FILLED" ? "executed" : "submitted"
@@ -2014,9 +2057,12 @@ export class PlatformService implements OnModuleInit {
     symbol = "AAPL",
     timeframe: MarketTimeframe = "1m"
   ): Promise<MarketQuote> {
-    const quote = this.getMarketQuote(symbol, timeframe);
-    await this.processPendingPaperOrders(quote.symbol, quote.price);
-    await this.markPositionsToMarket(userId, quote.symbol, quote.price);
+    await this.syncAlpacaState(userId);
+    const quote = await this.getMarketQuote(userId, symbol, timeframe);
+    if (!this.usesAlpacaExecution(userId)) {
+      await this.processPendingPaperOrders(quote.symbol, quote.price);
+      await this.markPositionsToMarket(userId, quote.symbol, quote.price);
+    }
     return quote;
   }
 
@@ -2277,6 +2323,170 @@ export class PlatformService implements OnModuleInit {
       throw new NotFoundException({ code: "NOT_FOUND", message: "Signal not found." });
     }
     return signal;
+  }
+
+  private resolveAlpacaCredentials(userId?: UUID): BrokerCredentials | undefined {
+    if (userId) {
+      const account = this.getAlpacaBrokerAccount(userId);
+      if (account?.encryptedApiKey && account.encryptedSecret) {
+        return {
+          apiKey: this.brokerCredentials.decrypt(account.encryptedApiKey),
+          secret: this.brokerCredentials.decrypt(account.encryptedSecret),
+          environment: account.environment ?? "PAPER"
+        };
+      }
+    }
+    return resolveEnvAlpacaCredentials();
+  }
+
+  private getAlpacaBrokerAccount(userId: UUID): BrokerAccount | undefined {
+    return [...this.store.brokerAccounts.values()].find(
+      (candidate) =>
+        candidate.userId === userId &&
+        candidate.brokerName === "ALPACA" &&
+        candidate.status === "CONNECTED"
+    );
+  }
+
+  private usesAlpacaExecution(userId: UUID): boolean {
+    return this.getAlpacaBrokerAccount(userId) !== undefined;
+  }
+
+  private resolveExecutionBroker(userId: UUID): {
+    readonly adapter: BrokerAdapter;
+    readonly account: BrokerAccount;
+    readonly credentials?: BrokerCredentials;
+  } {
+    const alpacaAccount = this.getAlpacaBrokerAccount(userId);
+    if (alpacaAccount?.encryptedApiKey && alpacaAccount.encryptedSecret) {
+      return {
+        adapter: this.alpacaBroker,
+        account: alpacaAccount,
+        credentials: {
+          apiKey: this.brokerCredentials.decrypt(alpacaAccount.encryptedApiKey),
+          secret: this.brokerCredentials.decrypt(alpacaAccount.encryptedSecret),
+          environment: alpacaAccount.environment ?? "PAPER"
+        }
+      };
+    }
+    return {
+      adapter: this.paperBroker,
+      account: this.requirePaperBrokerAccount(userId)
+    };
+  }
+
+  async syncAlpacaState(userId: UUID): Promise<void> {
+    const account = this.getAlpacaBrokerAccount(userId);
+    if (!account?.encryptedApiKey || !account.encryptedSecret) {
+      return;
+    }
+    const credentials: BrokerCredentials = {
+      apiKey: this.brokerCredentials.decrypt(account.encryptedApiKey),
+      secret: this.brokerCredentials.decrypt(account.encryptedSecret),
+      environment: account.environment ?? "PAPER"
+    };
+
+    const [alpacaAccount, alpacaPositions] = await Promise.all([
+      this.alpacaBroker.getAccount(credentials),
+      this.alpacaBroker.getPositions(credentials)
+    ]);
+
+    const portfolio = this.getPrimaryPortfolio(userId);
+    const unrealizedPnl = alpacaPositions.reduce((sum, position) => sum + position.unrealizedPnl, 0);
+    const updatedPortfolio: Portfolio = {
+      ...portfolio,
+      portfolioName: credentials.environment === "LIVE" ? "Alpaca Live Account" : "Alpaca Paper Account",
+      portfolioValue: Number(alpacaAccount.equity.toFixed(2)),
+      cashBalance: Number(alpacaAccount.cash.toFixed(2)),
+      unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
+      realizedPnl: Number((alpacaAccount.equity - alpacaAccount.cash - unrealizedPnl).toFixed(2))
+    };
+    this.store.portfolios.set(updatedPortfolio.id, updatedPortfolio);
+    await this.platformRepository.persistPortfolio(updatedPortfolio);
+
+    for (const [positionId, position] of this.store.positions.entries()) {
+      if (position.userId === userId) {
+        this.store.positions.delete(positionId);
+      }
+    }
+
+    const now = isoNow();
+    for (const alpacaPosition of alpacaPositions) {
+      const position: Position = {
+        id: randomUUID(),
+        userId,
+        symbol: alpacaPosition.symbol,
+        quantity: alpacaPosition.quantity,
+        averagePrice: alpacaPosition.averagePrice,
+        unrealizedPnl: alpacaPosition.unrealizedPnl,
+        updatedAt: now
+      };
+      this.store.positions.set(position.id, position);
+      await this.platformRepository.persistPosition(position);
+    }
+  }
+
+  private async applyBrokerExecution(
+    submittedOrder: Order,
+    execution: BrokerExecutionResult,
+    brokerName: string
+  ): Promise<OrderExecutionPayload> {
+    const executedOrder: Order = {
+      ...submittedOrder,
+      quantity: execution.filledQuantity || submittedOrder.quantity,
+      price: execution.filledAveragePrice || submittedOrder.price,
+      status: execution.status
+    };
+    this.store.orders.set(executedOrder.id, executedOrder);
+    await this.platformRepository.persistOrder(executedOrder);
+    await this.trackOrderStatus(executedOrder, {
+      broker: brokerName,
+      brokerOrderId: execution.brokerOrderId,
+      filledQuantity: execution.filledQuantity,
+      filledAveragePrice: execution.filledAveragePrice
+    });
+
+    await this.syncAlpacaState(executedOrder.userId);
+    const portfolio = this.getPrimaryPortfolio(executedOrder.userId);
+    const position = this.listPositions(executedOrder.userId).find(
+      (candidate) => candidate.symbol === executedOrder.symbol
+    );
+
+    if (executedOrder.status === "FILLED" || executedOrder.status === "PARTIALLY_FILLED") {
+      this.store.appendAudit({
+        userId: executedOrder.userId,
+        actorUserId: executedOrder.userId,
+        action: "TRADE_EXECUTED",
+        entityType: "ORDER",
+        entityId: executedOrder.id,
+        metadata: {
+          broker: brokerName,
+          brokerOrderId: execution.brokerOrderId,
+          symbol: executedOrder.symbol,
+          side: executedOrder.side,
+          quantity: executedOrder.quantity,
+          price: executedOrder.price
+        }
+      });
+      this.addNotification({
+        userId: executedOrder.userId,
+        notificationType: "TRADE",
+        title: "Broker trade executed",
+        message: `${executedOrder.side} ${executedOrder.quantity.toFixed(2)} ${executedOrder.symbol} filled at ${executedOrder.price.toFixed(2)}`
+      });
+      this.realtime.publish({
+        userId: executedOrder.userId,
+        type: "trade.executed",
+        data: { order: executedOrder, portfolio }
+      });
+    }
+
+    return {
+      order: executedOrder,
+      ...(position ? { position } : {}),
+      portfolio,
+      riskDecision: executedOrder.riskDecision
+    };
   }
 
   private requirePaperBrokerAccount(userId: UUID): BrokerAccount {

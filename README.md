@@ -32,10 +32,12 @@ Required production values:
 - `NEXT_PUBLIC_API_URL`
 - `AI_SERVICE_URL`
 
-Optional broker values:
+Optional broker values (required for live market data unless each user connects Alpaca in the app):
 
 - `ALPACA_API_KEY`
 - `ALPACA_SECRET_KEY`
+- `ALPACA_ENVIRONMENT` (`PAPER` or `LIVE`, default `PAPER`)
+- `ALLOW_ALPACA_LIVE_TRADING=true` (required before routing orders to a live Alpaca account)
 
 Optional API safety values:
 

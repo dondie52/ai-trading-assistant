@@ -145,6 +145,19 @@ describe("local container stack definition", () => {
     expect(aiDockerfile).toContain("uvicorn");
   });
 
+  it("builds the Vercel web deployment from the monorepo workspace", () => {
+    const rootConfig = asRecord(JSON.parse(readText("vercel.json")), "root Vercel config");
+    const webConfig = asRecord(JSON.parse(readText("apps/web/vercel.json")), "web Vercel config");
+
+    expect(rootConfig.framework).toBe("nextjs");
+    expect(rootConfig.installCommand).toBe("npm ci");
+    expect(rootConfig.buildCommand).toContain("npm run build:packages");
+    expect(rootConfig.buildCommand).toContain("npm run build -w @trading/web");
+    expect(rootConfig.outputDirectory).toBe("apps/web/.next");
+    expect(webConfig.installCommand).toBe("cd ../.. && npm ci");
+    expect(webConfig.buildCommand).toContain("cd ../..");
+  });
+
   it("keeps CI wired to install Playwright browsers and run validation", () => {
     const workflow = readYaml(".github/workflows/ci.yml");
     const jobs = asRecord(workflow.jobs, "workflow jobs");

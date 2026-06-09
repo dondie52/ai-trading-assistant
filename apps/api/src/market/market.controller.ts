@@ -10,15 +10,16 @@ export class MarketController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
 
   @Get("prices/:symbol")
-  prices(
+  async prices(
+    @CurrentUser() user: AuthenticatedPrincipal,
     @Param("symbol") symbol: string,
     @Query("timeframe") timeframe?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string
-  ): ReturnType<typeof ok> {
+  ): Promise<ReturnType<typeof ok>> {
     return ok(
       paginate(
-        this.platform.listMarketData(symbol, this.platform.parseMarketTimeframe(timeframe)),
+        await this.platform.listMarketData(user.sub, symbol, this.platform.parseMarketTimeframe(timeframe)),
         page,
         pageSize
       )
@@ -37,8 +38,12 @@ export class MarketController {
   }
 
   @Get("indicators/:symbol")
-  indicators(@Param("symbol") symbol: string, @Query("timeframe") timeframe?: string): ReturnType<typeof ok> {
-    return ok(this.platform.getIndicators(symbol, this.platform.parseMarketTimeframe(timeframe)));
+  async indicators(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Param("symbol") symbol: string,
+    @Query("timeframe") timeframe?: string
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.platform.getIndicators(user.sub, symbol, this.platform.parseMarketTimeframe(timeframe)));
   }
 
   @Get("watchlists")

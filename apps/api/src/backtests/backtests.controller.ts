@@ -9,12 +9,15 @@ export class BacktestsController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
 
   @Post("run")
-  run(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: unknown): ReturnType<typeof ok> {
-    return ok(this.platform.runBacktest(user.sub, body));
+  async run(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: unknown): Promise<ReturnType<typeof ok>> {
+    return ok(await this.platform.runBacktest(user.sub, body));
   }
 
   @Post("walk-forward")
-  walkForward(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: unknown): ReturnType<typeof ok> {
-    return ok(this.platform.runWalkForwardBacktest(user.sub, body));
+  async walkForward(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Body() body: unknown
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.platform.runWalkForwardBacktest(user.sub, body));
   }
 }
