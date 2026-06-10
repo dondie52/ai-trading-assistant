@@ -8,7 +8,7 @@
   },
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -b --force"
   },
   "dependencies": {
     "@trading/types": "0.1.0"
