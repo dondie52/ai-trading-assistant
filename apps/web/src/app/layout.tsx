@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "QuantCore AI Trading",
-  description: "Risk-first AI trading platform — invite-only access with admin-provisioned accounts"
+  description: "Risk-first AI trading platform for institutional-grade execution and control"
 };
 
 export default function RootLayout({ children }: { readonly children: ReactNode }): ReactElement {
