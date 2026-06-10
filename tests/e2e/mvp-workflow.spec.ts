@@ -46,15 +46,24 @@ test.describe.serial("AI Trading Platform MVP", () => {
     expect(adminEmail).toBeTruthy();
     expect(adminPassword).toBeTruthy();
 
-    await test.step("User registration", async () => {
+    await test.step("Admin provisions trader account", async () => {
       await page.goto("/");
-      await page.getByTestId("register-email").fill(traderEmail);
-      await page.getByTestId("register-password").fill(traderPassword);
-      await page.getByTestId("register-submit").click();
-      await expect(page.getByTestId("auth-notice")).toContainText("Registration complete");
+      await page.getByTestId("login-email").fill(adminEmail ?? "");
+      await page.getByTestId("login-password").fill(adminPassword ?? "");
+      await page.getByTestId("login-submit").click();
+      await expect(page.getByTestId("dashboard-title")).toContainText("Trader Dashboard");
+      await page.getByTestId("tab-admin").click();
+      await expect(page.getByTestId("admin-view")).toBeVisible();
+      await page.getByTestId("admin-create-email").fill(traderEmail);
+      await page.getByTestId("admin-create-password").fill(traderPassword);
+      await page.getByTestId("admin-create-submit").click();
+      await expect(page.getByTestId("auth-notice")).toContainText("created");
+      await page.getByRole("button", { name: "Logout" }).click();
     });
 
     await test.step("Login", async () => {
+      await page.getByTestId("login-email").fill(traderEmail);
+      await page.getByTestId("login-password").fill(traderPassword);
       await page.getByTestId("login-submit").click();
       await expect(page.getByTestId("dashboard-title")).toContainText("Trader Dashboard");
     });

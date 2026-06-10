@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
+import { hash } from "bcryptjs";
 import { PaperBrokerAdapter } from "../src/brokers/paper-broker.adapter.js";
 import { AlpacaBrokerAdapter } from "../src/brokers/alpaca-broker.adapter.js";
 import { BrokerCredentialService } from "../src/brokers/broker-credential.service.js";
@@ -54,13 +55,26 @@ const fundPaperPortfolio = (store: PlatformStore, userId: string, amount: number
   });
 };
 
-const registerAndLogin = async (
+const seedTestAdmin = async (store: PlatformStore): Promise<{ readonly adminId: string }> => {
+  const admin = store.createUser({
+    email: `admin-${randomUUID()}@example.com`,
+    passwordHash: await hash("AdminPass123!", 10),
+    firstName: "Test",
+    lastName: "Admin",
+    role: "ADMIN"
+  });
+  store.ensureDefaultAccountState(admin.id);
+  return { adminId: admin.id };
+};
+
+const provisionAndLogin = async (
   platform: PlatformService,
   store: PlatformStore,
   options: { readonly fundPaper?: number } = {}
 ): Promise<{ readonly userId: string }> => {
+  const { adminId } = await seedTestAdmin(store);
   const email = `integration-${randomUUID()}@example.com`;
-  await platform.register({
+  await platform.createAdminUser(adminId, {
     email,
     password: "ValidPass123!",
     firstName: "Integration",
@@ -109,11 +123,23 @@ describe("platform integration", () => {
     }
   });
 
-  it("registers, logs in, refreshes, and provisions a portfolio", async () => {
-    const { platform } = createPlatform();
+  it("rejects self-registration and provisions users through admin flow", async () => {
+    const { platform, store } = createPlatform();
     const email = `auth-${randomUUID()}@example.com`;
 
-    const registered = await platform.register({
+    await expect(
+      platform.register({
+        email,
+        password: "ValidPass123!",
+        firstName: "Ada",
+        lastName: "Quant"
+      })
+    ).rejects.toMatchObject({
+      response: { code: "REGISTRATION_DISABLED" }
+    });
+
+    const { adminId } = await seedTestAdmin(store);
+    const provisioned = await platform.createAdminUser(adminId, {
       email,
       password: "ValidPass123!",
       firstName: "Ada",
@@ -123,7 +149,7 @@ describe("platform integration", () => {
     const refreshed = await platform.refresh({ refreshToken: login.refreshToken });
     const portfolios = platform.listPortfolios(login.user.id);
 
-    expect(registered.user.email).toBe(email);
+    expect(provisioned.user.email).toBe(email);
     expect(refreshed.accessToken.length).toBeGreaterThan(20);
     expect(refreshed.refreshToken).not.toBe(login.refreshToken);
     await expect(platform.refresh({ refreshToken: login.refreshToken })).rejects.toMatchObject({
@@ -137,9 +163,10 @@ describe("platform integration", () => {
 
   it("resets passwords with hashed tokens and revokes active sessions", async () => {
     process.env.EXPOSE_PASSWORD_RESET_TOKEN_FOR_TESTS = "true";
-    const { platform } = createPlatform();
+    const { platform, store } = createPlatform();
     const email = `reset-${randomUUID()}@example.com`;
-    await platform.register({
+    const { adminId } = await seedTestAdmin(store);
+    await platform.createAdminUser(adminId, {
       email,
       password: "ValidPass123!",
       firstName: "Reset",
@@ -171,9 +198,10 @@ describe("platform integration", () => {
   });
 
   it("enforces TOTP MFA before issuing a login session", async () => {
-    const { platform } = createPlatform();
+    const { platform, store } = createPlatform();
     const email = `mfa-${randomUUID()}@example.com`;
-    await platform.register({
+    const { adminId } = await seedTestAdmin(store);
+    await platform.createAdminUser(adminId, {
       email,
       password: "ValidPass123!",
       firstName: "MFA",
@@ -208,7 +236,7 @@ describe("platform integration", () => {
 
   it("updates notification preferences and suppresses disabled alert types", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const strategy = platform.createStrategy(userId, {
       name: "Quiet Signals",
       status: "ACTIVE",
@@ -280,7 +308,7 @@ describe("platform integration", () => {
 
   it("creates a signal and executes a risk-approved paper trade", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const strategy = platform.createStrategy(userId, {
       name: "Momentum Guard",
       description: "Risk-first momentum",
@@ -318,7 +346,7 @@ describe("platform integration", () => {
 
   it("realizes PnL correctly when reducing a position and excludes open fills from analytics", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const entryPrice = (await platform.getMarketQuote(userId, "AAPL", "1m")).price;
 
     await platform.createOrder(userId, {
@@ -363,7 +391,7 @@ describe("platform integration", () => {
 
   it("marks open positions and portfolio equity to the latest paper quote", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const quote = await platform.getMarketQuote(userId, "AAPL", "1m");
     const execution = await platform.createOrder(userId, {
       symbol: "AAPL",
@@ -411,7 +439,7 @@ describe("platform integration", () => {
 
   it("runs fully automated signal generation, position sizing, risk validation, and paper execution", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const strategy = platform.createStrategy(userId, {
       name: "Autonomous Guard",
       description: "Fully automated risk-first strategy",
@@ -441,7 +469,7 @@ describe("platform integration", () => {
 
   it("runs audited historical backtests with trading costs", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const strategy = platform.createStrategy(userId, {
       name: "Backtest Guard",
       status: "ACTIVE",
@@ -469,7 +497,7 @@ describe("platform integration", () => {
 
   it("runs audited walk-forward testing across out-of-sample windows", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const result = await platform.runWalkForwardBacktest(userId, {
       symbol: "AAPL",
       timeframe: "1h",
@@ -492,7 +520,7 @@ describe("platform integration", () => {
 
   it("exports audited CSV and PDF performance reports", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
 
     const csv = platform.exportPerformanceReport(userId, "csv");
     const pdf = platform.exportPerformanceReport(userId, "pdf");
@@ -512,7 +540,7 @@ describe("platform integration", () => {
 
   it("exposes audited operational metrics without requiring Supabase", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const strategy = platform.createStrategy(userId, {
       name: "Metrics Guard",
       status: "ACTIVE",
@@ -530,7 +558,7 @@ describe("platform integration", () => {
 
   it("rejects trades before broker execution when risk rules fail", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
 
     await expect(
       platform.createOrder(userId, {
@@ -559,7 +587,7 @@ describe("platform integration", () => {
 
   it("enforces the compliance ceiling for risk per trade configuration", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
 
     expect(() =>
       platform.updateRiskRules(userId, {
@@ -579,7 +607,7 @@ describe("platform integration", () => {
 
   it("reevaluates pending paper limit orders against new market prices", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const currentPrice = (await platform.getMarketQuote(userId, "AAPL", "1m")).price;
     const limitPrice = Number((currentPrice - 2).toFixed(2));
     const submitted = await platform.createOrder(userId, {
@@ -613,7 +641,7 @@ describe("platform integration", () => {
   it("blocks a marketable pending order when current risk rules no longer approve it", async () => {
     const submitOrder = vi.spyOn(PaperBrokerAdapter.prototype, "submitOrder");
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     const currentPrice = (await platform.getMarketQuote(userId, "AAPL", "1m")).price;
     const limitPrice = Number((currentPrice - 2).toFixed(2));
     const submitted = await platform.createOrder(userId, {
@@ -661,7 +689,7 @@ describe("platform integration", () => {
 
   it("validates Alpaca credentials and never exposes credential material", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => ({
@@ -716,7 +744,7 @@ describe("platform integration", () => {
 
   it("records immutable audit events for admin dashboard reads", async () => {
     const { platform, store } = createPlatform();
-    const { userId } = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
 
     platform.listAdminUsers(userId);
     await platform.getSystemHealth(userId);
@@ -730,9 +758,9 @@ describe("platform integration", () => {
 
   it("lets administrators suspend users and revokes the target sessions", async () => {
     const { platform, store } = createPlatform();
-    const actor = await registerAndLogin(platform, store, { fundPaper: 100_000 });
+    const { adminId } = await seedTestAdmin(store);
     const targetEmail = `suspend-${randomUUID()}@example.com`;
-    await platform.register({
+    await platform.createAdminUser(adminId, {
       email: targetEmail,
       password: "ValidPass123!",
       firstName: "Target",
@@ -740,7 +768,7 @@ describe("platform integration", () => {
     });
     const targetLogin = await platform.login({ email: targetEmail, password: "ValidPass123!" });
 
-    const updated = await platform.updateAdminUserStatus(actor.userId, targetLogin.user.id, {
+    const updated = await platform.updateAdminUserStatus(adminId, targetLogin.user.id, {
       status: "SUSPENDED"
     });
 
