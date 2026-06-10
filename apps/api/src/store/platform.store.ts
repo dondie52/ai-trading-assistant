@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type {
   AuditLog,
+  DondieAgent,
   JsonObject,
   JsonValue,
   MarketCandle,
@@ -114,6 +115,7 @@ export class PlatformStore {
   readonly watchlists = new Map<UUID, Watchlist>();
   readonly passwordResetTokens = new Map<UUID, PasswordResetTokenRecord>();
   readonly marketData = new Map<string, readonly MarketCandle[]>();
+  readonly dondieAgents = new Map<UUID, DondieAgent>();
   readonly auditLogs: AuditLog[] = [];
   private auditSink?: AuditSink;
 

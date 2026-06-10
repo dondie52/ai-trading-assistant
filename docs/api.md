@@ -56,6 +56,11 @@ Implemented route groups:
 - `GET /signals/history`
 - `POST /signals/generate`
 - `POST /automation/run`
+- `GET /dondie` returns the authenticated user's Dondie agent or `null`
+- `POST /dondie/activate` requires `strategyId`; creates the agent on the `FREE` tier
+- `POST /dondie/pause`
+- `POST /dondie/resume`
+- `POST /dondie/run` optional `symbol` and `timeframe`; runs the free-tier brain and automation pipeline
 - `POST /orders`
 - `GET /orders`
 - `GET /orders/:id`

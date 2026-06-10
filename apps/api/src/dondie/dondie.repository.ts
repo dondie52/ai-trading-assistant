@@ -1,0 +1,92 @@
+import { Inject, Injectable } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
+import type { DondieAgent, UUID } from "@trading/types";
+import { PrismaService } from "../infrastructure/prisma.service.js";
+import type { PlatformStore } from "../store/platform.store.js";
+
+const toDate = (value: string): Date => new Date(value);
+
+const mapAgent = (row: {
+  id: string;
+  userId: string;
+  name: string;
+  tier: string;
+  status: string;
+  walletBalance: Prisma.Decimal;
+  strategyId: string | null;
+  scheduleMinutes: number;
+  symbolUniverse: string[];
+  lastRunAt: Date | null;
+  lastEvaluationScore: Prisma.Decimal | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): DondieAgent => ({
+  id: row.id,
+  userId: row.userId,
+  name: row.name,
+  tier: row.tier as DondieAgent["tier"],
+  status: row.status as DondieAgent["status"],
+  walletBalance: Number(row.walletBalance),
+  ...(row.strategyId ? { strategyId: row.strategyId } : {}),
+  scheduleMinutes: row.scheduleMinutes,
+  symbolUniverse: row.symbolUniverse,
+  ...(row.lastRunAt ? { lastRunAt: row.lastRunAt.toISOString() } : {}),
+  ...(row.lastEvaluationScore ? { lastEvaluationScore: Number(row.lastEvaluationScore) } : {}),
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString()
+});
+
+@Injectable()
+export class DondieRepository {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  isEnabled(): boolean {
+    return Boolean(process.env.DATABASE_URL);
+  }
+
+  async hydrate(store: PlatformStore): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    const agents = await this.prisma.client().dondieAgent.findMany();
+    for (const agent of agents) {
+      store.dondieAgents.set(agent.id, mapAgent(agent));
+    }
+  }
+
+  async persistAgent(agent: DondieAgent): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    await this.prisma.client().dondieAgent.upsert({
+      where: { id: agent.id },
+      create: {
+        id: agent.id,
+        userId: agent.userId,
+        name: agent.name,
+        tier: agent.tier,
+        status: agent.status,
+        walletBalance: agent.walletBalance,
+        strategyId: agent.strategyId ?? null,
+        scheduleMinutes: agent.scheduleMinutes,
+        symbolUniverse: [...agent.symbolUniverse],
+        lastRunAt: agent.lastRunAt ? toDate(agent.lastRunAt) : null,
+        lastEvaluationScore: agent.lastEvaluationScore ?? null,
+        createdAt: toDate(agent.createdAt),
+        updatedAt: toDate(agent.updatedAt)
+      },
+      update: {
+        name: agent.name,
+        tier: agent.tier,
+        status: agent.status,
+        walletBalance: agent.walletBalance,
+        strategyId: agent.strategyId ?? null,
+        scheduleMinutes: agent.scheduleMinutes,
+        symbolUniverse: [...agent.symbolUniverse],
+        lastRunAt: agent.lastRunAt ? toDate(agent.lastRunAt) : null,
+        lastEvaluationScore: agent.lastEvaluationScore ?? null,
+        updatedAt: toDate(agent.updatedAt)
+      }
+    });
+  }
+}

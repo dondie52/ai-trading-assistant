@@ -197,6 +197,80 @@ export interface AutomationRunResult {
   readonly execution?: OrderExecutionPayload;
 }
 
+export type DondieTier = "FREE" | "STANDARD" | "PRO";
+export type DondieAgentStatus = "ACTIVE" | "PAUSED" | "SUSPENDED";
+export type DondieSubscriptionPlan = "FREE" | "PRO";
+export type DondieSubscriptionStatus = "ACTIVE" | "CANCELLED" | "PAST_DUE";
+export type DondieLedgerEntryType = "CREDIT" | "DEBIT";
+
+export interface DondieAgent {
+  readonly id: UUID;
+  readonly userId: UUID;
+  readonly name: string;
+  readonly tier: DondieTier;
+  readonly status: DondieAgentStatus;
+  readonly walletBalance: number;
+  readonly strategyId?: UUID;
+  readonly scheduleMinutes: number;
+  readonly symbolUniverse: readonly string[];
+  readonly lastRunAt?: string;
+  readonly lastEvaluationScore?: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface DondieWalletLedgerEntry {
+  readonly id: UUID;
+  readonly agentId: UUID;
+  readonly entryType: DondieLedgerEntryType;
+  readonly reason: string;
+  readonly amount: number;
+  readonly balanceAfter: number;
+  readonly metadata: JsonObject;
+  readonly createdAt: string;
+}
+
+export interface DondieRunResult {
+  readonly agentId: UUID;
+  readonly tier: DondieTier;
+  readonly symbol: string;
+  readonly brain: string;
+  readonly reasoning: string;
+  readonly automation: AutomationRunResult;
+  readonly walletBalance: number;
+  readonly ranAt: string;
+}
+
+export interface DondieMemory {
+  readonly id: UUID;
+  readonly agentId: UUID;
+  readonly runId?: UUID;
+  readonly summary: string;
+  readonly evaluation: JsonObject;
+  readonly createdAt: string;
+}
+
+export interface DondieSubscription {
+  readonly id: UUID;
+  readonly userId: UUID;
+  readonly agentId: UUID;
+  readonly plan: DondieSubscriptionPlan;
+  readonly status: DondieSubscriptionStatus;
+  readonly monthlyPriceUsd: number;
+  readonly externalId?: string;
+  readonly revenueCredited: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface DondieBrainPlan {
+  readonly symbol: string;
+  readonly action: "EXECUTE" | "SKIP";
+  readonly side?: OrderSide;
+  readonly reasoning: string;
+  readonly confidence: number;
+}
+
 export interface Trade {
   readonly id: UUID;
   readonly orderId: UUID;
