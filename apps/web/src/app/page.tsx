@@ -35,6 +35,7 @@ import type {
   AuthTokens,
   DondieAgent,
   DondieRunResult,
+  DondieMemory,
   DondieSubscription,
   BacktestResult,
   IndicatorSnapshot,
@@ -282,6 +283,11 @@ export default function Page(): ReactElement {
     queryKey: ["dondie", accessToken],
     enabled: authenticated,
     queryFn: () => apiFetch<DondieAgent | null>("/dondie", {}, token)
+  });
+  const dondieMemories = useQuery({
+    queryKey: ["dondie-memories", accessToken],
+    enabled: authenticated && Boolean(dondieAgent.data),
+    queryFn: () => apiFetch<readonly DondieMemory[]>("/dondie/memories", {}, token)
   });
   const dondieSubscriptions = useQuery({
     queryKey: ["dondie-subscriptions", accessToken],
@@ -1216,11 +1222,31 @@ export default function Page(): ReactElement {
                 <div data-testid="dondie-panel" className="space-y-3">
                   {dondieAgent.data ? (
                     <>
-                      <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-3">
+                      <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-2 lg:grid-cols-4">
                         <SmallStat label="Tier" value={dondieAgent.data.tier} />
                         <SmallStat label="Status" value={dondieAgent.data.status} />
                         <SmallStat label="Wallet" value={formatCurrency(dondieAgent.data.walletBalance)} />
+                        <SmallStat
+                          label="Last Eval"
+                          value={
+                            dondieAgent.data.lastEvaluationScore !== undefined
+                              ? `${dondieAgent.data.lastEvaluationScore.toFixed(1)}`
+                              : "—"
+                          }
+                        />
                       </div>
+                      {dondieAgent.data.symbolUniverse.length > 0 ? (
+                        <p className="text-xs text-slate-400">
+                          Universe: {dondieAgent.data.symbolUniverse.join(", ")}
+                        </p>
+                      ) : null}
+                      {(dondieMemories.data ?? []).length > 0 ? (
+                        <div data-testid="dondie-memories" className="max-h-28 space-y-1 overflow-auto text-xs text-slate-300">
+                          {dondieMemories.data?.slice(0, 3).map((entry) => (
+                            <p key={entry.id}>{entry.summary}</p>
+                          ))}
+                        </div>
+                      ) : null}
                       {(dondieSubscriptions.data ?? []).some((entry) => entry.status === "ACTIVE") ? (
                         <p className="text-sm text-emerald-200">Dondie Pro subscription active.</p>
                       ) : (

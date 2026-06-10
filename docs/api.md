@@ -65,6 +65,8 @@ Implemented route groups:
 - `GET /dondie/subscriptions`
 - `POST /dondie/subscriptions` creates a Dondie Pro subscription and credits agent revenue share
 - `POST /dondie/subscriptions/:id/cancel`
+- `GET /dondie/memories` returns self-evaluation memories for the agent
+- `POST /dondie/universe` accepts `{ "symbols": ["AAPL", "MSFT"] }` to set the trading universe
 - `POST /orders`
 - `GET /orders`
 - `GET /orders/:id`

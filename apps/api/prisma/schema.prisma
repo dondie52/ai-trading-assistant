@@ -114,6 +114,7 @@ model DondieAgent {
   updatedAt           DateTime  @updatedAt @map("updated_at")
   user                User      @relation(fields: [userId], references: [id])
   walletLedger        DondieWalletLedgerEntry[]
+  memories            DondieMemory[]
   subscriptions       DondieSubscription[]
 
   @@index([status])
@@ -133,6 +134,19 @@ model DondieWalletLedgerEntry {
 
   @@index([agentId, createdAt])
   @@map("dondie_wallet_ledger")
+}
+
+model DondieMemory {
+  id         String     @id @default(uuid()) @db.Uuid
+  agentId    String     @map("agent_id") @db.Uuid
+  runId      String?    @map("run_id") @db.Uuid
+  summary    String
+  evaluation Json       @map("evaluation_json")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  agent      DondieAgent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, createdAt])
+  @@map("dondie_memories")
 }
 
 model DondieSubscription {
