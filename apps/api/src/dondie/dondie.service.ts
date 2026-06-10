@@ -13,6 +13,7 @@ import { DondieBrainFreeService } from "./dondie-brain-free.service.js";
 import { dondieConfig } from "./dondie.config.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
+import { DondieWalletService } from "./dondie-wallet.service.js";
 
 const isoNow = (): string => new Date().toISOString();
 
@@ -44,7 +45,8 @@ export class DondieService implements OnModuleInit {
     @Inject(PlatformService) private readonly platform: PlatformService,
     @Inject(DondieRepository) private readonly repository: DondieRepository,
     @Inject(DondieBrainFreeService) private readonly freeBrain: DondieBrainFreeService,
-    @Inject(DondieScheduler) private readonly scheduler: DondieScheduler
+    @Inject(DondieScheduler) private readonly scheduler: DondieScheduler,
+    @Inject(DondieWalletService) private readonly wallet: DondieWalletService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -57,6 +59,15 @@ export class DondieService implements OnModuleInit {
 
   getAgent(userId: UUID): DondieAgent | undefined {
     return [...this.store.dondieAgents.values()].find((agent) => agent.userId === userId);
+  }
+
+  getWallet(userId: UUID): { readonly balance: number; readonly tier: DondieAgent["tier"]; readonly ledger: ReturnType<DondieWalletService["listLedger"]> } {
+    const agent = this.requireAgent(userId);
+    return {
+      balance: agent.walletBalance,
+      tier: agent.tier,
+      ledger: this.wallet.listLedger(agent.id)
+    };
   }
 
   requireAgent(userId: UUID): DondieAgent {
@@ -151,13 +162,17 @@ export class DondieService implements OnModuleInit {
             reason: plan.reasoning
           };
 
-    const updatedAgent: DondieAgent = {
+    let updatedAgent: DondieAgent = {
       ...agent,
       lastRunAt: isoNow(),
       updatedAt: isoNow()
     };
-    this.store.dondieAgents.set(agent.id, updatedAgent);
-    await this.repository.persistAgent(updatedAgent);
+    if (automation.status === "EXECUTED" && automation.execution?.trade?.pnl) {
+      updatedAgent = await this.wallet.creditTradePnl(updatedAgent, automation.execution.trade.pnl, symbol);
+    } else {
+      this.store.dondieAgents.set(agent.id, updatedAgent);
+      await this.repository.persistAgent(updatedAgent);
+    }
 
     this.store.appendAudit({
       userId,

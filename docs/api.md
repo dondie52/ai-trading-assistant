@@ -61,6 +61,7 @@ Implemented route groups:
 - `POST /dondie/pause`
 - `POST /dondie/resume`
 - `POST /dondie/run` optional `symbol` and `timeframe`; runs the free-tier brain and automation pipeline
+- `GET /dondie/wallet` returns wallet balance, tier, and ledger entries
 - `POST /orders`
 - `GET /orders`
 - `GET /orders/:id`
