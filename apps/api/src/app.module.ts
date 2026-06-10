@@ -46,6 +46,7 @@ import { DondieService } from "./dondie/dondie.service.js";
 import { DondieRepository } from "./dondie/dondie.repository.js";
 import { DondieBrainFreeService } from "./dondie/dondie-brain-free.service.js";
 import { DondieScheduler } from "./dondie/dondie.scheduler.js";
+import { DondieWalletService } from "./dondie/dondie-wallet.service.js";
 
 @Module({
   controllers: [
@@ -92,6 +93,7 @@ import { DondieScheduler } from "./dondie/dondie.scheduler.js";
     DondieRepository,
     DondieBrainFreeService,
     DondieScheduler,
+    DondieWalletService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard

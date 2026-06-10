@@ -20,6 +20,7 @@ import { DondieService } from "../src/dondie/dondie.service.js";
 import { DondieRepository } from "../src/dondie/dondie.repository.js";
 import { DondieBrainFreeService } from "../src/dondie/dondie-brain-free.service.js";
 import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
+import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
 
 const fundPaperPortfolio = (store: PlatformStore, userId: string, amount: number): void => {
@@ -65,7 +66,8 @@ const createDondie = (): {
     platform,
     new DondieRepository(prisma),
     new DondieBrainFreeService(platform),
-    new DondieScheduler()
+    new DondieScheduler(),
+    new DondieWalletService(store, new DondieRepository(prisma))
   );
   return { dondie, platform, store };
 };
