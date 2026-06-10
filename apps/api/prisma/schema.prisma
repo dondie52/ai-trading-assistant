@@ -114,6 +114,7 @@ model DondieAgent {
   updatedAt           DateTime  @updatedAt @map("updated_at")
   user                User      @relation(fields: [userId], references: [id])
   walletLedger        DondieWalletLedgerEntry[]
+  subscriptions       DondieSubscription[]
 
   @@index([status])
   @@map("dondie_agents")
@@ -132,6 +133,24 @@ model DondieWalletLedgerEntry {
 
   @@index([agentId, createdAt])
   @@map("dondie_wallet_ledger")
+}
+
+model DondieSubscription {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  agentId         String    @map("agent_id") @db.Uuid
+  plan            String
+  status          String
+  monthlyPriceUsd Decimal   @map("monthly_price_usd") @db.Decimal(18, 4)
+  externalId      String?   @map("external_id")
+  revenueCredited Decimal   @default(0) @map("revenue_credited") @db.Decimal(18, 4)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  agent           DondieAgent @relation(fields: [agentId], references: [id])
+
+  @@index([userId])
+  @@index([agentId])
+  @@map("dondie_subscriptions")
 }
 
 model PasswordResetToken {

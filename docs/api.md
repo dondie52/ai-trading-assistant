@@ -62,6 +62,9 @@ Implemented route groups:
 - `POST /dondie/resume`
 - `POST /dondie/run` optional `symbol` and `timeframe`; runs the tier-appropriate brain (free, standard LLM, or pro LLM) and automation pipeline
 - `GET /dondie/wallet` returns wallet balance, tier, and ledger entries
+- `GET /dondie/subscriptions`
+- `POST /dondie/subscriptions` creates a Dondie Pro subscription and credits agent revenue share
+- `POST /dondie/subscriptions/:id/cancel`
 - `POST /orders`
 - `GET /orders`
 - `GET /orders/:id`

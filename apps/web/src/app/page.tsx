@@ -35,6 +35,7 @@ import type {
   AuthTokens,
   DondieAgent,
   DondieRunResult,
+  DondieSubscription,
   BacktestResult,
   IndicatorSnapshot,
   JsonObject,
@@ -281,6 +282,11 @@ export default function Page(): ReactElement {
     queryKey: ["dondie", accessToken],
     enabled: authenticated,
     queryFn: () => apiFetch<DondieAgent | null>("/dondie", {}, token)
+  });
+  const dondieSubscriptions = useQuery({
+    queryKey: ["dondie-subscriptions", accessToken],
+    enabled: authenticated && Boolean(dondieAgent.data),
+    queryFn: () => apiFetch<readonly DondieSubscription[]>("/dondie/subscriptions", {}, token)
   });
 
   useEffect(() => {
@@ -620,6 +626,21 @@ export default function Page(): ReactElement {
     onSuccess: async () => {
       setNotice("Dondie resumed.");
       await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+    }
+  });
+
+  const subscribeDondieMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<DondieSubscription>("/dondie/subscriptions", {
+        method: "POST",
+        body: JSON.stringify({})
+      }, token),
+    onSuccess: async () => {
+      setNotice("Dondie Pro subscription activated. Revenue credited to agent wallet.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["dondie"] }),
+        queryClient.invalidateQueries({ queryKey: ["dondie-subscriptions"] })
+      ]);
     }
   });
 
@@ -1200,6 +1221,18 @@ export default function Page(): ReactElement {
                         <SmallStat label="Status" value={dondieAgent.data.status} />
                         <SmallStat label="Wallet" value={formatCurrency(dondieAgent.data.walletBalance)} />
                       </div>
+                      {(dondieSubscriptions.data ?? []).some((entry) => entry.status === "ACTIVE") ? (
+                        <p className="text-sm text-emerald-200">Dondie Pro subscription active.</p>
+                      ) : (
+                        <button
+                          data-testid="dondie-subscribe"
+                          type="button"
+                          onClick={() => subscribeDondieMutation.mutate()}
+                          className="w-full rounded-md border border-violet-400/40 bg-violet-400/10 px-4 py-3 text-sm text-violet-100"
+                        >
+                          Subscribe to Dondie Pro ($29/mo)
+                        </button>
+                      )}
                       <div className="grid gap-3 md:grid-cols-3">
                         <button
                           data-testid="dondie-pause"

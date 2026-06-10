@@ -22,6 +22,7 @@ import { DondieBrainFreeService } from "../src/dondie/dondie-brain-free.service.
 import { DondieBrainLlmService } from "../src/dondie/dondie-brain-llm.service.js";
 import { DondieBrainService } from "../src/dondie/dondie-brain.service.js";
 import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
+import { DondieBillingService } from "../src/dondie/dondie-billing.service.js";
 import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
 
@@ -67,6 +68,8 @@ const createDondie = (): {
   const freeBrain = new DondieBrainFreeService(platform);
   const llmBrain = new DondieBrainLlmService();
   const brain = new DondieBrainService(platform, freeBrain, llmBrain);
+  const wallet = new DondieWalletService(store, dondieRepository);
+  const billing = new DondieBillingService(store, dondieRepository, wallet);
   const dondie = new DondieService(
     store,
     platform,
@@ -74,7 +77,8 @@ const createDondie = (): {
     brain,
     llmBrain,
     new DondieScheduler(),
-    new DondieWalletService(store, dondieRepository)
+    wallet,
+    billing
   );
   return { dondie, platform, store };
 };
