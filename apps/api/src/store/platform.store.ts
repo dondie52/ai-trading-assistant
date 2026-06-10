@@ -23,8 +23,9 @@ import type {
 import type { AuditSink } from "../audit/audit-sink.js";
 
 export interface UserRecord extends PublicUser {
-  readonly passwordHash: string;
+  readonly passwordHash?: string;
   readonly mfaSecretEncrypted?: string;
+  readonly provisionedBy?: UUID;
   readonly updatedAt: string;
 }
 
@@ -121,27 +122,34 @@ export class PlatformStore {
   }
 
   createUser(input: {
+    readonly id?: UUID;
     readonly email: string;
-    readonly passwordHash: string;
+    readonly passwordHash?: string;
     readonly firstName: string;
     readonly lastName: string;
     readonly role: UserRole;
     readonly status?: UserStatus;
     readonly mfaEnabled?: boolean;
     readonly mfaSecretEncrypted?: string;
+    readonly mfaGraceUntil?: string;
+    readonly mustChangePassword?: boolean;
+    readonly provisionedBy?: UUID;
     readonly notificationPreferences?: NotificationPreferences;
   }): UserRecord {
     const now = isoNow();
     const user: UserRecord = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       email: input.email,
-      passwordHash: input.passwordHash,
+      ...(input.passwordHash ? { passwordHash: input.passwordHash } : {}),
       firstName: input.firstName,
       lastName: input.lastName,
       role: input.role,
       status: input.status ?? "ACTIVE",
       mfaEnabled: input.mfaEnabled ?? false,
       ...(input.mfaSecretEncrypted ? { mfaSecretEncrypted: input.mfaSecretEncrypted } : {}),
+      ...(input.mfaGraceUntil ? { mfaGraceUntil: input.mfaGraceUntil } : {}),
+      ...(input.mustChangePassword !== undefined ? { mustChangePassword: input.mustChangePassword } : {}),
+      ...(input.provisionedBy ? { provisionedBy: input.provisionedBy } : {}),
       notificationPreferences: input.notificationPreferences ?? defaultNotificationPreferences,
       createdAt: now,
       updatedAt: now
@@ -152,10 +160,15 @@ export class PlatformStore {
     return user;
   }
 
-  createSession(userId: UUID, refreshTokenHash: string, expiresAt: string): SessionRecord {
+  createSession(
+    userId: UUID,
+    refreshTokenHash: string,
+    expiresAt: string,
+    sessionId: UUID = randomUUID()
+  ): SessionRecord {
     const now = isoNow();
     const session: SessionRecord = {
-      id: randomUUID(),
+      id: sessionId,
       userId,
       refreshTokenHash,
       expiresAt,
