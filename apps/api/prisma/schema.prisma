@@ -69,13 +69,16 @@ enum NotificationStatus {
 model User {
   id                      String               @id @default(uuid()) @db.Uuid
   email                   String               @unique
-  passwordHash            String               @map("password_hash")
+  passwordHash            String?              @map("password_hash")
   firstName               String               @map("first_name")
   lastName                String               @map("last_name")
   role                    UserRole             @default(TRADER)
   status                  UserStatus           @default(ACTIVE)
   mfaEnabled              Boolean              @default(false) @map("mfa_enabled")
   mfaSecretEncrypted      String?              @map("mfa_secret_encrypted")
+  mfaGraceUntil           DateTime?            @map("mfa_grace_until")
+  mustChangePassword      Boolean              @default(false) @map("must_change_password")
+  provisionedBy           String?              @map("provisioned_by") @db.Uuid
   notificationPreferences Json                 @map("notification_preferences")
   createdAt               DateTime             @default(now()) @map("created_at")
   updatedAt               DateTime             @updatedAt @map("updated_at")

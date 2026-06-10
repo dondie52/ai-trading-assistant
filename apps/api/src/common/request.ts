@@ -7,6 +7,7 @@ export interface AuthenticatedPrincipal {
   readonly role: UserRole;
   readonly sessionId: UUID;
   readonly type: "access";
+  readonly aal?: "aal1" | "aal2";
 }
 
 export interface AuthenticatedRequest extends Request {

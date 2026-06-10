@@ -17,6 +17,15 @@ export class SessionActivityService {
     private readonly repository: PrismaPlatformRepository
   ) {}
 
+  ensureSupabaseSession(userId: UUID, sessionId: UUID): SessionRecord {
+    const existing = this.store.sessions.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    return this.store.createSession(userId, `supabase:${sessionId}`, expiresAt, sessionId);
+  }
+
   async assertActive(userId: UUID, sessionId: UUID, touch = true): Promise<SessionRecord> {
     const session = this.store.sessions.get(sessionId);
     const user = this.store.users.get(userId);

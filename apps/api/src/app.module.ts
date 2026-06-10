@@ -11,6 +11,8 @@ import { JwtAuthGuard } from "./auth/jwt-auth.guard.js";
 import { MfaService } from "./auth/mfa.service.js";
 import { RolesGuard } from "./auth/roles.guard.js";
 import { SessionActivityService } from "./auth/session-activity.service.js";
+import { SupabaseAdminService } from "./auth/supabase-admin.service.js";
+import { SupabaseAuthService } from "./auth/supabase-auth.service.js";
 import { TokenService } from "./auth/token.service.js";
 import { AlpacaBrokerAdapter } from "./brokers/alpaca-broker.adapter.js";
 import { BrokerCredentialService } from "./brokers/broker-credential.service.js";
@@ -77,6 +79,8 @@ import { UsersController } from "./users/users.controller.js";
     RealtimeEventBus,
     RealtimeGateway,
     SessionActivityService,
+    SupabaseAdminService,
+    SupabaseAuthService,
     TokenService,
     {
       provide: APP_GUARD,

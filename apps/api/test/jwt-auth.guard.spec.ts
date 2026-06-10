@@ -6,6 +6,7 @@ import { JwtAuthGuard } from "../src/auth/jwt-auth.guard.js";
 import { TokenService } from "../src/auth/token.service.js";
 import { PlatformStore } from "../src/store/platform.store.js";
 import { SessionActivityService } from "../src/auth/session-activity.service.js";
+import { SupabaseAuthService } from "../src/auth/supabase-auth.service.js";
 import { PrismaPlatformRepository } from "../src/infrastructure/prisma-platform.repository.js";
 import { PrismaService } from "../src/infrastructure/prisma.service.js";
 
@@ -39,7 +40,7 @@ describe("JWT auth guard session enforcement", () => {
       sessionId: session.id
     });
     const sessions = new SessionActivityService(store, new PrismaPlatformRepository(new PrismaService()));
-    const guard = new JwtAuthGuard(new Reflector(), tokenService, sessions);
+    const guard = new JwtAuthGuard(new Reflector(), tokenService, sessions, new SupabaseAuthService(), store);
 
     await expect(guard.canActivate(contextWithAuthHeader(`Bearer ${accessToken}`))).resolves.toBe(true);
 
@@ -69,7 +70,7 @@ describe("JWT auth guard session enforcement", () => {
       sessionId: session.id
     });
     const sessions = new SessionActivityService(store, new PrismaPlatformRepository(new PrismaService()));
-    const guard = new JwtAuthGuard(new Reflector(), tokenService, sessions);
+    const guard = new JwtAuthGuard(new Reflector(), tokenService, sessions, new SupabaseAuthService(), store);
 
     await expect(guard.canActivate(contextWithAuthHeader(`Bearer ${accessToken}`))).rejects.toThrow(
       UnauthorizedException

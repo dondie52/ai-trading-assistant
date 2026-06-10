@@ -61,8 +61,23 @@ export interface PublicUser {
   readonly role: UserRole;
   readonly status: UserStatus;
   readonly mfaEnabled: boolean;
+  readonly mfaGraceUntil?: string;
+  readonly mustChangePassword?: boolean;
   readonly notificationPreferences: NotificationPreferences;
   readonly createdAt: string;
+}
+
+export interface AdminCreateUserInput {
+  readonly email: string;
+  readonly password: string;
+  readonly firstName?: string;
+  readonly lastName?: string;
+  readonly role?: UserRole;
+}
+
+export interface AdminCreateUserResult {
+  readonly user: PublicUser;
+  readonly temporaryPassword: string;
 }
 
 export interface AuthTokens {

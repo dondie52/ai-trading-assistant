@@ -12,8 +12,11 @@ import { Inject, OnModuleDestroy } from "@nestjs/common";
 import type { MarketTimeframe, RealtimeError, RealtimeEvent, UUID } from "@trading/types";
 import { Server, Socket } from "socket.io";
 import type { Subscription } from "rxjs";
+import { isSupabaseAuth } from "../auth/auth-provider.js";
 import { TokenService } from "../auth/token.service.js";
+import { SupabaseAuthService } from "../auth/supabase-auth.service.js";
 import { SessionActivityService } from "../auth/session-activity.service.js";
+import { PlatformStore } from "../store/platform.store.js";
 import { PlatformService } from "../platform.service.js";
 import { RealtimeEventBus } from "./realtime-event-bus.js";
 import { allowedCorsOrigins } from "../common/cors.js";
@@ -60,6 +63,10 @@ export class RealtimeGateway
   constructor(
     @Inject(TokenService)
     private readonly tokens: TokenService,
+    @Inject(SupabaseAuthService)
+    private readonly supabaseAuth: SupabaseAuthService,
+    @Inject(PlatformStore)
+    private readonly store: PlatformStore,
     @Inject(SessionActivityService)
     private readonly sessions: SessionActivityService,
     @Inject(PlatformService)
@@ -98,7 +105,23 @@ export class RealtimeGateway
       if (typeof rawToken !== "string" || rawToken.length === 0) {
         throw new Error("Authentication token is required.");
       }
-      const principal = this.tokens.verifyAccessToken(rawToken);
+      const principal = isSupabaseAuth()
+        ? await (async () => {
+            const claims = await this.supabaseAuth.verifyAccessToken(rawToken);
+            const user = this.store.users.get(claims.sub);
+            if (!user) {
+              throw new Error("User is not provisioned.");
+            }
+            const role =
+              typeof claims.platform_role === "string" &&
+              (claims.platform_role === "ADMIN" || claims.platform_role === "TRADER")
+                ? claims.platform_role
+                : user.role;
+            const resolved = this.supabaseAuth.toPrincipal(claims, role);
+            this.sessions.ensureSupabaseSession(resolved.sub, resolved.sessionId);
+            return resolved;
+          })()
+        : this.tokens.verifyAccessToken(rawToken);
       await this.sessions.assertActive(principal.sub, principal.sessionId);
 
       client.data.userId = principal.sub;

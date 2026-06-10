@@ -67,9 +67,11 @@ import { AlpacaBrokerAdapter } from "./brokers/alpaca-broker.adapter.js";
 import { BrokerCredentialService } from "./brokers/broker-credential.service.js";
 import type { BrokerAdapter, BrokerCredentials, BrokerExecutionResult } from "./brokers/broker.interface.js";
 import { resolveEnvAlpacaCredentials } from "./brokers/alpaca-client.js";
+import { isSupabaseAuth, readMfaGraceDays } from "./auth/auth-provider.js";
 import { MfaService } from "./auth/mfa.service.js";
 import { TokenService } from "./auth/token.service.js";
 import { SessionActivityService } from "./auth/session-activity.service.js";
+import { SupabaseAdminService } from "./auth/supabase-admin.service.js";
 import { PrismaAuditSink } from "./audit/prisma-audit.sink.js";
 import { DatabaseHealthService } from "./infrastructure/database-health.service.js";
 import { PrismaPlatformRepository } from "./infrastructure/prisma-platform.repository.js";
@@ -335,6 +337,8 @@ const sanitizeUser = (user: UserRecord): PublicUser => ({
   role: user.role,
   status: user.status,
   mfaEnabled: user.mfaEnabled,
+  ...(user.mfaGraceUntil ? { mfaGraceUntil: user.mfaGraceUntil } : {}),
+  ...(user.mustChangePassword !== undefined ? { mustChangePassword: user.mustChangePassword } : {}),
   notificationPreferences: user.notificationPreferences,
   createdAt: user.createdAt
 });
@@ -367,7 +371,9 @@ export class PlatformService implements OnModuleInit {
     @Inject(OperationalMetricsService)
     private readonly operationalMetrics: OperationalMetricsService,
     @Inject(RealtimeEventBus)
-    private readonly realtime: RealtimeEventBus
+    private readonly realtime: RealtimeEventBus,
+    @Inject(SupabaseAdminService)
+    private readonly supabaseAdmin: SupabaseAdminService
   ) {
     this.store.setAuditSink(this.auditSink);
   }
@@ -481,6 +487,13 @@ export class PlatformService implements OnModuleInit {
   }
 
   async register(bodyValue: unknown): Promise<{ readonly user: PublicUser }> {
+    if (isSupabaseAuth()) {
+      throw new ForbiddenException({
+        code: "REGISTRATION_DISABLED",
+        message: "Self-registration is disabled. Contact an administrator for access."
+      });
+    }
+
     const body = asRecord(bodyValue);
     const email = normalizeEmail(readString(body, "email", { required: true, max: 255 }));
     const password = readString(body, "password", { required: true, max: 256 });
@@ -527,6 +540,13 @@ export class PlatformService implements OnModuleInit {
   }
 
   async login(bodyValue: unknown): Promise<AuthTokens> {
+    if (isSupabaseAuth()) {
+      throw new ForbiddenException({
+        code: "LEGACY_LOGIN_DISABLED",
+        message: "Sign in with your Supabase-provisioned account via the web client."
+      });
+    }
+
     const body = asRecord(bodyValue);
     const email = normalizeEmail(readString(body, "email", { required: true, max: 255 }));
     const password = readString(body, "password", { required: true, max: 256 });
@@ -540,7 +560,7 @@ export class PlatformService implements OnModuleInit {
     }
 
     const user = [...this.store.users.values()].find((candidate) => candidate.email === email);
-    if (!user || !(await compare(password, user.passwordHash))) {
+    if (!user || !user.passwordHash || !(await compare(password, user.passwordHash))) {
       this.store.appendAudit({
         action: "AUTH_LOGIN_FAILED",
         entityType: "USER",
@@ -2156,6 +2176,70 @@ export class PlatformService implements OnModuleInit {
     }
     this.persist(this.platformRepository.markNotificationsRead(userId));
     return updated;
+  }
+
+  async createAdminUser(actorUserId: UUID, bodyValue: unknown): Promise<{ readonly user: PublicUser; readonly temporaryPassword: string }> {
+    if (!isSupabaseAuth()) {
+      throw new ForbiddenException({
+        code: "SUPABASE_AUTH_REQUIRED",
+        message: "Admin user provisioning requires Supabase Auth."
+      });
+    }
+
+    const body = asRecord(bodyValue);
+    const email = normalizeEmail(readString(body, "email", { required: true, max: 255 }));
+    const password = readString(body, "password", { required: true, max: 256 });
+    const firstName = readString(body, "firstName", { max: 80 }) || "Platform";
+    const lastName = readString(body, "lastName", { max: 80 }) || "User";
+    const role = readEnum(body, "role", ["TRADER", "ADMIN"] as const, "TRADER");
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      throw new BadRequestException({
+        code: "VALIDATION_ERROR",
+        message: passwordValidation.errors.join(" ")
+      });
+    }
+    if (!validateEmail(email)) {
+      throw new BadRequestException({ code: "VALIDATION_ERROR", message: "Email is invalid." });
+    }
+    if ([...this.store.users.values()].some((candidate) => candidate.email === email)) {
+      throw new ConflictException({ code: "EMAIL_IN_USE", message: "Email is already registered." });
+    }
+
+    const graceUntil = new Date(Date.now() + readMfaGraceDays() * 24 * 60 * 60 * 1000).toISOString();
+    const authUser = await this.supabaseAdmin.createProvisionedUser({
+      email,
+      password,
+      firstName,
+      lastName,
+      role,
+      provisionedBy: actorUserId
+    });
+
+    const user =
+      this.store.users.get(authUser.id) ??
+      this.store.createUser({
+        id: authUser.id,
+        email: authUser.email,
+        firstName,
+        lastName,
+        role,
+        mfaGraceUntil: graceUntil,
+        mustChangePassword: true,
+        provisionedBy: actorUserId
+      });
+
+    await this.persistUserBootstrapNow(user.id);
+    this.recordAdminAction(actorUserId, "ADMIN_USER_CREATE", "USER", {
+      targetUserId: user.id,
+      email: user.email,
+      role: user.role
+    });
+
+    return {
+      user: sanitizeUser(this.store.users.get(user.id) ?? user),
+      temporaryPassword: password
+    };
   }
 
   listAdminUsers(actorUserId?: UUID): readonly PublicUser[] {

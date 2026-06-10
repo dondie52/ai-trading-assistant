@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Put, Query } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Put, Query } from "@nestjs/common";
 import { ok } from "../common/api-response.js";
 import { CurrentUser, Roles } from "../auth/decorators.js";
 import type { AuthenticatedPrincipal } from "../common/request.js";
@@ -9,6 +9,14 @@ import { paginate } from "../common/pagination.js";
 @Roles("ADMIN")
 export class AdminController {
   constructor(@Inject(PlatformService) private readonly platform: PlatformService) {}
+
+  @Post("users")
+  async createUser(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Body() body: unknown
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.platform.createAdminUser(user.sub, body));
+  }
 
   @Get("users")
   users(

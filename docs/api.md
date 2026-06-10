@@ -12,9 +12,15 @@ or:
 { "success": false, "error": { "code": "VALIDATION_ERROR", "message": "Invalid request" } }
 ```
 
+## Authentication
+
+Production uses **Supabase Auth** (`AUTH_PROVIDER=supabase`). The web client signs in with Supabase and sends the Supabase access token as `Authorization: Bearer <token>` to the API. Self-service registration is disabled; admins provision users via `POST /admin/users`.
+
+Set `AUTH_PROVIDER=legacy` only for local automated tests.
+
 Implemented route groups:
 
-- `POST /auth/register`
+- `POST /auth/register` (disabled when `AUTH_PROVIDER=supabase`)
 - `POST /auth/login`
 - `POST /auth/logout`
 - `POST /auth/refresh`
@@ -70,6 +76,7 @@ Implemented route groups:
 - `GET /reports/performance/pdf`
 - `GET /notifications`
 - `PUT /notifications/read`
+- `POST /admin/users` (admin-only; creates Supabase Auth user with temporary password)
 - `GET /admin/users`
 - `PUT /admin/users/:id/status`
 - `GET /admin/system-health`

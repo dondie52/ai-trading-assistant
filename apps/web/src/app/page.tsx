@@ -60,6 +60,8 @@ import type {
   WalkForwardResult
 } from "@trading/types";
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
+import { refreshSupabaseSession, signInWithSupabase, signOutSupabase } from "../lib/auth";
+import { isSupabaseAuthEnabled } from "../lib/supabase/client";
 import { useSessionStore } from "../store/session";
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -116,7 +118,8 @@ const downloadReport = (report: PerformanceReport): void => {
 export default function Page(): ReactElement {
   const queryClient = useQueryClient();
   const { accessToken, user, setSession, clearSession } = useSessionStore();
-  const [authMode, setAuthMode] = useState<"login" | "register">("register");
+  const supabaseAuthEnabled = isSupabaseAuthEnabled();
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
@@ -139,9 +142,26 @@ export default function Page(): ReactElement {
   const [notice, setNotice] = useState("");
   const [riskNotice, setRiskNotice] = useState("");
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserFirstName, setNewUserFirstName] = useState("");
+  const [newUserLastName, setNewUserLastName] = useState("");
 
   const token = accessToken ?? "";
   const authenticated = Boolean(accessToken && user);
+
+  useEffect(() => {
+    if (!supabaseAuthEnabled || authenticated) {
+      return;
+    }
+    void refreshSupabaseSession()
+      .then((session) => {
+        if (session) {
+          setSession(session);
+        }
+      })
+      .catch(() => undefined);
+  }, [authenticated, setSession, supabaseAuthEnabled]);
 
   const portfolios = useQuery({
     queryKey: ["portfolios", accessToken],
@@ -408,14 +428,16 @@ export default function Page(): ReactElement {
 
   const loginMutation = useMutation({
     mutationFn: () =>
-      apiFetch<AuthTokens>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email: loginEmail,
-          password: loginPassword,
-          ...(loginMfaCode ? { mfaCode: loginMfaCode } : {})
-        })
-      }),
+      supabaseAuthEnabled
+        ? signInWithSupabase(loginEmail, loginPassword)
+        : apiFetch<AuthTokens>("/auth/login", {
+            method: "POST",
+            body: JSON.stringify({
+              email: loginEmail,
+              password: loginPassword,
+              ...(loginMfaCode ? { mfaCode: loginMfaCode } : {})
+            })
+          }),
     onSuccess: async (tokens) => {
       setSession(tokens);
       setMfaChallenge(false);
@@ -433,11 +455,15 @@ export default function Page(): ReactElement {
   });
 
   const logoutMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<{ readonly loggedOut: true }>("/auth/logout", {
-        method: "POST",
-        body: JSON.stringify({})
-      }, token),
+    mutationFn: async () => {
+      if (token) {
+        await apiFetch<{ readonly loggedOut: true }>("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({})
+        }, token).catch(() => undefined);
+      }
+      await signOutSupabase();
+    },
     onSettled: () => {
       clearSession();
       setNotice("Logged out.");
@@ -761,6 +787,31 @@ export default function Page(): ReactElement {
     }
   });
 
+  const createAdminUserMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ readonly user: PublicUser; readonly temporaryPassword: string }>("/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email: newUserEmail,
+          password: newUserPassword,
+          firstName: newUserFirstName || "Platform",
+          lastName: newUserLastName || "User",
+          role: "TRADER"
+        })
+      }, token),
+    onSuccess: async (result) => {
+      setNotice(`User ${result.user.email} created. Share the temporary password securely.`);
+      setNewUserEmail("");
+      setNewUserPassword("");
+      setNewUserFirstName("");
+      setNewUserLastName("");
+      await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "User creation failed.");
+    }
+  });
+
   const updateAdminUserStatusMutation = useMutation({
     mutationFn: (input: { readonly userId: string; readonly status: PublicUser["status"] }) =>
       apiFetch<PublicUser>(`/admin/users/${input.userId}/status`, {
@@ -875,28 +926,34 @@ export default function Page(): ReactElement {
           </div>
 
           <div className="rounded-lg border border-line bg-panel/95 p-5 shadow-2xl">
-            <div className="mb-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("register");
-                  setMfaChallenge(false);
-                  setLoginMfaCode("");
-                }}
-                className={`rounded-md px-4 py-2 text-sm ${authMode === "register" ? "bg-emerald-500 text-slate-950" : "bg-white/5 text-slate-200"}`}
-              >
-                Register
-              </button>
-              <button
-                type="button"
-                onClick={() => setAuthMode("login")}
-                className={`rounded-md px-4 py-2 text-sm ${authMode === "login" ? "bg-violetSignal text-white" : "bg-white/5 text-slate-200"}`}
-              >
-                Login
-              </button>
-            </div>
+            {!supabaseAuthEnabled ? (
+              <div className="mb-5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("register");
+                    setMfaChallenge(false);
+                    setLoginMfaCode("");
+                  }}
+                  className={`rounded-md px-4 py-2 text-sm ${authMode === "register" ? "bg-emerald-500 text-slate-950" : "bg-white/5 text-slate-200"}`}
+                >
+                  Register
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode("login")}
+                  className={`rounded-md px-4 py-2 text-sm ${authMode === "login" ? "bg-violetSignal text-white" : "bg-white/5 text-slate-200"}`}
+                >
+                  Login
+                </button>
+              </div>
+            ) : (
+              <p className="mb-5 text-sm text-slate-300">
+                Access is invite-only. Sign in with credentials provided by your administrator.
+              </p>
+            )}
 
-            {authMode === "register" ? (
+            {!supabaseAuthEnabled && authMode === "register" ? (
               <form
                 className="space-y-4"
                 onSubmit={(event: FormEvent<HTMLFormElement>) => {
@@ -1889,6 +1946,56 @@ export default function Page(): ReactElement {
           </div>
           <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
             <Panel title="User Administration" icon={<WalletCards className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
+              {supabaseAuthEnabled ? (
+                <form
+                  data-testid="admin-create-user-form"
+                  className="mb-4 space-y-3 rounded-md border border-line bg-surface p-3"
+                  onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                    event.preventDefault();
+                    createAdminUserMutation.mutate();
+                  }}
+                >
+                  <p className="text-sm font-medium text-white">Provision user (admin-set password)</p>
+                  <input
+                    data-testid="admin-create-email"
+                    className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                    placeholder="Email"
+                    value={newUserEmail}
+                    onChange={(event) => setNewUserEmail(event.target.value)}
+                    autoComplete="off"
+                  />
+                  <input
+                    data-testid="admin-create-password"
+                    className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                    placeholder="Temporary password"
+                    type="password"
+                    value={newUserPassword}
+                    onChange={(event) => setNewUserPassword(event.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                      placeholder="First name"
+                      value={newUserFirstName}
+                      onChange={(event) => setNewUserFirstName(event.target.value)}
+                    />
+                    <input
+                      className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                      placeholder="Last name"
+                      value={newUserLastName}
+                      onChange={(event) => setNewUserLastName(event.target.value)}
+                    />
+                  </div>
+                  <button
+                    data-testid="admin-create-submit"
+                    type="submit"
+                    className="w-full rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-slate-950"
+                  >
+                    Create user
+                  </button>
+                </form>
+              ) : null}
               <div data-testid="admin-users" className="space-y-2">
                 {(adminUsers.data ?? []).map((adminUser) => (
                   <div key={adminUser.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-line bg-surface px-3 py-2 text-sm">

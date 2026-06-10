@@ -14,6 +14,7 @@ import { PlatformStore } from "../src/store/platform.store.js";
 import { TokenService } from "../src/auth/token.service.js";
 import { MfaService } from "../src/auth/mfa.service.js";
 import { SessionActivityService } from "../src/auth/session-activity.service.js";
+import { SupabaseAdminService } from "../src/auth/supabase-admin.service.js";
 import { RealtimeEventBus } from "../src/realtime/realtime-event-bus.js";
 import { OperationalMetricsService } from "../src/monitoring/operational-metrics.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
@@ -35,7 +36,8 @@ const createPlatform = (): { readonly platform: PlatformService; readonly store:
     repository,
     new SupabaseCacheQueueService(prisma),
     new OperationalMetricsService(),
-    new RealtimeEventBus()
+    new RealtimeEventBus(),
+    new SupabaseAdminService()
   );
   return { platform, store };
 };
@@ -78,6 +80,7 @@ describe("platform integration", () => {
   const previousE2EAdminPassword = process.env.E2E_ADMIN_PASSWORD;
 
   beforeEach(() => {
+    process.env.AUTH_PROVIDER = "legacy";
     installAlpacaFetchMock();
   });
 
@@ -253,7 +256,8 @@ describe("platform integration", () => {
       fakeRepository,
       new SupabaseCacheQueueService(new PrismaService()),
       new OperationalMetricsService(),
-      new RealtimeEventBus()
+      new RealtimeEventBus(),
+      new SupabaseAdminService()
     );
 
     await platform.onModuleInit();
