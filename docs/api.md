@@ -60,7 +60,7 @@ Implemented route groups:
 - `POST /dondie/activate` requires `strategyId`; creates the agent on the `FREE` tier
 - `POST /dondie/pause`
 - `POST /dondie/resume`
-- `POST /dondie/run` optional `symbol` and `timeframe`; runs the free-tier brain and automation pipeline
+- `POST /dondie/run` optional `symbol` and `timeframe`; runs the tier-appropriate brain (free, standard LLM, or pro LLM) and automation pipeline
 - `GET /dondie/wallet` returns wallet balance, tier, and ledger entries
 - `POST /orders`
 - `GET /orders`

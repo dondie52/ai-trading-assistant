@@ -19,6 +19,8 @@ import { OperationalMetricsService } from "../src/monitoring/operational-metrics
 import { DondieService } from "../src/dondie/dondie.service.js";
 import { DondieRepository } from "../src/dondie/dondie.repository.js";
 import { DondieBrainFreeService } from "../src/dondie/dondie-brain-free.service.js";
+import { DondieBrainLlmService } from "../src/dondie/dondie-brain-llm.service.js";
+import { DondieBrainService } from "../src/dondie/dondie-brain.service.js";
 import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
 import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
@@ -44,7 +46,7 @@ const createDondie = (): {
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
   const prisma = new PrismaService();
   const store = new PlatformStore();
-  const repository = new PrismaPlatformRepository(prisma);
+  const platformRepository = new PrismaPlatformRepository(prisma);
   const platform = new PlatformService(
     store,
     new TokenService(),
@@ -52,22 +54,27 @@ const createDondie = (): {
     new PaperBrokerAdapter(),
     new AlpacaBrokerAdapter(),
     new BrokerCredentialService(),
-    new SessionActivityService(store, repository),
+    new SessionActivityService(store, platformRepository),
     new DatabaseHealthService(prisma),
     new PrismaAuditSink(prisma),
-    repository,
+    platformRepository,
     new SupabaseCacheQueueService(prisma),
     new OperationalMetricsService(),
     new RealtimeEventBus(),
     new SupabaseAdminService()
   );
+  const dondieRepository = new DondieRepository(prisma);
+  const freeBrain = new DondieBrainFreeService(platform);
+  const llmBrain = new DondieBrainLlmService();
+  const brain = new DondieBrainService(platform, freeBrain, llmBrain);
   const dondie = new DondieService(
     store,
     platform,
-    new DondieRepository(prisma),
-    new DondieBrainFreeService(platform),
+    dondieRepository,
+    brain,
+    llmBrain,
     new DondieScheduler(),
-    new DondieWalletService(store, new DondieRepository(prisma))
+    new DondieWalletService(store, dondieRepository)
   );
   return { dondie, platform, store };
 };

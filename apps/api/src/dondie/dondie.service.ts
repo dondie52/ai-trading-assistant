@@ -9,7 +9,8 @@ import { randomUUID } from "node:crypto";
 import type { DondieAgent, DondieRunResult, JsonObject, MarketTimeframe, UUID } from "@trading/types";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
-import { DondieBrainFreeService } from "./dondie-brain-free.service.js";
+import { DondieBrainService } from "./dondie-brain.service.js";
+import { DondieBrainLlmService } from "./dondie-brain-llm.service.js";
 import { dondieConfig } from "./dondie.config.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
@@ -44,7 +45,8 @@ export class DondieService implements OnModuleInit {
     @Inject(PlatformStore) private readonly store: PlatformStore,
     @Inject(PlatformService) private readonly platform: PlatformService,
     @Inject(DondieRepository) private readonly repository: DondieRepository,
-    @Inject(DondieBrainFreeService) private readonly freeBrain: DondieBrainFreeService,
+    @Inject(DondieBrainService) private readonly brain: DondieBrainService,
+    @Inject(DondieBrainLlmService) private readonly llmBrain: DondieBrainLlmService,
     @Inject(DondieScheduler) private readonly scheduler: DondieScheduler,
     @Inject(DondieWalletService) private readonly wallet: DondieWalletService
   ) {}
@@ -144,7 +146,18 @@ export class DondieService implements OnModuleInit {
     const body = asRecord(bodyValue);
     const symbol = (readString(body, "symbol") || this.pickSymbol(userId, agent)).toUpperCase();
     const timeframe = (readString(body, "timeframe") || "1h") as MarketTimeframe;
-    const plan = await this.freeBrain.plan(userId, agent.strategyId, symbol, timeframe);
+    let activeAgent = agent;
+    let brainRun = await this.brain.plan(userId, activeAgent, agent.strategyId, symbol, timeframe);
+    if (brainRun.brain !== "free") {
+      const cost =
+        activeAgent.tier === "PRO" ? dondieConfig.proBrainCostUsd : dondieConfig.standardBrainCostUsd;
+      try {
+        activeAgent = await this.wallet.debit(activeAgent, cost, "BRAIN_RUN", { brain: brainRun.brain, symbol });
+      } catch {
+        brainRun = await this.brain.plan(userId, { ...activeAgent, tier: "FREE" }, agent.strategyId, symbol, timeframe);
+      }
+    }
+    const plan = brainRun.plan;
 
     const automation =
       plan.action === "EXECUTE"
@@ -163,7 +176,7 @@ export class DondieService implements OnModuleInit {
           };
 
     let updatedAgent: DondieAgent = {
-      ...agent,
+      ...activeAgent,
       lastRunAt: isoNow(),
       updatedAt: isoNow()
     };
@@ -181,9 +194,9 @@ export class DondieService implements OnModuleInit {
       entityType: "DONDIE_AGENT",
       entityId: agent.id,
       metadata: {
-        tier: agent.tier,
+        tier: updatedAgent.tier,
         symbol,
-        brain: "free",
+        brain: brainRun.brain,
         plan: plan as unknown as JsonObject,
         automationStatus: automation.status
       }
@@ -191,9 +204,9 @@ export class DondieService implements OnModuleInit {
 
     return {
       agentId: agent.id,
-      tier: agent.tier,
+      tier: updatedAgent.tier,
       symbol,
-      brain: "free",
+      brain: brainRun.brain,
       reasoning: plan.reasoning,
       automation,
       walletBalance: updatedAgent.walletBalance,
