@@ -20,7 +20,7 @@ Set `AUTH_PROVIDER=legacy` only for local automated tests.
 
 Implemented route groups:
 
-- `POST /auth/register` (disabled when `AUTH_PROVIDER=supabase`)
+- `POST /auth/register` (disabled — accounts are admin-provisioned via `POST /admin/users`)
 - `POST /auth/login`
 - `POST /auth/logout`
 - `POST /auth/refresh`

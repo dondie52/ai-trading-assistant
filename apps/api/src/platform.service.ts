@@ -59,7 +59,6 @@ import {
   validateEmail,
   validateLogin,
   validatePassword,
-  validateRegistration,
   validateTradeRisk
 } from "@trading/shared";
 import { PaperBrokerAdapter } from "./brokers/paper-broker.adapter.js";
@@ -486,57 +485,11 @@ export class PlatformService implements OnModuleInit {
     return normalizeMarketTimeframe(value);
   }
 
-  async register(bodyValue: unknown): Promise<{ readonly user: PublicUser }> {
-    if (isSupabaseAuth()) {
-      throw new ForbiddenException({
-        code: "REGISTRATION_DISABLED",
-        message: "Self-registration is disabled. Contact an administrator for access."
-      });
-    }
-
-    const body = asRecord(bodyValue);
-    const email = normalizeEmail(readString(body, "email", { required: true, max: 255 }));
-    const password = readString(body, "password", { required: true, max: 256 });
-    const firstName = readString(body, "firstName", { max: 80 }) || "Paper";
-    const lastName = readString(body, "lastName", { max: 80 }) || "Trader";
-    const validation = validateRegistration({ email, password, firstName, lastName });
-
-    if (!validation.valid) {
-      throw new BadRequestException({
-        code: "VALIDATION_ERROR",
-        message: validation.errors.join(" ")
-      });
-    }
-
-    if ([...this.store.users.values()].some((user) => user.email === email)) {
-      throw new ConflictException({ code: "EMAIL_IN_USE", message: "Email is already registered." });
-    }
-
-    const user = this.store.createUser({
-      email,
-      passwordHash: await hash(password, 10),
-      firstName,
-      lastName,
-      role: "TRADER"
+  async register(_bodyValue: unknown): Promise<{ readonly user: PublicUser }> {
+    throw new ForbiddenException({
+      code: "REGISTRATION_DISABLED",
+      message: "Self-registration is disabled. Contact an administrator for access."
     });
-    this.persistUserBootstrap(user.id);
-
-    this.store.appendAudit({
-      userId: user.id,
-      actorUserId: user.id,
-      action: "AUTH_REGISTER",
-      entityType: "USER",
-      entityId: user.id,
-      metadata: { email }
-    });
-    this.addNotification({
-      userId: user.id,
-      notificationType: "SYSTEM",
-      title: "Account ready",
-      message: "Connect Alpaca in Settings to load your broker balance and market data."
-    });
-
-    return { user: sanitizeUser(user) };
   }
 
   async login(bodyValue: unknown): Promise<AuthTokens> {
@@ -2179,13 +2132,6 @@ export class PlatformService implements OnModuleInit {
   }
 
   async createAdminUser(actorUserId: UUID, bodyValue: unknown): Promise<{ readonly user: PublicUser; readonly temporaryPassword: string }> {
-    if (!isSupabaseAuth()) {
-      throw new ForbiddenException({
-        code: "SUPABASE_AUTH_REQUIRED",
-        message: "Admin user provisioning requires Supabase Auth."
-      });
-    }
-
     const body = asRecord(bodyValue);
     const email = normalizeEmail(readString(body, "email", { required: true, max: 255 }));
     const password = readString(body, "password", { required: true, max: 256 });
@@ -2206,29 +2152,52 @@ export class PlatformService implements OnModuleInit {
       throw new ConflictException({ code: "EMAIL_IN_USE", message: "Email is already registered." });
     }
 
-    const graceUntil = new Date(Date.now() + readMfaGraceDays() * 24 * 60 * 60 * 1000).toISOString();
-    const authUser = await this.supabaseAdmin.createProvisionedUser({
-      email,
-      password,
-      firstName,
-      lastName,
-      role,
-      provisionedBy: actorUserId
-    });
-
-    const user =
-      this.store.users.get(authUser.id) ??
-      this.store.createUser({
-        id: authUser.id,
-        email: authUser.email,
+    if (isSupabaseAuth()) {
+      const graceUntil = new Date(Date.now() + readMfaGraceDays() * 24 * 60 * 60 * 1000).toISOString();
+      const authUser = await this.supabaseAdmin.createProvisionedUser({
+        email,
+        password,
         firstName,
         lastName,
         role,
-        mfaGraceUntil: graceUntil,
-        mustChangePassword: true,
         provisionedBy: actorUserId
       });
 
+      const user =
+        this.store.users.get(authUser.id) ??
+        this.store.createUser({
+          id: authUser.id,
+          email: authUser.email,
+          firstName,
+          lastName,
+          role,
+          mfaGraceUntil: graceUntil,
+          mustChangePassword: true,
+          provisionedBy: actorUserId
+        });
+
+      await this.persistUserBootstrapNow(user.id);
+      this.recordAdminAction(actorUserId, "ADMIN_USER_CREATE", "USER", {
+        targetUserId: user.id,
+        email: user.email,
+        role: user.role
+      });
+
+      return {
+        user: sanitizeUser(this.store.users.get(user.id) ?? user),
+        temporaryPassword: password
+      };
+    }
+
+    const user = this.store.createUser({
+      email,
+      passwordHash: await hash(password, 10),
+      firstName,
+      lastName,
+      role,
+      mustChangePassword: true,
+      provisionedBy: actorUserId
+    });
     await this.persistUserBootstrapNow(user.id);
     this.recordAdminAction(actorUserId, "ADMIN_USER_CREATE", "USER", {
       targetUserId: user.id,
@@ -2237,7 +2206,7 @@ export class PlatformService implements OnModuleInit {
     });
 
     return {
-      user: sanitizeUser(this.store.users.get(user.id) ?? user),
+      user: sanitizeUser(user),
       temporaryPassword: password
     };
   }

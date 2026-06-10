@@ -61,6 +61,7 @@ import type {
   Trade,
   WalkForwardResult
 } from "@trading/types";
+import { LandingPage } from "../components/landing-page";
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
 import { refreshSupabaseSession, signInWithSupabase, signOutSupabase } from "../lib/auth";
 import { isSupabaseAuthEnabled } from "../lib/supabase/client";
@@ -121,9 +122,6 @@ export default function Page(): ReactElement {
   const queryClient = useQueryClient();
   const { accessToken, user, setSession, clearSession } = useSessionStore();
   const supabaseAuthEnabled = isSupabaseAuthEnabled();
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [registerEmail, setRegisterEmail] = useState("");
-  const [registerPassword, setRegisterPassword] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginMfaCode, setLoginMfaCode] = useState("");
@@ -412,28 +410,6 @@ export default function Page(): ReactElement {
     ]);
   };
 
-  const registerMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<{ readonly user: PublicUser }>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({
-          email: registerEmail,
-          password: registerPassword,
-          firstName: "Paper",
-          lastName: "Trader"
-        })
-      }),
-    onSuccess: () => {
-      setNotice("Registration complete. Login is ready.");
-      setLoginEmail(registerEmail);
-      setLoginPassword(registerPassword);
-      setAuthMode("login");
-    },
-    onError: (error) => {
-      setNotice(error instanceof Error ? error.message : "Registration failed.");
-    }
-  });
-
   const loginMutation = useMutation({
     mutationFn: () =>
       supabaseAuthEnabled
@@ -475,7 +451,6 @@ export default function Page(): ReactElement {
     onSettled: () => {
       clearSession();
       setNotice("Logged out.");
-      setAuthMode("login");
       setActiveTab("overview");
       setMfaSetup(null);
       setMfaCode("");
@@ -961,162 +936,21 @@ export default function Page(): ReactElement {
 
   if (!authenticated) {
     return (
-      <main className="min-h-screen px-4 py-6 md:px-8">
-        <section className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl items-center gap-8 md:grid-cols-[1fr_420px]">
-          <div className="space-y-8">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10">
-                <LineChart className="h-6 w-6 text-emerald-300" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="font-mono text-xs uppercase tracking-[0.22em] text-emerald-200">QuantCore</p>
-                <h1 className="text-4xl font-semibold text-white md:text-6xl">AI Trading Platform</h1>
-              </div>
-            </div>
-            <div className="grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
-              <div className="border-l-2 border-emerald-400 bg-white/[0.03] p-4">
-                <Shield className="mb-3 h-5 w-5 text-emerald-300" aria-hidden="true" />
-                Risk engine final authority
-              </div>
-              <div className="border-l-2 border-violetSignal bg-white/[0.03] p-4">
-                <Sparkles className="mb-3 h-5 w-5 text-violet-300" aria-hidden="true" />
-                Model-versioned AI signals
-              </div>
-              <div className="border-l-2 border-caution bg-white/[0.03] p-4">
-                <ClipboardList className="mb-3 h-5 w-5 text-amber-300" aria-hidden="true" />
-                Immutable audit events
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-line bg-panel/95 p-5 shadow-2xl">
-            {!supabaseAuthEnabled ? (
-              <div className="mb-5 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("register");
-                    setMfaChallenge(false);
-                    setLoginMfaCode("");
-                  }}
-                  className={`rounded-md px-4 py-2 text-sm ${authMode === "register" ? "bg-emerald-500 text-slate-950" : "bg-white/5 text-slate-200"}`}
-                >
-                  Register
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuthMode("login")}
-                  className={`rounded-md px-4 py-2 text-sm ${authMode === "login" ? "bg-violetSignal text-white" : "bg-white/5 text-slate-200"}`}
-                >
-                  Login
-                </button>
-              </div>
-            ) : (
-              <p className="mb-5 text-sm text-slate-300">
-                Access is invite-only. Sign in with credentials provided by your administrator.
-              </p>
-            )}
-
-            {!supabaseAuthEnabled && authMode === "register" ? (
-              <form
-                className="space-y-4"
-                onSubmit={(event: FormEvent<HTMLFormElement>) => {
-                  event.preventDefault();
-                  registerMutation.mutate();
-                }}
-              >
-                <label className="block text-sm text-slate-300">
-                  Email
-                  <input
-                    data-testid="register-email"
-                    className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-3 text-white outline-none focus:border-emerald-400"
-                    value={registerEmail}
-                    onChange={(event) => setRegisterEmail(event.target.value)}
-                    autoComplete="email"
-                  />
-                </label>
-                <label className="block text-sm text-slate-300">
-                  Password
-                  <input
-                    data-testid="register-password"
-                    className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-3 text-white outline-none focus:border-emerald-400"
-                    value={registerPassword}
-                    onChange={(event) => setRegisterPassword(event.target.value)}
-                    type="password"
-                    autoComplete="new-password"
-                  />
-                </label>
-                <button
-                  data-testid="register-submit"
-                  type="submit"
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 font-medium text-slate-950"
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Create Account
-                </button>
-              </form>
-            ) : (
-              <form
-                className="space-y-4"
-                onSubmit={(event: FormEvent<HTMLFormElement>) => {
-                  event.preventDefault();
-                  loginMutation.mutate();
-                }}
-              >
-                <label className="block text-sm text-slate-300">
-                  Email
-                  <input
-                    data-testid="login-email"
-                    className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-3 text-white outline-none focus:border-violetSignal"
-                    value={loginEmail}
-                    onChange={(event) => setLoginEmail(event.target.value)}
-                    autoComplete="email"
-                  />
-                </label>
-                <label className="block text-sm text-slate-300">
-                  Password
-                  <input
-                    data-testid="login-password"
-                    className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-3 text-white outline-none focus:border-violetSignal"
-                    value={loginPassword}
-                    onChange={(event) => setLoginPassword(event.target.value)}
-                    type="password"
-                    autoComplete="current-password"
-                  />
-                </label>
-                {mfaChallenge ? (
-                  <label className="block text-sm text-slate-300">
-                    Authenticator code
-                    <input
-                      data-testid="login-mfa-code"
-                      className="mt-2 w-full rounded-md border border-violet-400/60 bg-surface px-3 py-3 font-mono text-white outline-none focus:border-violetSignal"
-                      value={loginMfaCode}
-                      onChange={(event) => setLoginMfaCode(event.target.value.replace(/\D/gu, "").slice(0, 6))}
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                    />
-                  </label>
-                ) : null}
-                <button
-                  data-testid="login-submit"
-                  type="submit"
-                  className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 font-medium text-white"
-                >
-                  <Lock className="h-4 w-4" aria-hidden="true" />
-                  Enter Platform
-                </button>
-              </form>
-            )}
-
-            {notice ? (
-              <p data-testid="auth-notice" className="mt-4 rounded-md border border-line bg-surface px-3 py-2 text-sm text-slate-200">
-                {notice}
-              </p>
-            ) : null}
-          </div>
-        </section>
-      </main>
+      <LandingPage
+        loginEmail={loginEmail}
+        loginPassword={loginPassword}
+        loginMfaCode={loginMfaCode}
+        mfaChallenge={mfaChallenge}
+        notice={notice}
+        submitting={loginMutation.isPending}
+        onLoginEmailChange={setLoginEmail}
+        onLoginPasswordChange={setLoginPassword}
+        onLoginMfaCodeChange={setLoginMfaCode}
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          loginMutation.mutate();
+        }}
+      />
     );
   }
 
@@ -2070,56 +1904,54 @@ export default function Page(): ReactElement {
           </div>
           <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
             <Panel title="User Administration" icon={<WalletCards className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
-              {supabaseAuthEnabled ? (
-                <form
-                  data-testid="admin-create-user-form"
-                  className="mb-4 space-y-3 rounded-md border border-line bg-surface p-3"
-                  onSubmit={(event: FormEvent<HTMLFormElement>) => {
-                    event.preventDefault();
-                    createAdminUserMutation.mutate();
-                  }}
+              <form
+                data-testid="admin-create-user-form"
+                className="mb-4 space-y-3 rounded-md border border-line bg-surface p-3"
+                onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                  event.preventDefault();
+                  createAdminUserMutation.mutate();
+                }}
+              >
+                <p className="text-sm font-medium text-white">Provision user (admin-set password)</p>
+                <input
+                  data-testid="admin-create-email"
+                  className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                  placeholder="Email"
+                  value={newUserEmail}
+                  onChange={(event) => setNewUserEmail(event.target.value)}
+                  autoComplete="off"
+                />
+                <input
+                  data-testid="admin-create-password"
+                  className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                  placeholder="Temporary password"
+                  type="password"
+                  value={newUserPassword}
+                  onChange={(event) => setNewUserPassword(event.target.value)}
+                  autoComplete="new-password"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                    placeholder="First name"
+                    value={newUserFirstName}
+                    onChange={(event) => setNewUserFirstName(event.target.value)}
+                  />
+                  <input
+                    className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                    placeholder="Last name"
+                    value={newUserLastName}
+                    onChange={(event) => setNewUserLastName(event.target.value)}
+                  />
+                </div>
+                <button
+                  data-testid="admin-create-submit"
+                  type="submit"
+                  className="w-full rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-slate-950"
                 >
-                  <p className="text-sm font-medium text-white">Provision user (admin-set password)</p>
-                  <input
-                    data-testid="admin-create-email"
-                    className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
-                    placeholder="Email"
-                    value={newUserEmail}
-                    onChange={(event) => setNewUserEmail(event.target.value)}
-                    autoComplete="off"
-                  />
-                  <input
-                    data-testid="admin-create-password"
-                    className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
-                    placeholder="Temporary password"
-                    type="password"
-                    value={newUserPassword}
-                    onChange={(event) => setNewUserPassword(event.target.value)}
-                    autoComplete="new-password"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
-                      placeholder="First name"
-                      value={newUserFirstName}
-                      onChange={(event) => setNewUserFirstName(event.target.value)}
-                    />
-                    <input
-                      className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
-                      placeholder="Last name"
-                      value={newUserLastName}
-                      onChange={(event) => setNewUserLastName(event.target.value)}
-                    />
-                  </div>
-                  <button
-                    data-testid="admin-create-submit"
-                    type="submit"
-                    className="w-full rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-slate-950"
-                  >
-                    Create user
-                  </button>
-                </form>
-              ) : null}
+                  Create user
+                </button>
+              </form>
               <div data-testid="admin-users" className="space-y-2">
                 {(adminUsers.data ?? []).map((adminUser) => (
                   <div key={adminUser.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-md border border-line bg-surface px-3 py-2 text-sm">
