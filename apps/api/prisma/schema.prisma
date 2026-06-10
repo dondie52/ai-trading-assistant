@@ -93,8 +93,29 @@ model User {
   notifications           Notification[]
   sessions                Session[]
   passwordResetTokens     PasswordResetToken[]
+  dondieAgent             DondieAgent?
 
   @@map("users")
+}
+
+model DondieAgent {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @unique @map("user_id") @db.Uuid
+  name                String    @default("Dondie")
+  tier                String    @default("FREE")
+  status              String    @default("ACTIVE")
+  walletBalance       Decimal   @default(0) @map("wallet_balance") @db.Decimal(18, 4)
+  strategyId          String?   @map("strategy_id") @db.Uuid
+  scheduleMinutes     Int       @default(60) @map("schedule_minutes")
+  symbolUniverse      String[]  @default([]) @map("symbol_universe")
+  lastRunAt           DateTime? @map("last_run_at")
+  lastEvaluationScore Decimal?  @map("last_evaluation_score") @db.Decimal(8, 4)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  user                User      @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@map("dondie_agents")
 }
 
 model PasswordResetToken {

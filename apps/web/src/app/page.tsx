@@ -33,6 +33,8 @@ import type {
   AuditLog,
   AutomationRunResult,
   AuthTokens,
+  DondieAgent,
+  DondieRunResult,
   BacktestResult,
   IndicatorSnapshot,
   JsonObject,
@@ -275,6 +277,11 @@ export default function Page(): ReactElement {
     refetchInterval: 10_000,
     queryFn: () => apiFetch<OperationalMetricsSnapshot>("/admin/metrics", {}, token)
   });
+  const dondieAgent = useQuery({
+    queryKey: ["dondie", accessToken],
+    enabled: authenticated,
+    queryFn: () => apiFetch<DondieAgent | null>("/dondie", {}, token)
+  });
 
   useEffect(() => {
     if (!authenticated) {
@@ -400,7 +407,8 @@ export default function Page(): ReactElement {
       queryClient.invalidateQueries({ queryKey: ["broker-accounts"] }),
       queryClient.invalidateQueries({ queryKey: ["admin-audit"] }),
       queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
-      queryClient.invalidateQueries({ queryKey: ["admin-health"] })
+      queryClient.invalidateQueries({ queryKey: ["admin-health"] }),
+      queryClient.invalidateQueries({ queryKey: ["dondie"] })
     ]);
   };
 
@@ -575,6 +583,62 @@ export default function Page(): ReactElement {
     onError: async (error) => {
       setNotice(error instanceof Error ? error.message : "Manual order failed.");
       await invalidateTradingData();
+    }
+  });
+
+  const activateDondieMutation = useMutation({
+    mutationFn: () => {
+      if (!activeStrategy) {
+        throw new Error("Create a strategy first.");
+      }
+      return apiFetch<DondieAgent>("/dondie/activate", {
+        method: "POST",
+        body: JSON.stringify({ strategyId: activeStrategy.id })
+      }, token);
+    },
+    onSuccess: async (agent) => {
+      setNotice(`${agent.name} activated on ${agent.tier} tier.`);
+      await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Dondie activation failed.");
+    }
+  });
+
+  const pauseDondieMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<DondieAgent>("/dondie/pause", { method: "POST", body: JSON.stringify({}) }, token),
+    onSuccess: async () => {
+      setNotice("Dondie paused.");
+      await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+    }
+  });
+
+  const resumeDondieMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<DondieAgent>("/dondie/resume", { method: "POST", body: JSON.stringify({}) }, token),
+    onSuccess: async () => {
+      setNotice("Dondie resumed.");
+      await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+    }
+  });
+
+  const runDondieMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<DondieRunResult>("/dondie/run", {
+        method: "POST",
+        body: JSON.stringify({ symbol, timeframe })
+      }, token),
+    onSuccess: async (result) => {
+      setNotice(
+        result.automation.status === "EXECUTED"
+          ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
+          : `Dondie skipped ${result.symbol}: ${result.reasoning}`
+      );
+      await invalidateTradingData();
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Dondie run failed.");
     }
   });
 
@@ -1127,6 +1191,66 @@ export default function Page(): ReactElement {
 
           <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
+              <Panel title="Dondie Autonomous Agent" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
+                <div data-testid="dondie-panel" className="space-y-3">
+                  {dondieAgent.data ? (
+                    <>
+                      <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-3">
+                        <SmallStat label="Tier" value={dondieAgent.data.tier} />
+                        <SmallStat label="Status" value={dondieAgent.data.status} />
+                        <SmallStat label="Wallet" value={formatCurrency(dondieAgent.data.walletBalance)} />
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <button
+                          data-testid="dondie-pause"
+                          type="button"
+                          disabled={dondieAgent.data.status !== "ACTIVE"}
+                          onClick={() => pauseDondieMutation.mutate()}
+                          className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
+                        >
+                          Pause
+                        </button>
+                        <button
+                          data-testid="dondie-resume"
+                          type="button"
+                          disabled={dondieAgent.data.status === "ACTIVE"}
+                          onClick={() => resumeDondieMutation.mutate()}
+                          className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
+                        >
+                          Resume
+                        </button>
+                        <button
+                          data-testid="dondie-run"
+                          type="button"
+                          disabled={dondieAgent.data.status !== "ACTIVE"}
+                          onClick={() => runDondieMutation.mutate()}
+                          className="flex items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
+                        >
+                          <Bot className="h-4 w-4" aria-hidden="true" />
+                          Run Dondie
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-slate-300">
+                        Dondie starts on the free tier and earns wallet balance to unlock paid brains.
+                      </p>
+                      <button
+                        data-testid="dondie-activate"
+                        type="button"
+                        disabled={!activeStrategy}
+                        onClick={() => activateDondieMutation.mutate()}
+                        className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
+                      >
+                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                        Activate Dondie
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </Panel>
+
               <Panel title="Strategy Management" icon={<Bot className="h-5 w-5" aria-hidden="true" />}>
                 <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
                   <input

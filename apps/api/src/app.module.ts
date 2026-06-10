@@ -41,6 +41,11 @@ import { OrdersController } from "./trading/orders.controller.js";
 import { PositionsController } from "./trading/positions.controller.js";
 import { TradesController } from "./trading/trades.controller.js";
 import { UsersController } from "./users/users.controller.js";
+import { DondieController } from "./dondie/dondie.controller.js";
+import { DondieService } from "./dondie/dondie.service.js";
+import { DondieRepository } from "./dondie/dondie.repository.js";
+import { DondieBrainFreeService } from "./dondie/dondie-brain-free.service.js";
+import { DondieScheduler } from "./dondie/dondie.scheduler.js";
 
 @Module({
   controllers: [
@@ -61,7 +66,8 @@ import { UsersController } from "./users/users.controller.js";
     OrdersController,
     PositionsController,
     TradesController,
-    UsersController
+    UsersController,
+    DondieController
   ],
   providers: [
     AlpacaBrokerAdapter,
@@ -82,6 +88,10 @@ import { UsersController } from "./users/users.controller.js";
     SupabaseAdminService,
     SupabaseAuthService,
     TokenService,
+    DondieService,
+    DondieRepository,
+    DondieBrainFreeService,
+    DondieScheduler,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
