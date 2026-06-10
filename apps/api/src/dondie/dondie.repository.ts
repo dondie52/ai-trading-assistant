@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import type { DondieAgent, DondieWalletLedgerEntry, JsonObject, UUID } from "@trading/types";
+import type { DondieAgent, DondieSubscription, DondieWalletLedgerEntry, JsonObject, UUID } from "@trading/types";
 import { PrismaService } from "../infrastructure/prisma.service.js";
 import type { PlatformStore } from "../store/platform.store.js";
 
@@ -49,9 +49,10 @@ export class DondieRepository {
     if (!this.isEnabled()) {
       return;
     }
-    const [agents, ledger] = await Promise.all([
+    const [agents, ledger, subscriptions] = await Promise.all([
       this.prisma.client().dondieAgent.findMany(),
-      this.prisma.client().dondieWalletLedgerEntry.findMany()
+      this.prisma.client().dondieWalletLedgerEntry.findMany(),
+      this.prisma.client().dondieSubscription.findMany()
     ]);
     for (const agent of agents) {
       store.dondieAgents.set(agent.id, mapAgent(agent));
@@ -66,6 +67,20 @@ export class DondieRepository {
         balanceAfter: Number(entry.balanceAfter),
         metadata: entry.metadata as JsonObject,
         createdAt: entry.createdAt.toISOString()
+      });
+    }
+    for (const subscription of subscriptions) {
+      store.dondieSubscriptions.set(subscription.id, {
+        id: subscription.id,
+        userId: subscription.userId,
+        agentId: subscription.agentId,
+        plan: subscription.plan as DondieSubscription["plan"],
+        status: subscription.status as DondieSubscription["status"],
+        monthlyPriceUsd: Number(subscription.monthlyPriceUsd),
+        ...(subscription.externalId ? { externalId: subscription.externalId } : {}),
+        revenueCredited: Number(subscription.revenueCredited),
+        createdAt: subscription.createdAt.toISOString(),
+        updatedAt: subscription.updatedAt.toISOString()
       });
     }
   }
@@ -102,6 +117,35 @@ export class DondieRepository {
         lastRunAt: agent.lastRunAt ? toDate(agent.lastRunAt) : null,
         lastEvaluationScore: agent.lastEvaluationScore ?? null,
         updatedAt: toDate(agent.updatedAt)
+      }
+    });
+  }
+
+  async persistSubscription(subscription: DondieSubscription): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    await this.prisma.client().dondieSubscription.upsert({
+      where: { id: subscription.id },
+      create: {
+        id: subscription.id,
+        userId: subscription.userId,
+        agentId: subscription.agentId,
+        plan: subscription.plan,
+        status: subscription.status,
+        monthlyPriceUsd: subscription.monthlyPriceUsd,
+        externalId: subscription.externalId ?? null,
+        revenueCredited: subscription.revenueCredited,
+        createdAt: toDate(subscription.createdAt),
+        updatedAt: toDate(subscription.updatedAt)
+      },
+      update: {
+        plan: subscription.plan,
+        status: subscription.status,
+        monthlyPriceUsd: subscription.monthlyPriceUsd,
+        externalId: subscription.externalId ?? null,
+        revenueCredited: subscription.revenueCredited,
+        updatedAt: toDate(subscription.updatedAt)
       }
     });
   }

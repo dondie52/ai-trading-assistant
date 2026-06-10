@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Post } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
 import { CurrentUser } from "../auth/decorators.js";
 import { ok } from "../common/api-response.js";
 import type { AuthenticatedPrincipal } from "../common/request.js";
@@ -16,6 +16,24 @@ export class DondieController {
   @Get("wallet")
   wallet(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
     return ok(this.dondie.getWallet(user.sub));
+  }
+
+  @Get("subscriptions")
+  subscriptions(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
+    return ok(this.dondie.listSubscriptions(user.sub));
+  }
+
+  @Post("subscriptions")
+  async subscribe(@CurrentUser() user: AuthenticatedPrincipal): Promise<ReturnType<typeof ok>> {
+    return ok(await this.dondie.subscribe(user.sub));
+  }
+
+  @Post("subscriptions/:id/cancel")
+  async cancelSubscription(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Param("id") subscriptionId: string
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.dondie.cancelSubscription(user.sub, subscriptionId));
   }
 
   @Post("activate")

@@ -14,6 +14,7 @@ import { DondieBrainLlmService } from "./dondie-brain-llm.service.js";
 import { dondieConfig } from "./dondie.config.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
+import { DondieBillingService } from "./dondie-billing.service.js";
 import { DondieWalletService } from "./dondie-wallet.service.js";
 
 const isoNow = (): string => new Date().toISOString();
@@ -48,7 +49,8 @@ export class DondieService implements OnModuleInit {
     @Inject(DondieBrainService) private readonly brain: DondieBrainService,
     @Inject(DondieBrainLlmService) private readonly llmBrain: DondieBrainLlmService,
     @Inject(DondieScheduler) private readonly scheduler: DondieScheduler,
-    @Inject(DondieWalletService) private readonly wallet: DondieWalletService
+    @Inject(DondieWalletService) private readonly wallet: DondieWalletService,
+    @Inject(DondieBillingService) private readonly billing: DondieBillingService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -61,6 +63,19 @@ export class DondieService implements OnModuleInit {
 
   getAgent(userId: UUID): DondieAgent | undefined {
     return [...this.store.dondieAgents.values()].find((agent) => agent.userId === userId);
+  }
+
+  listSubscriptions(userId: UUID): ReturnType<DondieBillingService["listSubscriptions"]> {
+    return this.billing.listSubscriptions(userId);
+  }
+
+  async subscribe(userId: UUID): Promise<ReturnType<DondieBillingService["subscribe"]>> {
+    const agent = this.requireAgent(userId);
+    return this.billing.subscribe(userId, agent);
+  }
+
+  async cancelSubscription(userId: UUID, subscriptionId: UUID): Promise<ReturnType<DondieBillingService["cancel"]>> {
+    return this.billing.cancel(userId, subscriptionId);
   }
 
   getWallet(userId: UUID): { readonly balance: number; readonly tier: DondieAgent["tier"]; readonly ledger: ReturnType<DondieWalletService["listLedger"]> } {
