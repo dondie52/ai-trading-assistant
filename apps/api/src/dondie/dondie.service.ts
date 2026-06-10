@@ -6,7 +6,7 @@ import {
   OnModuleInit
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { DondieAgent, DondieRunResult, JsonObject, MarketTimeframe, UUID } from "@trading/types";
+import type { DondieAgent, DondieMemory, DondieRunResult, JsonObject, MarketTimeframe, UUID } from "@trading/types";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
 import { DondieBrainService } from "./dondie-brain.service.js";
@@ -15,6 +15,7 @@ import { dondieConfig } from "./dondie.config.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
 import { DondieBillingService } from "./dondie-billing.service.js";
+import { DondieMemoryService } from "./dondie-memory.service.js";
 import { DondieWalletService } from "./dondie-wallet.service.js";
 
 const isoNow = (): string => new Date().toISOString();
@@ -50,7 +51,8 @@ export class DondieService implements OnModuleInit {
     @Inject(DondieBrainLlmService) private readonly llmBrain: DondieBrainLlmService,
     @Inject(DondieScheduler) private readonly scheduler: DondieScheduler,
     @Inject(DondieWalletService) private readonly wallet: DondieWalletService,
-    @Inject(DondieBillingService) private readonly billing: DondieBillingService
+    @Inject(DondieBillingService) private readonly billing: DondieBillingService,
+    @Inject(DondieMemoryService) private readonly memory: DondieMemoryService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -76,6 +78,20 @@ export class DondieService implements OnModuleInit {
 
   async cancelSubscription(userId: UUID, subscriptionId: UUID): Promise<ReturnType<DondieBillingService["cancel"]>> {
     return this.billing.cancel(userId, subscriptionId);
+  }
+
+  listMemories(userId: UUID): readonly DondieMemory[] {
+    const agent = this.requireAgent(userId);
+    return this.memory.listMemories(agent.id);
+  }
+
+  async updateSymbolUniverse(userId: UUID, bodyValue: unknown): Promise<DondieAgent> {
+    const agent = this.requireAgent(userId);
+    const body = asRecord(bodyValue);
+    const symbols = Array.isArray(body.symbols)
+      ? body.symbols.filter((value): value is string => typeof value === "string")
+      : [];
+    return this.memory.updateSymbolUniverse(userId, agent, symbols);
   }
 
   getWallet(userId: UUID): { readonly balance: number; readonly tier: DondieAgent["tier"]; readonly ledger: ReturnType<DondieWalletService["listLedger"]> } {
@@ -217,7 +233,7 @@ export class DondieService implements OnModuleInit {
       }
     });
 
-    return {
+    const result: DondieRunResult = {
       agentId: agent.id,
       tier: updatedAgent.tier,
       symbol,
@@ -227,6 +243,8 @@ export class DondieService implements OnModuleInit {
       walletBalance: updatedAgent.walletBalance,
       ranAt: updatedAgent.lastRunAt!
     };
+    await this.memory.recordRun(updatedAgent, result);
+    return result;
   }
 
   async runScheduled(userId: UUID): Promise<void> {

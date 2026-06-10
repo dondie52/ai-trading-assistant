@@ -28,6 +28,19 @@ export class DondieController {
     return ok(await this.dondie.subscribe(user.sub));
   }
 
+  @Get("memories")
+  memories(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
+    return ok(this.dondie.listMemories(user.sub));
+  }
+
+  @Post("universe")
+  async updateUniverse(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Body() body: unknown
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.dondie.updateSymbolUniverse(user.sub, body));
+  }
+
   @Post("subscriptions/:id/cancel")
   async cancelSubscription(
     @CurrentUser() user: AuthenticatedPrincipal,

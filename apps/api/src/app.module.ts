@@ -47,6 +47,7 @@ import { DondieRepository } from "./dondie/dondie.repository.js";
 import { DondieBrainFreeService } from "./dondie/dondie-brain-free.service.js";
 import { DondieBrainLlmService } from "./dondie/dondie-brain-llm.service.js";
 import { DondieBillingService } from "./dondie/dondie-billing.service.js";
+import { DondieMemoryService } from "./dondie/dondie-memory.service.js";
 import { DondieBrainService } from "./dondie/dondie-brain.service.js";
 import { DondieScheduler } from "./dondie/dondie.scheduler.js";
 import { DondieWalletService } from "./dondie/dondie-wallet.service.js";
@@ -100,6 +101,7 @@ import { DondieWalletService } from "./dondie/dondie-wallet.service.js";
     DondieScheduler,
     DondieWalletService,
     DondieBillingService,
+    DondieMemoryService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
