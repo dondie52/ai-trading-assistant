@@ -1,153 +1,124 @@
 # MVP Scope Document
-## AI Trading Platform
 
-Version: 1.0
+## Dondie Survival Agent Platform
+
+Version: 2.0
 
 ---
 
 # Purpose
 
-This document defines the Minimum Viable Product (MVP) for the AI Trading Platform. The MVP focuses on delivering a secure, usable, and testable system capable of generating AI-assisted trade signals and executing trades through supported brokers.
+This document defines the Minimum Viable Product for running **Dondie** — an autonomous agent that trades to fund its own cognition. The MVP delivers a secure operator environment where Dondie can run in paper mode, build a wallet, and prove survival economics before live capital.
 
 ---
 
 # MVP Goals
 
-- Validate market demand
-- Prove end-to-end automated trading workflow
-- Enable paper trading before real capital deployment
-- Establish a scalable architecture foundation
-- Collect performance and user feedback
+- Prove Dondie can run autonomously on a schedule
+- Validate the survival wallet loop (PnL credits, brain debits, tier gating)
+- Establish risk-bounded execution through paper trading
+- Give the operator full visibility and control
+- Collect performance data for live-capital approval
 
 ---
 
 # In-Scope Features
 
-## User Management
+## Dondie Agent
 
-- User registration
-- Login/logout
-- Password reset
-- Multi-factor authentication
-- User profile management
+- Activate / pause / resume agent
+- Link agent to a trading strategy
+- Scheduled and manual runs
+- FREE brain (Phase 1)
+- Wallet balance tracking
+- Tier display (FREE / STANDARD / PRO)
+- Wallet ledger (credits and debits)
+- Tier auto-upgrade/downgrade from balance
 
-## Trading Dashboard
+## Operator Access
 
-- Portfolio overview
-- Open positions
-- Account balances
-- Trade history
-- Performance metrics
+- Admin-provisioned login (Supabase Auth)
+- MFA
+- Session management and audit logging
 
-## Market Data
+## Trading Infrastructure (Agent Runtime)
 
-- Real-time market prices
-- Historical price data
-- Basic indicators
-- Watchlists
-
-## AI Signal Engine
-
-- Buy signals
-- Sell signals
-- Hold signals
-- Confidence scoring
-- Signal history
-
-## Trading Automation
-
-- Manual trade execution
-- Semi-automated approval workflow
-- Fully automated mode
-- Position sizing rules
+- Broker connectivity (Alpaca paper + live with safety flags)
+- Market data, indicators, watchlists
+- AI signal generation (Python service + deterministic fallback)
+- Manual, semi-auto, and full-auto execution paths
+- Order lifecycle and position tracking
 
 ## Risk Management
 
-- Stop-loss configuration
-- Take-profit configuration
+- Stop-loss / take-profit configuration
 - Daily loss limits
 - Maximum position size
 - Exposure controls
+- Risk engine veto on every order
 
 ## Paper Trading
 
-- Simulated account
-- Simulated orders
-- Performance tracking
-- Strategy testing
+- Simulated account (default)
+- Simulated fills from server quotes
+- Performance tracking for validation gate
+
+## Operator Console
+
+- Dondie status (tier, wallet, last run, controls)
+- Portfolio and PnL metrics
+- Strategy management
+- Risk configuration
+- Simulation lab (backtests)
+- Audit log visibility
 
 ## Analytics
 
-- Win rate
-- Profit factor
-- Drawdown
-- Sharpe ratio
-- Equity curve
+- Win rate, profit factor, drawdown, Sharpe
+- Equity curve and exportable reports
 
 ---
 
 # Out of Scope
 
-The following features are intentionally excluded from the MVP:
-
-- High-frequency trading
-- Options trading
-- Futures trading
-- Social trading
-- Copy trading
-- Reinforcement learning agents
-- Multi-tenant institutional support
-- Advanced portfolio optimization
-- Proprietary exchange integrations
+- Self-service user registration
+- Multi-tenant consumer product
+- Strategy marketplace
+- Copy / social trading
+- STANDARD/PRO LLM brains (post-MVP wiring)
+- Reinforcement learning
+- Options, futures, HFT
+- Mobile apps
 
 ---
 
 # User Roles
 
-## Trader
+## Operator
 
-- Manage account
-- Execute trades
-- Configure automation
-- View analytics
+- Monitor Dondie
+- Configure strategy and risk
+- Connect broker
+- Pause/resume agent
+- Approve live trading transition
 
 ## Administrator
 
-- Manage users
+- Provision operator accounts
 - Monitor platform health
-- Configure system settings
 - Review audit logs
 
 ---
 
 # Supported Asset Classes
 
-Initial MVP:
-
-- Stocks
-- ETFs
-
-Future Releases:
-
-- Forex
-- Cryptocurrency
-- Futures
-- Options
+Initial MVP: Stocks and ETFs
 
 ---
 
 # Supported Brokers
 
-Initial Target:
-
-- Alpaca (Paper + Live)
-
-Future:
-
-- Interactive Brokers
-- Binance
-- OANDA
-- TradeStation
+Initial: Alpaca (Paper + Live with explicit approval)
 
 ---
 
@@ -155,84 +126,68 @@ Future:
 
 ## Security
 
-- MFA support
-- Encrypted secrets
-- Secure API storage
-- Audit logging
+- MFA, encrypted broker credentials, append-only audit logs
 
 ## Reliability
 
-- 99.9% uptime target
-- Error monitoring
-- Automatic recovery mechanisms
+- 99.9% uptime target for agent scheduler and API
 
 ## Performance
 
-- Signal generation under 5 seconds
-- Dashboard response under 2 seconds
-
-## Scalability
-
-- Modular services
-- Cloud deployment readiness
+- Agent run cycle completes within risk and broker latency bounds
+- Console responsive for operator monitoring
 
 ---
 
 # MVP Success Criteria
 
+## Agent
+
+- Dondie runs on schedule and executes paper trades
+- Wallet reflects PnL credits and brain debits
+- Tier changes follow wallet balance rules
+
 ## Technical
 
-- End-to-end trading workflow operational
-- Stable broker integration
-- Secure authentication
+- End-to-end run → signal → risk → order → fill → wallet update
+- Stable broker and market data integration
 
-## Product
+## Operator
 
-- First active users onboarded
-- Positive user feedback
-- Successful paper-trading validation
-
-## Trading
-
-- Consistent strategy execution
-- Risk controls functioning correctly
-- Accurate trade logging
+- Full visibility into agent state and audit history
+- Paper validation gate documented and enforceable
 
 ---
 
 # Release Milestones
 
-## Phase 1
+## Phase 1 (Current)
 
-- Authentication
-- Dashboard
-- Market data
+- Dondie FREE brain, scheduler, operator console shell
 
 ## Phase 2
 
-- AI signal generation
-- Paper trading
+- Wallet ledger, PnL credits, brain debits, tier gating
 
 ## Phase 3
 
-- Automated execution
-- Risk controls
+- STANDARD / PRO LLM brains
 
 ## Phase 4
 
-- Analytics
-- MVP launch
+- Live capital after paper validation
 
 ---
 
 # Exit Criteria
 
-The MVP is considered complete when:
+The MVP is complete when:
 
-1. Users can register and authenticate.
-2. Market data is displayed reliably.
-3. AI signals are generated and logged.
-4. Paper trading is operational.
-5. Trades can be executed through a supported broker.
-6. Risk controls prevent rule violations.
-7. Analytics accurately report trading performance.
+1. Dondie activates and runs autonomously in paper mode.
+2. Wallet survival loop is operational (credit/debit/tier).
+3. Risk controls block invalid trades.
+4. Operator console shows agent status, wallet, and run history.
+5. Paper trading validation gate is documented and testable.
+6. Audit logs capture every agent action.
+
+See `docs/dondie-survival-model.md` for survival economics.

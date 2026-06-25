@@ -1,28 +1,27 @@
 # Functional Requirements Specification
-## AI Trading Platform
 
-Version: 1.0
+## Dondie Survival Agent Platform
+
+Version: 2.0
 
 ---
 
 # Purpose
 
-This document defines the functional requirements for the AI Trading Platform MVP and future expansion phases.
+Functional requirements for the **Dondie operator environment**: autonomous agent, trading runtime, risk engine, and control console.
 
-The purpose is to provide clear system behavior specifications for developers, architects, testers, and AI coding assistants.
+Canonical product definition: `docs/dondie-survival-model.md`
 
 ---
 
 # System Overview
 
-The AI Trading Platform enables users to:
+The platform enables the operator to:
 
-- Analyze markets
-- Receive AI-generated signals
-- Execute trades
-- Automate strategies
-- Manage risk
-- Monitor performance
+- Activate and monitor Dondie (wallet, tier, runs)
+- Connect broker credentials and risk limits
+- Run paper and (when approved) live trades through the agent
+- Inspect audit logs and performance analytics
 
 ---
 

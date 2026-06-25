@@ -376,7 +376,7 @@ export default function Page(): ReactElement {
     readonly label: string;
     readonly icon: ReactNode;
   }[] = [
-    { id: "overview", label: "Overview", icon: <BarChart3 className="h-4 w-4" aria-hidden="true" /> },
+    { id: "overview", label: "Dondie", icon: <Sparkles className="h-4 w-4" aria-hidden="true" /> },
     { id: "market", label: "Market", icon: <LineChart className="h-4 w-4" aria-hidden="true" /> },
     { id: "strategies", label: "Strategies", icon: <Bot className="h-4 w-4" aria-hidden="true" /> },
     { id: "risk", label: "Risk & Alerts", icon: <Shield className="h-4 w-4" aria-hidden="true" /> },
@@ -962,9 +962,9 @@ export default function Page(): ReactElement {
             <LineChart className="h-5 w-5 text-emerald-300" aria-hidden="true" />
           </div>
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-slate-400">QuantCore Terminal</p>
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-slate-400">Dondie Operator Console</p>
             <h1 data-testid="dashboard-title" className="text-2xl font-semibold text-white">
-              Trader Dashboard
+              Dondie Control Room
             </h1>
           </div>
         </div>
@@ -1014,78 +1014,88 @@ export default function Page(): ReactElement {
 
       {activeTab === "overview" ? (
         <>
+          <section className="mb-5">
+            <Panel title="Dondie — Survival Agent" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
+              <div data-testid="dondie-panel" className="space-y-4">
+                <p className="text-sm text-slate-300">
+                  Dondie trades to fund its own cognition. Profits credit its wallet; brain runs debit it.
+                  Higher wallet balance unlocks STANDARD and PRO brains.
+                </p>
+                {dondieAgent.data ? (
+                  <>
+                    <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-4">
+                      <SmallStat label="Tier" value={dondieAgent.data.tier} />
+                      <SmallStat label="Status" value={dondieAgent.data.status} />
+                      <SmallStat label="Wallet" value={formatCurrency(dondieAgent.data.walletBalance)} />
+                      <SmallStat
+                        label="Last run"
+                        value={dondieAgent.data.lastRunAt ? new Date(dondieAgent.data.lastRunAt).toLocaleString() : "Never"}
+                      />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <button
+                        data-testid="dondie-pause"
+                        type="button"
+                        disabled={dondieAgent.data.status !== "ACTIVE"}
+                        onClick={() => pauseDondieMutation.mutate()}
+                        className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
+                      >
+                        Pause agent
+                      </button>
+                      <button
+                        data-testid="dondie-resume"
+                        type="button"
+                        disabled={dondieAgent.data.status === "ACTIVE"}
+                        onClick={() => resumeDondieMutation.mutate()}
+                        className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
+                      >
+                        Resume agent
+                      </button>
+                      <button
+                        data-testid="dondie-run"
+                        type="button"
+                        disabled={dondieAgent.data.status !== "ACTIVE"}
+                        onClick={() => runDondieMutation.mutate()}
+                        className="flex items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
+                      >
+                        <Bot className="h-4 w-4" aria-hidden="true" />
+                        Run now
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-400">
+                      Link a strategy below, then activate Dondie on the FREE tier to begin survival runs.
+                    </p>
+                    <button
+                      data-testid="dondie-activate"
+                      type="button"
+                      disabled={!activeStrategy}
+                      onClick={() => activateDondieMutation.mutate()}
+                      className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
+                    >
+                      <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      Activate Dondie
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </section>
+
           <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <MetricCard icon={<WalletCards />} label="Agent Wallet" value={formatCurrency(dondieAgent.data?.walletBalance)} tone="violet" />
             <MetricCard icon={<DollarSign />} label="Portfolio Value" value={formatCurrency(primaryPortfolio?.portfolioValue)} tone="emerald" />
             <MetricCard icon={<Gauge />} label="Cash Balance" value={formatCurrency(primaryPortfolio?.cashBalance)} tone="violet" />
             <MetricCard icon={<LineChart />} label="Realized P&L" value={formatCurrency(primaryPortfolio?.realizedPnl)} tone="emerald" />
             <MetricCard icon={<Activity />} label="Unrealized P&L" value={formatCurrency(primaryPortfolio?.unrealizedPnl)} tone="cyan" />
-            <MetricCard icon={<Activity />} label="Win Rate" value={formatPercent(analytics.data?.winRate)} tone="amber" />
             <MetricCard icon={<Shield />} label="Max Drawdown" value={formatPercent(analytics.data?.maxDrawdown)} tone="rose" />
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
-              <Panel title="Dondie Autonomous Agent" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
-                <div data-testid="dondie-panel" className="space-y-3">
-                  {dondieAgent.data ? (
-                    <>
-                      <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-3">
-                        <SmallStat label="Tier" value={dondieAgent.data.tier} />
-                        <SmallStat label="Status" value={dondieAgent.data.status} />
-                        <SmallStat label="Wallet" value={formatCurrency(dondieAgent.data.walletBalance)} />
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <button
-                          data-testid="dondie-pause"
-                          type="button"
-                          disabled={dondieAgent.data.status !== "ACTIVE"}
-                          onClick={() => pauseDondieMutation.mutate()}
-                          className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
-                        >
-                          Pause
-                        </button>
-                        <button
-                          data-testid="dondie-resume"
-                          type="button"
-                          disabled={dondieAgent.data.status === "ACTIVE"}
-                          onClick={() => resumeDondieMutation.mutate()}
-                          className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
-                        >
-                          Resume
-                        </button>
-                        <button
-                          data-testid="dondie-run"
-                          type="button"
-                          disabled={dondieAgent.data.status !== "ACTIVE"}
-                          onClick={() => runDondieMutation.mutate()}
-                          className="flex items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
-                        >
-                          <Bot className="h-4 w-4" aria-hidden="true" />
-                          Run Dondie
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-3">
-                      <p className="text-sm text-slate-300">
-                        Dondie starts on the free tier and earns wallet balance to unlock paid brains.
-                      </p>
-                      <button
-                        data-testid="dondie-activate"
-                        type="button"
-                        disabled={!activeStrategy}
-                        onClick={() => activateDondieMutation.mutate()}
-                        className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
-                      >
-                        <Sparkles className="h-4 w-4" aria-hidden="true" />
-                        Activate Dondie
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </Panel>
-
-              <Panel title="Strategy Management" icon={<Bot className="h-5 w-5" aria-hidden="true" />}>
+              <Panel title="Strategy (Agent Link)" icon={<Bot className="h-5 w-5" aria-hidden="true" />}>
                 <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
                   <input
                     data-testid="strategy-name"
@@ -1513,7 +1523,7 @@ export default function Page(): ReactElement {
                 </button>
               </form>
             ) : (
-              <EmptyLine text="Create a strategy from Overview to configure it here" />
+              <EmptyLine text="Create a strategy on the Dondie tab to link the agent" />
             )}
           </Panel>
         </section>

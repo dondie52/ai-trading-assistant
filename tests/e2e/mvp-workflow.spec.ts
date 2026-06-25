@@ -35,7 +35,7 @@ const totpCode = (secret: string, timestampMs = Date.now()): string => {
   return String(binary % 1_000_000).padStart(6, "0");
 };
 
-test.describe.serial("AI Trading Platform MVP", () => {
+test.describe.serial("Dondie survival agent platform", () => {
   test("runs the required paper trading workflow with audit visibility", async ({ page }, testInfo) => {
     const projectSlug = testInfo.project.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     const traderEmail = `paper-${projectSlug}-${testInfo.workerIndex}-${Date.now()}@example.com`;
@@ -51,7 +51,7 @@ test.describe.serial("AI Trading Platform MVP", () => {
       await page.getByTestId("login-email").fill(adminEmail ?? "");
       await page.getByTestId("login-password").fill(adminPassword ?? "");
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Trader Dashboard");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
       await page.getByTestId("tab-admin").click();
       await expect(page.getByTestId("admin-view")).toBeVisible();
       await page.getByTestId("admin-create-email").fill(traderEmail);
@@ -65,7 +65,7 @@ test.describe.serial("AI Trading Platform MVP", () => {
       await page.getByTestId("login-email").fill(traderEmail);
       await page.getByTestId("login-password").fill(traderPassword);
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Trader Dashboard");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
     });
 
     await test.step("Dashboard loads", async () => {
@@ -183,7 +183,7 @@ test.describe.serial("AI Trading Platform MVP", () => {
       await expect(page.getByTestId("login-mfa-code")).toBeVisible();
       await page.getByTestId("login-mfa-code").fill(totpCode(secret));
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Trader Dashboard");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
     });
 
     await test.step("Admin audit log is visible", async () => {
@@ -191,7 +191,7 @@ test.describe.serial("AI Trading Platform MVP", () => {
       await page.getByTestId("login-email").fill(adminEmail ?? "");
       await page.getByTestId("login-password").fill(adminPassword ?? "");
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Trader Dashboard");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
       await page.getByTestId("tab-admin").click();
       await expect(page.getByTestId("admin-view")).toBeVisible();
       await expect(page.getByTestId("admin-users")).toContainText(adminEmail ?? "");

@@ -1,14 +1,14 @@
 "use client";
 
 import {
-  BarChart3,
   Bot,
   ClipboardList,
   FlaskConical,
   Lock,
   Mail,
   Shield,
-  Sparkles
+  Sparkles,
+  Wallet
 } from "lucide-react";
 import type { FormEvent, ReactElement } from "react";
 
@@ -27,34 +27,34 @@ interface LandingPageProps {
 
 const features = [
   {
+    icon: Sparkles,
+    title: "Survival agent",
+    description: "Dondie trades autonomously and earns wallet balance to fund smarter brains."
+  },
+  {
+    icon: Wallet,
+    title: "Wallet economics",
+    description: "Profits credit the wallet; brain runs debit it. Tier access follows balance."
+  },
+  {
     icon: Shield,
     title: "Risk engine authority",
-    description: "Every order passes through configurable risk gates before execution."
-  },
-  {
-    icon: Sparkles,
-    title: "Model-versioned AI signals",
-    description: "Deterministic signal scoring with confidence thresholds and audit lineage."
-  },
-  {
-    icon: ClipboardList,
-    title: "Immutable audit trail",
-    description: "Append-only event history for trades, risk blocks, and admin actions."
-  },
-  {
-    icon: BarChart3,
-    title: "Portfolio intelligence",
-    description: "Real-time positions, performance metrics, and exportable reports."
-  },
-  {
-    icon: FlaskConical,
-    title: "Simulation lab",
-    description: "Historical backtests and walk-forward validation with fees and slippage."
+    description: "Every order passes through hard risk gates — the agent cannot override them."
   },
   {
     icon: Bot,
-    title: "Strategy automation",
-    description: "Manual, semi-automated, and fully automated paper trading workflows."
+    title: "Tiered cognition",
+    description: "FREE, STANDARD, and PRO brains with escalating capability and cost per run."
+  },
+  {
+    icon: FlaskConical,
+    title: "Paper proving ground",
+    description: "Validate agent performance in simulation before live capital is enabled."
+  },
+  {
+    icon: ClipboardList,
+    title: "Operator audit trail",
+    description: "Immutable logs for every run, trade, wallet change, and risk block."
   }
 ] as const;
 
@@ -81,20 +81,20 @@ export function LandingPage({
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-obsidian-bright/50 shadow-inner">
-              <Shield className="h-5 w-5 text-obsidian-primary" aria-hidden="true" />
+              <Sparkles className="h-5 w-5 text-obsidian-primary" aria-hidden="true" />
             </div>
             <div>
               <p className="font-mono text-xs font-semibold uppercase tracking-[0.28em] text-obsidian-primary">
-                Quant_Core
+                Dondie
               </p>
-              <p className="text-sm text-obsidian-muted">AI Trading Platform</p>
+              <p className="text-sm text-obsidian-muted">Autonomous survival agent</p>
             </div>
           </div>
           <a
             href="#sign-in"
             className="rounded-lg border border-obsidian-outline-variant/50 bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-widest text-obsidian-on transition hover:bg-white/5"
           >
-            Sign in
+            Operator sign in
           </a>
         </div>
       </header>
@@ -105,15 +105,15 @@ export function LandingPage({
             <div className="space-y-8 pt-2">
               <div className="space-y-4">
                 <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-obsidian-secondary">
-                  Institutional trading terminal
+                  Trade to survive
                 </p>
                 <h1 className="text-4xl font-bold leading-tight tracking-tight text-obsidian-on md:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
-                  Risk-first execution.
-                  <span className="mt-1 block text-obsidian-primary">AI-guided precision.</span>
+                  An agent that pays
+                  <span className="mt-1 block text-obsidian-primary">for its own mind.</span>
                 </h1>
                 <p className="max-w-xl text-base leading-relaxed text-obsidian-muted md:text-lg">
-                  QuantCore unifies signal generation, paper trading, and hardened risk controls in a single
-                  operator terminal built for professional workflows.
+                  Dondie trades markets, credits its wallet from PnL, and spends balance on tiered brains.
+                  This console is the operator control room — not a consumer trading app.
                 </p>
               </div>
 
@@ -140,8 +140,8 @@ export function LandingPage({
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-obsidian-bright/50 shadow-inner">
                   <Lock className="h-6 w-6 text-obsidian-primary" aria-hidden="true" />
                 </div>
-                <h2 className="text-xl font-semibold tracking-tight text-obsidian-on">Secure Login</h2>
-                <p className="mt-1 text-sm text-obsidian-outline">Sign in with your platform credentials</p>
+                <h2 className="text-xl font-semibold tracking-tight text-obsidian-on">Operator Access</h2>
+                <p className="mt-1 text-sm text-obsidian-outline">Admin-provisioned credentials only</p>
               </header>
 
               <form className="space-y-4" onSubmit={onSubmit}>
@@ -159,7 +159,7 @@ export function LandingPage({
                       className="w-full rounded-lg border border-obsidian-outline-variant/50 bg-obsidian-bg py-3 pl-10 pr-4 text-obsidian-on outline-none transition placeholder:text-obsidian-outline-variant focus:border-obsidian-primary focus:ring-1 focus:ring-obsidian-primary"
                       value={loginEmail}
                       onChange={(event) => onLoginEmailChange(event.target.value)}
-                      placeholder="user@institution.com"
+                      placeholder="operator@example.com"
                       autoComplete="email"
                       required
                     />
@@ -214,7 +214,7 @@ export function LandingPage({
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-obsidian-primary-container px-4 py-3 text-xs font-semibold uppercase tracking-widest text-white shadow-[0_0_15px_rgba(124,58,237,0.3)] transition hover:bg-violet-600 hover:shadow-[0_0_25px_rgba(124,58,237,0.5)] disabled:opacity-60"
                 >
                   <Lock className="h-4 w-4" aria-hidden="true" />
-                  {submitting ? "Authenticating…" : "Authenticate"}
+                  {submitting ? "Authenticating…" : "Enter control room"}
                 </button>
               </form>
 
@@ -239,9 +239,11 @@ export function LandingPage({
           <div className="mx-auto max-w-6xl">
             <div className="mb-8 max-w-2xl">
               <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-obsidian-primary">
-                Platform capabilities
+                Survival stack
               </p>
-              <h2 className="mt-2 text-2xl font-semibold text-obsidian-on md:text-3xl">Built for controlled execution</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-obsidian-on md:text-3xl">
+                Infrastructure for one autonomous agent
+              </h2>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {features.map((feature) => (
@@ -261,8 +263,8 @@ export function LandingPage({
 
       <footer className="relative z-10 border-t border-white/[0.08] px-4 py-8 md:px-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 text-sm text-obsidian-outline sm:flex-row">
-          <p>QuantCore AI Trading Platform</p>
-          <p className="font-mono text-xs uppercase tracking-widest">Institutional secure access</p>
+          <p>Dondie — autonomous survival agent</p>
+          <p className="font-mono text-xs uppercase tracking-widest">Operator access only</p>
         </div>
       </footer>
     </div>

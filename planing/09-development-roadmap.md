@@ -1,15 +1,14 @@
 # Development Roadmap
-## AI Trading Platform
 
-Version: 1.0
+## Dondie Survival Agent Platform
+
+Version: 2.0
 
 ---
 
 # Purpose
 
-This document defines the execution strategy, milestones, sprint plans, deliverables, and release schedule for the AI Trading Platform.
-
-The objective is to transform project requirements into an executable development plan.
+This document defines execution milestones for **Dondie** — the autonomous agent that trades to fund its own cognition — and the operator infrastructure that supports it.
 
 ---
 

@@ -1,23 +1,22 @@
-# UI/UX Specification & Wireframe Documentation
+# UI/UX Specification
 
-## AI Trading Platform
+## Dondie Operator Console
 
-Version: 1.1
+Version: 2.0
 
 Related Documents:
 
-* 01-project-vision.md
-* 04-functional-requirements.md
-* 06-system-architecture.md
-* 08-CLAUDE.md
+* `docs/dondie-survival-model.md`
+* `01-project-vision.md`
+* `08-CLAUDE.md`
 
 ---
 
 # Purpose
 
-This document defines the visual architecture, user experience standards, navigation structure, design system, and screen specifications for the AI Trading Platform.
+This document defines the visual architecture and UX standards for the **Dondie operator console** — the control room where the human operator monitors the survival agent, wallet, runs, and trading infrastructure.
 
-All visual assets were generated using Stitch and serve as the primary UI reference for implementation.
+This is not a consumer trading product UI. Every screen should reinforce: agent status, survival economics, risk boundaries, and operator control.
 
 ---
 

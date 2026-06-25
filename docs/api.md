@@ -1,6 +1,8 @@
 # API Summary
 
-All routes are versioned under `/api/v1` and return:
+All routes are versioned under `/api/v1`. The API serves the **Dondie operator console** and the **agent runtime** — not a public consumer product.
+
+Response envelope:
 
 ```json
 { "success": true, "data": {} }
@@ -14,108 +16,80 @@ or:
 
 ## Authentication
 
-Production uses **Supabase Auth** (`AUTH_PROVIDER=supabase`). The web client signs in with Supabase and sends the Supabase access token as `Authorization: Bearer <token>` to the API. Self-service registration is disabled; admins provision users via `POST /admin/users`.
+Production uses **Supabase Auth** (`AUTH_PROVIDER=supabase`). The operator signs in via Supabase; the web client sends the access token as `Authorization: Bearer <token>`. Self-service registration is disabled — admins provision accounts via `POST /admin/users`.
 
 Set `AUTH_PROVIDER=legacy` only for local automated tests.
 
-Implemented route groups:
+## Dondie Agent (Primary)
 
-- `POST /auth/register` (disabled — accounts are admin-provisioned via `POST /admin/users`)
-- `POST /auth/login`
-- `POST /auth/logout`
-- `POST /auth/refresh`
-- `POST /auth/password-reset/request`
-- `POST /auth/password-reset/confirm`
-- `POST /auth/mfa/setup`
-- `POST /auth/mfa/enable`
-- `POST /auth/mfa/disable`
-- `GET /users/me`
-- `GET /users/profile`
-- `PUT /users/profile` updates name fields and `notificationPreferences` (`trade`, `signal`, `risk`, `system`)
-- `DELETE /users/account`
-- `GET /portfolios`
-- `GET /portfolios/:id`
-- `GET /portfolios/:id/performance`
-- `POST /brokers/connect`
-- `GET /brokers/accounts`
-- `DELETE /brokers/:id`
-- `GET /market/prices/:symbol?timeframe=1m|5m|15m|1h|4h|1d`
-- `GET /market/quotes/:symbol?timeframe=1m|5m|15m|1h|4h|1d`
-- `GET /market/indicators/:symbol?timeframe=1m|5m|15m|1h|4h|1d`
-- `GET /market/watchlists`
-- `PUT /market/watchlists`
+Survival agent endpoints:
+
+- `GET /dondie` — returns the operator's Dondie agent or `null`
+- `POST /dondie/activate` — requires `strategyId`; creates agent on FREE tier with wallet balance 0
+- `POST /dondie/pause` — stops scheduled and manual runs
+- `POST /dondie/resume` — re-enables runs
+- `POST /dondie/run` — optional `symbol`, `timeframe`; executes brain → automation pipeline
+
+Planned (survival loop):
+
+- Wallet ledger endpoints
+- Tier upgrade/downgrade events
+- Brain cost debits on run completion
+- PnL credits on trade close
+
+Survival config: `apps/api/src/dondie/dondie.config.ts` and `.env` (see `docs/dondie-survival-model.md`).
+
+## Trading Runtime (Agent Infrastructure)
+
+- `POST /automation/run` — signal → risk → order pipeline
+- `POST /signals/generate` — AI signal for symbol/strategy
+- `POST /orders` / `GET /orders` — order lifecycle
+- `GET /trades` / `GET /positions` — fill and position state
+- `GET /portfolios` — account equity and PnL
+
+## Risk (Capital Preservation)
+
+- `GET /risk` / `PUT /risk` — operator-configured limits
+- All order routes pass through risk engine before broker execution
+
+## Market Data
+
+- `GET /market/prices/:symbol` — candles by timeframe
+- `GET /market/quotes/:symbol` — latest quote
+- `GET /market/indicators/:symbol` — indicator snapshot
+- `GET /market/watchlists` / `PUT /market/watchlists`
+
+## Strategies
+
+- `POST /strategies` / `GET /strategies` / `PUT /strategies/:id` / `DELETE /strategies/:id`
+- Dondie requires an linked strategy at activation
+
+## Simulation Lab
+
 - `POST /backtests/run`
 - `POST /backtests/walk-forward`
-- `POST /strategies`
-- `GET /strategies`
-- `GET /strategies/:id`
-- `PUT /strategies/:id`
-- `DELETE /strategies/:id`
-- `GET /signals`
-- `GET /signals/:id`
-- `GET /signals/history`
-- `POST /signals/generate`
-- `POST /automation/run`
-- `GET /dondie` returns the authenticated user's Dondie agent or `null`
-- `POST /dondie/activate` requires `strategyId`; creates the agent on the `FREE` tier
-- `POST /dondie/pause`
-- `POST /dondie/resume`
-- `POST /dondie/run` optional `symbol` and `timeframe`; runs the free-tier brain and automation pipeline
-- `POST /orders`
-- `GET /orders`
-- `GET /orders/:id`
-- `GET /orders/:id/history`
-- `DELETE /orders/:id`
-- `GET /trades`
-- `GET /trades/:id`
-- `GET /trades/history`
-- `GET /positions`
-- `GET /positions/:symbol`
-- `GET /risk`
-- `PUT /risk`
-- `GET /analytics/performance`
-- `GET /analytics/drawdown`
-- `GET /analytics/sharpe`
-- `GET /analytics/winrate`
-- `GET /reports/performance/csv`
-- `GET /reports/performance/pdf`
-- `GET /notifications`
-- `PUT /notifications/read`
-- `POST /admin/users` (admin-only; creates Supabase Auth user with temporary password)
-- `GET /admin/users`
-- `PUT /admin/users/:id/status`
-- `GET /admin/system-health`
-- `GET /admin/metrics`
-- `GET /admin/audit-logs`
 
-Collection routes return pagination metadata inside the response data:
+## Broker
 
-```json
-{
-  "success": true,
-  "data": {
-    "data": [],
-    "page": 1,
-    "pageSize": 20,
-    "total": 0
-  }
-}
-```
+- `POST /brokers/connect` — Alpaca credentials (encrypted)
+- `GET /brokers/accounts`
 
-`page` and `pageSize` must be positive integers, and `pageSize` is capped at 100.
+## Analytics & Reports
 
-The Socket.IO endpoint is `/ws`. Clients authenticate with `auth.token` containing an access token backed by an active server-side session, then subscribe with `market:subscribe`. Server events arrive as `realtime:event` with these types:
+- `GET /analytics/performance` and related endpoints
+- `GET /reports/performance/csv` / `/pdf`
 
-- `market.price`
-- `signal.updated`
-- `order.updated`
-- `trade.executed`
-- `notification.created`
+## Admin
 
-Refresh tokens rotate on every successful `POST /auth/refresh`; replaying the previous token returns `INVALID_SESSION`. HTTP and WebSocket sessions expire after the configured idle period. MFA-enabled accounts must include a valid six-digit `mfaCode` in the login request before any access or refresh token is issued.
+- `POST /admin/users` — provision operator accounts
+- `GET /admin/health` / `GET /admin/metrics` / `GET /admin/audit`
 
-Order history contains append-only lifecycle events. Approved paper orders record `PENDING`, `SUBMITTED`, and their broker terminal state; risk and broker failures record `REJECTED`, and accepted cancellations record `CANCELLED`. MARKET fills use server quotes. LIMIT and STOP orders remain `SUBMITTED` until their trigger condition is met, then pass a fresh risk decision before broker submission. A stale approval that no longer satisfies current controls becomes `REJECTED`.
+## Realtime
 
-`POST /brokers/connect` accepts Alpaca credentials only for validation and encrypted persistence. Responses never return API keys or secret keys and expose `hasCredentials` instead.
+Authenticated Socket.IO at `/ws` — market, signal, order, trade, notification events scoped to the operator session.
 
-`GET /admin/metrics` reports API latency/error rate, signal latency/throughput/model versions, trade latency/outcomes, and notification queue depth.
+## Health
+
+- `GET /health` — API and Supabase readiness
+
+See `README.md` for environment setup and `docs/architecture.md` for request flow.

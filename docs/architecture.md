@@ -1,51 +1,67 @@
-# MVP Architecture
+# Architecture
 
-The MVP follows the planning documents' modular monolith approach.
+Dondie runs as a modular monolith: the agent orchestrates trading through shared infrastructure, always bounded by the risk engine.
 
-Request flow:
+## Survival-Centric Request Flow
+
+1. **Dondie scheduler** (or operator manual run) triggers `DondieService.run`.
+2. Active brain plans EXECUTE or SKIP (FREE brain today; STANDARD/PRO LLM brains planned).
+3. EXECUTE paths call `PlatformService.runAutomation` → signal → risk → order.
+4. Paper orders fill via `PaperBrokerAdapter`; live via Alpaca when approved.
+5. Trade PnL credits Dondie wallet (planned); brain runs debit wallet (planned).
+6. Wallet balance determines tier (FREE / STANDARD / PRO).
+7. Operator console reads agent state, wallet, runs, and audit trail.
+
+## Operator Console Flow
 
 1. Next.js web client calls `/api/v1`.
-2. NestJS guards validate JWT access tokens, active server-side sessions, and RBAC.
-3. A user/IP scoped rate-limit guard enforces configurable API request ceilings.
-4. Controllers delegate to `PlatformService`.
-5. Trading actions call the shared risk engine.
-6. Manual and semi-automated orders execute only after risk validation.
-7. Fully automated runs call `/api/v1/automation/run`, generate a signal, enforce confidence/strategy rules, calculate position size, and submit through the same risk-checked order path.
-8. Approved paper orders execute through `PaperBrokerAdapter`; MARKET fills use server quotes while LIMIT and STOP orders wait for marketable quote updates. Pending orders are risk-validated again using current state before the broker is called.
-9. Signals can call FastAPI via `AI_SERVICE_URL`; the API falls back to the shared deterministic model if unavailable.
-10. Every auth, signal, strategy, broker, automation, risk, and trade action writes an immutable audit record.
-11. When `DATABASE_URL` is configured, the API hydrates platform state from Supabase Postgres at startup and persists state-changing operations through Prisma.
-12. Notification delivery events and short-lived market candle caches are stored in Supabase tables.
-13. Authenticated Socket.IO connections at `/ws` receive user-scoped market, signal, order, trade, and notification events.
-14. A global interceptor and domain timers collect API, signal, and trade latency, failures, throughput, model versions, and queue depth for the admin metrics endpoint.
+2. NestJS guards validate Supabase/JWT tokens, sessions, and RBAC.
+3. Controllers delegate to domain services (`PlatformService`, `DondieService`).
+4. Authenticated Socket.IO at `/ws` pushes market, order, trade, and notification events.
 
-Core modules:
+## Core Modules
 
-- Auth/session/token service
-- Password reset token hashing and session revocation
-- Market data, multiple timeframes, and indicators
-- AI signals and model metadata
-- Strategy management
-- Fully automated bot runner
-- Historical and walk-forward out-of-sample backtesting with fees, slippage, and performance metrics
-- Trading/order/position lifecycle
-- Risk rules and position sizing
-- Paper broker abstraction
-- Portfolio and analytics
-- Notifications
-- Admin health, operational metrics, audit, and users
+| Module | Role |
+|--------|------|
+| **Dondie** | Agent: brain selection, wallet, scheduler, tier logic |
+| Auth/session | Operator access, MFA |
+| Market data | Prices, indicators, watchlists |
+| AI signals | Signal generation (FastAPI + fallback) |
+| Strategies | Configuration linked to Dondie |
+| Automation | Signal → risk → order pipeline |
+| Trading | Order/position lifecycle |
+| Risk | Pre-trade validation (highest authority) |
+| Paper broker | Default execution environment |
+| Alpaca broker | Live execution when approved |
+| Analytics | Performance metrics for operator |
+| Admin | Health, metrics, audit, user provisioning |
 
-Persistence:
+## Dondie Components
 
-- `apps/api/prisma/schema.prisma` models Supabase Postgres entities.
-- `supabase/migrations` is the canonical deployment history.
-- Local validation uses an in-memory store so tests do not require external services.
-- Configured runtimes write users, sessions, password reset tokens, broker accounts, portfolios, strategies, signals, orders, trades, positions, risk rules, notifications, watchlists, market prices, and audit logs through Prisma.
-- The startup hydrator merges persisted Supabase state back into the in-memory domain store before requests are served.
-- E2E seed users are created during API startup after hydration; configured Supabase runtimes persist those users and their default paper account state through the same Prisma bootstrap path.
-- Supabase stores notification events in `notification_queue` and market candle snapshots in `market_data_cache`.
-- Alpaca credentials are validated remotely and stored as AES-256-GCM ciphertext; decrypted values remain inside the broker boundary.
-- Session activity is persisted and checked by HTTP and WebSocket authentication paths.
-- Docker Compose runs the API, web, and AI service against the hosted Supabase project.
-- `GET /api/v1/health` reports whether Supabase is configured and reachable.
-- `GET /api/v1/admin/metrics` reports runtime latency, error, throughput, execution, and queue metrics.
+- `DondieService` — activate, pause, run, scheduled execution
+- `DondieBrainFreeService` — Phase 1 brain (signal-based, no LLM cost)
+- `DondieScheduler` — periodic run trigger
+- `DondieRepository` — agent persistence
+- `dondie.config.ts` — survival economics thresholds
+
+Planned:
+
+- Wallet ledger service (PnL credits, brain debits)
+- STANDARD/PRO LLM brain services
+- Tier upgrade/downgrade from wallet balance
+- Agent memory store
+
+## Persistence
+
+- `apps/api/prisma/schema.prisma` — Supabase Postgres entities including `dondie_agents`
+- `supabase/migrations` — canonical deployment history
+- In-memory store for local/tests when `DATABASE_URL` is unset
+
+## Safety Boundaries
+
+- Risk engine rejects orders Dondie cannot take — no bypass.
+- Operator pause stops scheduled runs.
+- Paper mode default; live requires `ALLOW_ALPACA_LIVE_TRADING=true`.
+- Append-only audit logs for every agent and trading action.
+
+See `docs/dondie-survival-model.md` for survival economics and `docs/risk-controls.md` for risk rules.
