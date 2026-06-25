@@ -1,8 +1,8 @@
 # Product Requirements Document (PRD)
 
-## AI Trading Platform
+## Dondie — Autonomous Survival Agent
 
-Version: 1.0
+Version: 2.0
 
 Status: Approved for Architecture & Development
 
@@ -10,24 +10,21 @@ Status: Approved for Architecture & Development
 
 # Executive Summary
 
-The AI Trading Platform is an intelligent trading ecosystem designed to assist and automate financial market trading using artificial intelligence, quantitative analysis, portfolio analytics, and institutional-grade risk management.
+**Dondie** is an autonomous trading agent that must earn its own operating capital. This repository provides the agent, its trading runtime, risk boundaries, and an operator console — not a consumer-facing trading product.
 
-The platform provides:
+The platform enables:
 
-* AI-generated trading signals
-* Automated trade execution
-* Portfolio management
-* Risk control systems
-* Paper trading environments
-* Performance analytics
-
-The initial release focuses on stocks and ETFs through broker integrations and AI-assisted decision making.
+* Autonomous agent runs on a schedule
+* Wallet-funded tier progression (FREE → STANDARD → PRO brains)
+* Risk-bounded trade execution (paper and live)
+* Operator monitoring and intervention
+* Paper validation before live capital
 
 ---
 
 # Product Vision
 
-To create a secure, transparent, and intelligent trading platform capable of helping users make better trading decisions while protecting capital through strict risk management.
+An agent that survives by trading: profits fund smarter brains; losses force degradation until recovery or operator pause.
 
 ---
 
@@ -35,51 +32,35 @@ To create a secure, transparent, and intelligent trading platform capable of hel
 
 Primary Goals:
 
-1. Launch a production-ready MVP.
-2. Validate AI-assisted trading workflows.
-3. Establish scalable architecture.
-4. Build user trust through transparency and risk controls.
+1. Ship Dondie Phase 1 (FREE brain, scheduler, console).
+2. Wire the survival wallet loop (PnL credits, brain debits, tier gating).
+3. Validate paper trading performance over the mandatory gate period.
+4. Enable live trading only after operator approval and env safety flags.
 
 Secondary Goals:
 
-1. Multi-broker support.
-2. Mobile applications.
-3. Advanced portfolio optimization.
-4. AI-powered strategy marketplace.
+1. STANDARD and PRO LLM brains.
+2. Agent memory across runs.
+3. Multi-broker portability.
+
+There is **no SaaS subscription revenue model**. Dondie's "revenue" is trading PnL credited to its wallet.
 
 ---
 
 # Problem Statement
 
-Retail traders face:
+Autonomous trading agents need:
 
-* Emotional decision making
-* Information overload
-* Poor risk management
-* Inconsistent execution
-* Lack of automation
-
-The platform solves these issues through AI-powered analysis and automated execution.
+* A way to pay for their own compute (brain costs)
+* Hard risk limits they cannot override
+* A proving ground before real capital
+* Operator visibility and kill switches
 
 ---
 
-# Target Users
+# Target User
 
-## Retail Traders
-
-Users seeking AI-assisted trading.
-
-## Active Traders
-
-Users requiring analytics and automation.
-
-## Quantitative Traders
-
-Users seeking strategy configuration and experimentation.
-
-## Investors
-
-Users focused on long-term portfolio growth.
+**Operator** — the human running Dondie. Admin-provisioned access only.
 
 ---
 
@@ -87,232 +68,121 @@ Users focused on long-term portfolio growth.
 
 Included in MVP:
 
-* User authentication
-* Portfolio management
-* AI signals
-* Trading bot controls
-* Risk management
+* Dondie agent (activate, pause, run, wallet, tiers)
+* Trading infrastructure (signals, orders, positions, broker)
+* Risk engine
 * Paper trading
-* Analytics dashboard
-* Broker integration
+* Operator console
+* Audit and analytics
 
-Excluded from MVP:
+Excluded:
 
-* Options trading
-* Futures trading
-* High-frequency trading
-* Social trading
-* Margin lending
+* Retail SaaS / self-service signup
+* Strategy marketplace
+* Consumer mobile apps
+* Options / futures / HFT
 
 ---
 
 # Core Modules
 
-1. Authentication Module
-2. Market Data Module
-3. Portfolio Module
-4. AI Signal Engine
-5. Trading Engine
-6. Risk Engine
-7. Paper Trading Module
-8. Analytics Module
-9. Notification System
-10. Administration Module
+1. **Dondie Agent** — brain, wallet, scheduler, tier logic
+2. **Trading Engine** — orders, fills, positions
+3. **Risk Engine** — pre-trade validation
+4. **Market Data** — prices, indicators, watchlists
+5. **AI Signal Engine** — signal generation for FREE brain and strategies
+6. **Paper Trading** — simulated execution
+7. **Broker Adapter** — Alpaca paper/live
+8. **Operator Console** — web dashboard
+9. **Audit & Admin** — logs, health, user provisioning
 
 ---
 
-# User Journey
+# Operator Journey
 
-New User
-
-Registration
-→ Login
-→ Configure MFA
-→ Connect Broker
-→ Configure Risk Settings
-→ Enable Paper Trading
-→ Review AI Signals
-→ Execute Trades
-→ Monitor Performance
+Provision account
+→ Login + MFA
+→ Connect broker (paper default)
+→ Create/link strategy
+→ Configure risk limits
+→ Activate Dondie
+→ Monitor wallet, tier, runs, PnL
+→ Validate paper performance (30/60-day gate)
+→ Enable live trading (explicit approval)
 
 ---
 
 # Key Features
 
-## AI Signal Center
+## Dondie Agent Center
 
-Provides:
+* Tier (FREE / STANDARD / PRO)
+* Wallet balance and ledger
+* Activate / pause / resume / manual run
+* Last run reasoning and outcome
+* Survival status (alive / degraded / starving)
 
-* Buy signals
-* Sell signals
-* Hold signals
-* Confidence scoring
-* Signal history
+## Trading Runtime
 
----
+* Signal generation
+* Automation pipeline (signal → risk → order)
+* Paper and live broker execution
 
-## Trading Bot
+## Risk Matrix
 
-Modes:
-
-* Manual
-* Semi-Automated
-* Fully Automated
-
----
-
-## Portfolio Intelligence
-
-Provides:
-
-* Holdings analysis
-* Allocation tracking
-* PnL reporting
-* Performance metrics
-
----
-
-## Risk Matrix Control
-
-Provides:
-
-* Position sizing
-* Daily loss limits
-* Drawdown controls
-* Exposure controls
-
----
+* Position sizing, daily loss limits, drawdown caps
+* Veto authority on every order
 
 ## Simulation Lab
 
-Provides:
+* Backtests and walk-forward validation
+* Strategy testing before agent activation
 
-* Paper trading
-* Strategy testing
-* Historical performance analysis
+## Operator Analytics
 
----
-
-# Functional Requirements Summary
-
-The detailed requirements are defined in:
-
-* 04-functional-requirements.md
-* 05-trading-bot-requirements.md
-
----
-
-# Non-Functional Requirements
-
-Security:
-
-* MFA
-* Encryption
-* Audit logging
-
-Performance:
-
-* API responses under 300ms
-
-Availability:
-
-* 99.9% uptime target
-
-Scalability:
-
-* Cloud-native deployment
+* PnL, win rate, drawdown, Sharpe
+* Exportable performance reports
 
 ---
 
 # Success Metrics
 
+Agent:
+
+* Positive wallet trend over validation window
+* Successful tier progression or stable FREE operation
+* Acceptable drawdown within risk rules
+
 Technical:
 
-* Stable production deployment
-* Successful broker integrations
-
-Business:
-
-* User acquisition
-* User retention
+* Stable scheduler and API uptime
+* Complete audit trail
 
 Trading:
 
-* Controlled drawdowns
-* Consistent execution
-* Positive paper trading outcomes
-
----
-
-# Risk Overview
-
-Technical Risks:
-
-* Broker outages
-* Market data failures
-
-Trading Risks:
-
-* Model drift
-* Market regime changes
-
-Security Risks:
-
-* Credential compromise
-* Unauthorized access
-
-Mitigation details are defined in:
-
-03-risk-compliance-strategy.md
+* Paper mode performance meets validation gate criteria
 
 ---
 
 # MVP Release Criteria
 
-The MVP may launch when:
+Launch when:
 
-1. Authentication is operational.
-2. Market data is stable.
-3. AI signals are functioning.
-4. Risk controls are enforced.
-5. Paper trading is validated.
-6. Broker integration is stable.
-7. Monitoring is operational.
-8. Documentation is complete.
-
----
-
-# Future Roadmap
-
-Phase 2
-
-* Multi-broker support
-* Mobile application
-
-Phase 3
-
-* Cryptocurrency support
-* Forex support
-
-Phase 4
-
-* Reinforcement learning systems
-
-Phase 5
-
-* Institutional platform features
+1. Dondie runs autonomously in paper mode.
+2. Wallet survival loop is wired and tested.
+3. Risk controls enforce on every order.
+4. Operator console shows agent-centric status.
+5. Paper validation gate is documented.
+6. Monitoring and audit are operational.
 
 ---
 
 # Source of Truth
 
-This PRD summarizes and links the core project documents:
+* `docs/dondie-survival-model.md` — survival economics
+* `01-project-vision.md`
+* `02-mvp-scope.md`
+* `docs/architecture.md`
+* `docs/api.md`
 
-* 01-project-vision.md
-* 04-functional-requirements.md
-* 06-system-architecture.md
-* 07-database-api-design.md
-* 08-CLAUDE.md
-* 11-ui-ux-specification.md
-
-This document serves as the executive-level overview for stakeholders, developers, and AI coding agents.
+This document is the executive overview for the operator, developers, and AI coding agents.

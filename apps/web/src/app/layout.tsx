@@ -4,8 +4,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "QuantCore AI Trading",
-  description: "Risk-first AI trading platform for institutional-grade execution and control"
+  title: "Dondie — Operator Console",
+  description: "Control room for Dondie, an autonomous trading agent that earns wallet balance to fund its own cognition"
 };
 
 export default function RootLayout({ children }: { readonly children: ReactNode }): ReactElement {

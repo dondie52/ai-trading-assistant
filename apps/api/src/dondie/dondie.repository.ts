@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import type { DondieAgent, UUID } from "@trading/types";
+import type { DondieAgent } from "@trading/types";
 import { PrismaService } from "../infrastructure/prisma.service.js";
 import type { PlatformStore } from "../store/platform.store.js";
 

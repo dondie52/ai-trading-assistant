@@ -1,13 +1,27 @@
-# AI Trading Platform MVP
+# Dondie — Autonomous Survival Agent
 
-Risk-first AI trading platform MVP built as a modular monolith:
+Operator infrastructure for **Dondie**, an autonomous trading agent that must **trade to fund its own cognition**. This is not a retail trading app — it is the runtime, risk shell, and control room for one survival agent.
 
-- `apps/web`: Next.js, React, TypeScript, TailwindCSS
-- `apps/api`: NestJS, TypeScript, Prisma schema, JWT auth, trading/risk/audit modules
-- `apps/ai-service`: Python FastAPI signal service
-- `packages/shared`: indicators, signal scoring, risk engine, analytics, auth validation
-- `packages/types`: shared API/domain contracts
-- `infrastructure`: Dockerfiles and compose services
+## What Dondie Is
+
+Dondie trades markets autonomously, earns wallet balance from PnL, and spends that balance on tiered "brains" (decision engines):
+
+| Tier | Min wallet | Cost/run | Cognition |
+|------|------------|----------|-----------|
+| FREE | $0 | $0 | Signal-based (Phase 1 — implemented) |
+| STANDARD | $25 | $0.05 | LLM-assisted (planned) |
+| PRO | $100 | $0.25 | Advanced LLM (planned) |
+
+See [`docs/dondie-survival-model.md`](docs/dondie-survival-model.md) for the full survival economics definition.
+
+## Stack
+
+- `apps/web` — Operator console (Next.js, React, TypeScript, TailwindCSS)
+- `apps/api` — NestJS API, Dondie agent, trading/risk/audit modules
+- `apps/ai-service` — Python FastAPI signal service
+- `packages/shared` — indicators, signal scoring, risk engine, analytics
+- `packages/types` — shared API/domain contracts
+- `infrastructure` — Dockerfiles and compose services
 
 ## Prerequisites
 
@@ -19,38 +33,35 @@ Risk-first AI trading platform MVP built as a modular monolith:
 
 ## Environment
 
-Copy `.env.example` to `.env` and set real values for local or deployed environments.
+Copy `.env.example` to `.env` and set real values. The operator handles env setup — see Dondie-specific vars below.
 
 Required production values:
 
 - `DATABASE_URL`
 - `SUPABASE_DB_PASSWORD` for CLI migration commands
-- `JWT_ACCESS_SECRET`
-- `JWT_REFRESH_SECRET`
+- `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` (legacy auth only)
 - `MFA_ENCRYPTION_KEY`
 - `BROKER_CREDENTIAL_ENCRYPTION_KEY`
 - `NEXT_PUBLIC_API_URL`
 - `AI_SERVICE_URL`
 
-Optional broker values (required for live market data unless each user connects Alpaca in the app):
+Dondie survival economics (optional — defaults in `dondie.config.ts`):
 
-- `ALPACA_API_KEY`
-- `ALPACA_SECRET_KEY`
+- `DONDIE_SCHEDULE_MINUTES` (default `60`)
+- `DONDIE_SCHEDULER_ENABLED` (default `true`)
+- `DONDIE_STANDARD_MIN_BALANCE` / `DONDIE_PRO_MIN_BALANCE`
+- `DONDIE_STANDARD_BRAIN_COST_USD` / `DONDIE_PRO_BRAIN_COST_USD`
+- `DONDIE_PNL_CREDIT_PERCENT`
+- `DONDIE_LLM_API_URL` / `DONDIE_LLM_API_KEY`
+- `DONDIE_LLM_STANDARD_MODEL` / `DONDIE_LLM_PRO_MODEL`
+
+Broker (required for market data unless operator connects Alpaca in console):
+
+- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY`
 - `ALPACA_ENVIRONMENT` (`PAPER` or `LIVE`, default `PAPER`)
-- `ALLOW_ALPACA_LIVE_TRADING=true` (required before routing orders to a live Alpaca account)
+- `ALLOW_ALPACA_LIVE_TRADING=true` (required before live orders)
 
-Optional API safety values:
-
-- `SESSION_IDLE_TIMEOUT_MINUTES` (default `30`)
-- `CORS_ORIGINS` (comma-separated browser origins; defaults to local web origins)
-- `RATE_LIMIT_WINDOW_MS` (default `60000`)
-- `RATE_LIMIT_MAX` (default `600`)
-- `RATE_LIMIT_DISABLED=true` for controlled local test environments only
-
-Do not commit real secrets. Empty JWT secrets are replaced by per-process random values for local development only.
-Docker Compose requires `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `MFA_ENCRYPTION_KEY`, and `BROKER_CREDENTIAL_ENCRYPTION_KEY` to be set in `.env`; it does not provide default secret values. Authentication, MFA, and broker-credential encryption keys must each be at least 32 characters.
-
-Password reset tokens are stored only as hashes. In production, `POST /api/v1/auth/password-reset/request` returns a generic response and expects an email delivery integration to send the raw token. For local automated tests only, `EXPOSE_PASSWORD_RESET_TOKEN_FOR_TESTS=true` exposes the raw token in the response.
+Do not commit real secrets.
 
 ## Install
 
@@ -60,7 +71,7 @@ npm install
 
 ## Database
 
-The Prisma schema is in `apps/api/prisma/schema.prisma`. Supabase CLI migrations are the deployment source of truth in `supabase/migrations`.
+Prisma schema: `apps/api/prisma/schema.prisma`. Supabase migrations: `supabase/migrations`.
 
 ```powershell
 npm run db:link
@@ -72,30 +83,39 @@ $env:SEED_ADMIN_PASSWORD="<set-locally>"
 npm run seed
 ```
 
-`npm run db:push` deploys pending SQL migrations to the linked `ai-trading-assistant` Supabase project.
-The seed command creates or refreshes the admin user and ensures it has a default paper portfolio, risk rules, paper broker account, and watchlist.
-
-The default no-env API runtime uses an in-memory store for deterministic MVP validation. When `DATABASE_URL` is configured, the API hydrates users, sessions, portfolios, strategies, signals, orders, trades, positions, risk rules, broker accounts, watchlists, notifications, market prices, and audit logs from Supabase Postgres and persists state changes through Prisma.
-
-Notification delivery events are stored in `notification_queue`, and short-lived market candle snapshots are stored in `market_data_cache`. `/api/v1/health` probes Supabase through Prisma.
-
 ## Run Locally
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`. The API runs at `http://localhost:3001/api/v1`.
+Operator console: `http://localhost:3000`. API: `http://localhost:3001/api/v1`.
 
-Run the full container stack:
+Full container stack:
 
 ```bash
 docker compose up --build
 ```
 
-Container healthchecks are defined for the AI service, API, and web app. The API exposes `GET /api/v1/health`, which reports Supabase/Prisma readiness when `DATABASE_URL` is configured.
-Every service uses Compose's `unless-stopped` restart policy. Backup, restore, alerting, and recovery procedures are documented in `docs/operations.md`.
-`npm run test` also includes a static infrastructure check that verifies the Compose services, healthchecks, required secret interpolation, migration command, Dockerfiles, and CI validation steps. This does not replace a real container runtime startup check.
+## Operator Console
+
+The web UI is organized around Dondie:
+
+1. **Dondie** — agent status, wallet, tier, run controls, portfolio metrics
+2. **Market** — prices, indicators, watchlists (agent's eyes)
+3. **Strategies** — strategy linked to Dondie
+4. **Risk & Alerts** — capital preservation limits
+5. **Simulation Lab** — backtests before live activation
+6. **Admin** — user provisioning, health, audit (admin role)
+
+## Dondie API
+
+- `GET /dondie` — agent state or `null`
+- `POST /dondie/activate` — requires `strategyId`; starts on FREE tier
+- `POST /dondie/pause` / `POST /dondie/resume`
+- `POST /dondie/run` — manual run (optional `symbol`, `timeframe`)
+
+Full API summary: [`docs/api.md`](docs/api.md)
 
 ## Tests
 
@@ -107,65 +127,24 @@ npm run build
 npm run validate
 ```
 
-`npm run validate` runs lint, unit/integration tests, Playwright E2E, and production builds.
-The Vitest stage enforces at least 80% statements, functions, and lines plus 60% branch coverage.
-
-The authenticated web terminal is organized into responsive Overview, Market, Strategies, Risk & Alerts, Simulation Lab, and Admin views. Market tables remain horizontally scrollable inside their panel on narrow screens without causing page-level overflow.
-
-Market data endpoints support `1m`, `5m`, `15m`, `1h`, `4h`, and `1d` timeframes. Indicator snapshots include SMA, EMA, RSI, MACD, Bollinger Bands, ATR, and volume metrics.
-The market console receives authenticated Socket.IO updates from `/ws` every five seconds and falls back to HTTP polling if the socket is unavailable. Real-time events are scoped to the active user and session.
-
-`POST /api/v1/backtests/run` replays historical candles with fees and slippage. `POST /api/v1/backtests/walk-forward` selects parameters on training windows and reports only out-of-sample test windows. `GET /api/v1/reports/performance/csv` and `/pdf` export win rate, profit factor, Sharpe, Sortino, maximum drawdown, return, average trade, risk/reward, and the equity curve while writing audit records.
-
-Collection endpoints use `{ data, page, pageSize, total }` pagination inside the standard success envelope. `pageSize` defaults to 20 and is capped at 100.
-
-Paper MARKET orders fill from the server's current simulated quote, never a caller-provided fill price. LIMIT and STOP orders remain submitted until a quote makes them marketable. Quote updates mark positions and portfolio equity to market.
-
-Playwright E2E covers:
-
-1. User registration
-2. Login
-3. Dashboard loads
-4. Strategy creation
-5. Manual, semi-automated, and fully automated paper trades
-6. Signal generation
-7. Risk rule blocks invalid trade
-8. Portfolio/trade history updates
-9. Watchlist updates and historical market data
-10. Strategy edits and activation controls
-11. Risk configuration persistence
-12. TOTP MFA setup and login challenge
-13. Backtest completion and system health visibility
-14. Walk-forward out-of-sample backtesting
-15. Authenticated WebSocket updates
-16. Admin user management, operational metrics, and audit log visibility
-
-The workflow runs in desktop Chromium and a Pixel 7 mobile Chromium profile. Playwright starts the API with `ENABLE_E2E_SEED=true`, `E2E_ADMIN_EMAIL`, and `E2E_ADMIN_PASSWORD`. During API startup, the admin test user is seeded after Prisma hydration; when `DATABASE_URL` is configured, the user and its default paper portfolio, risk rules, paper broker account, and watchlist are persisted through Prisma before tests run.
-
-CI installs browsers with:
-
-```bash
-npx playwright install --with-deps
-```
+Playwright E2E covers operator login, Dondie activation, paper trades, risk blocks, and audit visibility.
 
 ## Safety Guarantees
 
-- All trading routes pass through the risk engine before broker execution.
-- API routes are protected by a user/IP scoped rate-limit guard with env-configurable thresholds.
-- Protected API routes verify the backing session is active, unexpired, and not revoked, even when the access token is otherwise valid.
-- Inactive HTTP and WebSocket sessions expire after the configured idle timeout.
-- Refresh tokens rotate after every successful use and the prior token is immediately invalidated.
-- TOTP MFA setup secrets are encrypted with AES-256-GCM, and MFA-enabled accounts receive no session until a valid authenticator code is verified.
-- Password resets store only hashed reset tokens, audit request/confirmation events without token metadata, and revoke active sessions after confirmation.
-- User profiles persist notification preferences for trade, signal, risk, and system alerts; disabled alert classes are not enqueued.
-- Rejected trades are stored as rejected orders and produce risk audit events.
-- Orders retain append-only status history for pending, submission, fill, rejection, and cancellation transitions.
-- Successful trading actions create immutable audit logs.
-- Supabase Postgres rejects `UPDATE` and `DELETE` operations against `audit_logs` through an append-only trigger.
-- Broker access is isolated behind `BrokerAdapter`; paper broker is the default.
-- Alpaca credentials are validated against Alpaca before storage and encrypted with AES-256-GCM; public responses expose only whether credentials exist.
-- Audit metadata redacts password, token, secret, credential, authorization, and API key fields.
-- RBAC protects `/api/v1/admin/*`; user-facing services enforce resource ownership.
+- Every trade passes through the risk engine before broker execution.
+- Paper trading is the default; live requires explicit env approval.
+- Dondie runs only when ACTIVE; operator can pause at any time.
+- All agent runs, orders, and wallet changes produce audit records.
+- Broker credentials encrypted; MFA supported.
 
-See `docs/requirements-traceability.md` for requirement-to-test evidence and
-`docs/paper-trading-validation.md` for the mandatory 30/60-day live-capital approval gate.
+See `docs/risk-controls.md`, `docs/paper-trading-validation.md`, and `docs/requirements-traceability.md`.
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [`docs/dondie-survival-model.md`](docs/dondie-survival-model.md) | Canonical survival economics |
+| [`01-project-vision.md`](01-project-vision.md) | Product vision |
+| [`02-mvp-scope.md`](02-mvp-scope.md) | MVP scope |
+| [`12-prd-product-requirements-document.md`](12-prd-product-requirements-document.md) | PRD |
+| [`docs/architecture.md`](docs/architecture.md) | Technical architecture |

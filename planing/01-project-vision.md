@@ -1,84 +1,65 @@
-# AI Trading Platform
+# Dondie — Autonomous Survival Agent
 
 ## Project Vision Document
 
-Version: 1.0
+Version: 2.0
 
 ---
 
 # Executive Summary
 
-The AI Trading Platform is an intelligent trading system designed to assist and automate financial market trading through the use of artificial intelligence, quantitative analysis, and risk management frameworks.
+**Dondie** is an autonomous trading agent that must **trade to pay for its own existence**. It analyzes markets, executes trades, earns wallet balance from performance, and spends that balance on progressively smarter "brains" (decision engines).
 
-The platform aims to provide users with the ability to:
+This repository is **not** a retail trading app for everyone. It is the **operator infrastructure** for running one survival agent:
 
-* Analyze market data in real time
-* Generate trading signals
-* Execute trades automatically
-* Manage portfolio risk
-* Monitor performance through dashboards
-* Improve strategies through continuous learning and optimization
+* Market data and broker execution (hands)
+* Risk engine (safety rails)
+* Paper trading validation (proving ground)
+* Operator console (control room)
+* Dondie agent (the product)
 
-The long-term objective is to build a professional-grade autonomous trading ecosystem that can operate across multiple brokers, exchanges, and asset classes while maintaining strict risk controls.
+The long-term objective is a self-sustaining agent that can operate across brokers and asset classes while staying inside strict risk controls — earning enough from trading to fund its own compute and cognition.
 
 ---
 
 # Vision Statement
 
-To create a secure, transparent, and intelligent AI-powered trading platform capable of making data-driven trading decisions and executing trades with institutional-grade risk management.
+Build an autonomous agent that survives by trading: profitable runs fund smarter decisions; losses degrade capability until the operator intervenes or the agent recovers.
 
 ---
 
 # Mission Statement
 
-To democratize algorithmic trading by providing traders and investors with advanced AI tools that simplify market analysis, automate execution, and improve decision quality.
+Create a secure, transparent, risk-bounded environment where Dondie can trade autonomously, pay for its own brain upgrades, and prove viability in paper mode before live capital is deployed.
 
 ---
 
 # Problem Statement
 
-Most retail traders face several challenges:
+Autonomous agents fail when they:
 
-* Emotional decision making
-* Lack of consistent strategy
-* Information overload
-* Limited market monitoring capabilities
-* Poor risk management
-* Inability to analyze large datasets
+* Cannot fund their own operating costs
+* Have no hard risk boundaries
+* Operate without auditability or operator oversight
+* Jump to live capital without validated track records
 
-These challenges often lead to inconsistent performance and unnecessary losses.
-
-The platform seeks to solve these problems through automation, analytics, and AI-assisted decision making.
+Dondie solves this with a **survival wallet**, **tiered cognition**, and a **risk-first execution stack** wrapped in an operator console.
 
 ---
 
-# Target Users
+# Target User
 
-## Primary Users
+## Primary: Operator (You)
 
-### Retail Traders
+The single human who:
 
-Individuals seeking automated or semi-automated trading solutions.
+* Provisions the environment and broker credentials
+* Sets risk limits and capital boundaries
+* Links Dondie to a trading strategy
+* Monitors wallet balance, tier, runs, and PnL
+* Decides when paper performance justifies live trading
 
-### Quantitative Traders
-
-Users interested in advanced strategies and custom models.
-
-### Investors
-
-Individuals seeking portfolio optimization and market insights.
-
----
-
-## Secondary Users
-
-### Financial Researchers
-
-Researchers testing market hypotheses.
-
-### Strategy Developers
-
-Users creating custom trading algorithms.
+There is no mass-market end user. Access is admin-provisioned and secured (MFA, audit logs).
 
 ---
 
@@ -86,27 +67,27 @@ Users creating custom trading algorithms.
 
 ## Objective 1
 
-Provide AI-assisted trade recommendations.
+Dondie trades autonomously on a schedule and on demand.
 
 ## Objective 2
 
-Support fully automated trade execution.
+Trading profits credit Dondie's wallet; brain usage debits it.
 
 ## Objective 3
 
-Implement robust risk management.
+Wallet balance controls tier access (FREE → STANDARD → PRO brains).
 
 ## Objective 4
 
-Provide transparent performance analytics.
+Every trade passes through the risk engine — no bypasses.
 
 ## Objective 5
 
-Support multiple trading strategies.
+Paper trading validates performance before live capital.
 
 ## Objective 6
 
-Enable continuous strategy improvement.
+Full audit trail of agent runs, orders, wallet changes, and risk blocks.
 
 ---
 
@@ -114,74 +95,69 @@ Enable continuous strategy improvement.
 
 ### Short-Term Goals
 
-* User authentication
-* Trading dashboard
-* Broker connectivity
-* Paper trading
-* AI signal generation
-* Basic automation
+* Dondie Phase 1: FREE brain, activate/pause/run, scheduler
+* Wallet ledger: PnL credits and brain debits
+* Tier gating from wallet balance
+* Operator console focused on agent status
 
 ### Mid-Term Goals
 
-* Portfolio analytics
-* Strategy builder
-* Backtesting framework
-* Multi-broker support
+* STANDARD and PRO LLM brains
+* Agent memory across runs
+* Live Alpaca execution after paper validation gate
 
 ### Long-Term Goals
 
-* Reinforcement learning systems
-* Cross-market trading
-* AI portfolio manager
-* Institutional features
+* Multi-broker agent portability
+* Cross-asset survival (forex, crypto)
+* Self-tuning strategy parameters within risk bounds
 
 ---
 
 # Success Metrics
 
+## Agent Survival Metrics
+
+* Wallet balance trend (growing vs. depleting)
+* Tier stability (time at STANDARD/PRO vs. FREE)
+* Run frequency and brain cost efficiency
+* Net PnL after brain costs
+
 ## Technical Metrics
 
 * System uptime > 99.9%
-* API response time < 300ms
 * Trade execution latency < 1 second
-
-## Business Metrics
-
-* User retention
-* Monthly active users
-* Assets under management
+* Risk engine block rate (should be low in steady state)
 
 ## Trading Metrics
 
-* Risk-adjusted returns
-* Maximum drawdown
-* Sharpe ratio
-* Win rate
-* Profit factor
+* Risk-adjusted returns in paper mode
+* Maximum drawdown within operator limits
+* Win rate and profit factor over validation window
 
 ---
 
 # Core Principles
 
-## Security First
+## Survival First
 
-Protect user accounts, funds, and data.
+The agent must earn before it can think expensively.
+
+## Risk Engine Authority
+
+Capital preservation overrides agent ambition.
 
 ## Transparency
 
-Explain AI-generated decisions whenever possible.
+Every run, wallet change, and trade is auditable.
 
-## Risk Management
+## Operator Control
 
-Prioritize capital preservation.
+Pause, resume, and intervene at any time.
 
-## Reliability
+## Paper Before Live
 
-Ensure platform stability under all conditions.
-
-## Compliance
-
-Support regulatory requirements where applicable.
+No live capital until validation criteria are met.
 
 ---
 
@@ -189,23 +165,25 @@ Support regulatory requirements where applicable.
 
 Included:
 
-* AI signal generation
-* Trade execution
-* Portfolio management
+* Dondie autonomous agent (wallet, tiers, brains, scheduler)
+* Trading execution (paper + Alpaca live)
 * Risk controls
-* Backtesting
-* Analytics dashboard
+* Market data and signals
+* Operator console
+* Paper trading validation gate
 
 Excluded (Initial MVP):
 
+* Multi-tenant SaaS / self-service signup
+* Strategy marketplace
+* Social or copy trading
 * High-frequency trading
-* Margin lending
-* Options trading
-* Cryptocurrency custody
-* Social trading network
+* Options / futures / margin lending
 
 ---
 
 # Future Vision
 
-The platform evolves into a full AI trading ecosystem where intelligent agents continuously analyze markets, optimize portfolios, manage risk, and execute trades across multiple asset classes while remaining transparent, secure, and user-controlled.
+Dondie evolves into a fully self-funding agent: trading profits cover brain costs, infrastructure, and eventually expansion to new markets — always within operator-defined risk limits and with full auditability.
+
+See `docs/dondie-survival-model.md` for the canonical survival economics definition.
