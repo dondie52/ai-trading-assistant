@@ -129,6 +129,17 @@ npm run validate
 
 Playwright E2E covers operator login, Dondie activation, paper trades, risk blocks, and audit visibility.
 
+## Supabase free-plan keepalive
+
+Free Supabase projects pause after ~7 days without DB activity. This repo includes `.github/workflows/supabase-keepalive.yml`, which pings the project three times a week.
+
+Add these **GitHub Actions secrets** (Settings → Secrets and variables → Actions):
+
+- `SUPABASE_URL` — e.g. `https://axrclxwittqyurwqjvdq.supabase.co`
+- `SUPABASE_ANON_KEY` — Dashboard → Project Settings → API → anon / publishable key
+
+Then run **Actions → Supabase keepalive → Run workflow** once to verify. Paid (Pro+) projects never auto-pause.
+
 ## Safety Guarantees
 
 - Every trade passes through the risk engine before broker execution.
