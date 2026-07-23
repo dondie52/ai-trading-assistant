@@ -57,7 +57,7 @@ test.describe.serial("Dondie survival agent platform", () => {
       await page.getByTestId("admin-create-email").fill(traderEmail);
       await page.getByTestId("admin-create-password").fill(traderPassword);
       await page.getByTestId("admin-create-submit").click();
-      await expect(page.getByTestId("auth-notice")).toContainText("created");
+      await expect(page.getByTestId("workflow-notice")).toContainText("created");
       await page.getByRole("button", { name: "Logout" }).click();
     });
 
