@@ -110,11 +110,12 @@ DONDIE_LLM_PRO_MODEL=gpt-4o
 
 | Capability | Status |
 |------------|--------|
-| FREE brain + scheduled runs | Implemented (Phase 1) |
-| Wallet PnL credits | Designed, not wired |
-| Brain cost debits | Designed, not wired |
-| STANDARD / PRO LLM brains | Designed, not wired |
-| Wallet ledger persistence | Designed, not wired |
-| Tier auto-upgrade/downgrade | Designed, not wired |
+| FREE brain + scheduled runs | Implemented |
+| Wallet PnL credits | Implemented |
+| Brain cost debits | Implemented |
+| STANDARD / PRO LLM brains | Implemented (requires `DONDIE_LLM_API_KEY`) |
+| Wallet ledger persistence | Implemented |
+| Tier auto-upgrade/downgrade | Implemented |
+| Run memory + symbol universe | Implemented |
 
 See `docs/architecture.md` and `docs/api.md` for technical integration details.

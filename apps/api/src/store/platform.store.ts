@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type {
   AuditLog,
   DondieAgent,
+  DondieMemory,
+  DondieWalletLedgerEntry,
   JsonObject,
   JsonValue,
   MarketCandle,
@@ -116,6 +118,8 @@ export class PlatformStore {
   readonly passwordResetTokens = new Map<UUID, PasswordResetTokenRecord>();
   readonly marketData = new Map<string, readonly MarketCandle[]>();
   readonly dondieAgents = new Map<UUID, DondieAgent>();
+  readonly dondieWalletLedger = new Map<UUID, DondieWalletLedgerEntry>();
+  readonly dondieMemories = new Map<UUID, DondieMemory>();
   readonly auditLogs: AuditLog[] = [];
   private auditSink?: AuditSink;
 

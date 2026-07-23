@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import type { DondieAgent } from "@trading/types";
+import type { DondieAgent, DondieMemory, DondieWalletLedgerEntry, JsonObject } from "@trading/types";
 import { PrismaService } from "../infrastructure/prisma.service.js";
 import type { PlatformStore } from "../store/platform.store.js";
 
 const toDate = (value: string): Date => new Date(value);
+const toJson = (value: JsonObject): Prisma.InputJsonValue => value as Prisma.InputJsonValue;
 
 const mapAgent = (row: {
   id: string;
@@ -48,9 +49,35 @@ export class DondieRepository {
     if (!this.isEnabled()) {
       return;
     }
-    const agents = await this.prisma.client().dondieAgent.findMany();
+    const [agents, ledger, memories] = await Promise.all([
+      this.prisma.client().dondieAgent.findMany(),
+      this.prisma.client().dondieWalletLedgerEntry.findMany(),
+      this.prisma.client().dondieMemory.findMany()
+    ]);
     for (const agent of agents) {
       store.dondieAgents.set(agent.id, mapAgent(agent));
+    }
+    for (const entry of ledger) {
+      store.dondieWalletLedger.set(entry.id, {
+        id: entry.id,
+        agentId: entry.agentId,
+        entryType: entry.entryType as DondieWalletLedgerEntry["entryType"],
+        reason: entry.reason,
+        amount: Number(entry.amount),
+        balanceAfter: Number(entry.balanceAfter),
+        metadata: entry.metadata as JsonObject,
+        createdAt: entry.createdAt.toISOString()
+      });
+    }
+    for (const memory of memories) {
+      store.dondieMemories.set(memory.id, {
+        id: memory.id,
+        agentId: memory.agentId,
+        ...(memory.runId ? { runId: memory.runId } : {}),
+        summary: memory.summary,
+        evaluation: memory.evaluation as JsonObject,
+        createdAt: memory.createdAt.toISOString()
+      });
     }
   }
 
@@ -86,6 +113,40 @@ export class DondieRepository {
         lastRunAt: agent.lastRunAt ? toDate(agent.lastRunAt) : null,
         lastEvaluationScore: agent.lastEvaluationScore ?? null,
         updatedAt: toDate(agent.updatedAt)
+      }
+    });
+  }
+
+  async persistMemory(memory: DondieMemory): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    await this.prisma.client().dondieMemory.create({
+      data: {
+        id: memory.id,
+        agentId: memory.agentId,
+        runId: memory.runId ?? null,
+        summary: memory.summary,
+        evaluation: toJson(memory.evaluation),
+        createdAt: toDate(memory.createdAt)
+      }
+    });
+  }
+
+  async persistLedgerEntry(entry: DondieWalletLedgerEntry): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    await this.prisma.client().dondieWalletLedgerEntry.create({
+      data: {
+        id: entry.id,
+        agentId: entry.agentId,
+        entryType: entry.entryType,
+        reason: entry.reason,
+        amount: entry.amount,
+        balanceAfter: entry.balanceAfter,
+        metadata: toJson(entry.metadata),
+        createdAt: toDate(entry.createdAt)
       }
     });
   }

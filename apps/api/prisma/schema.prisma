@@ -113,9 +113,39 @@ model DondieAgent {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
   user                User      @relation(fields: [userId], references: [id])
+  walletLedger        DondieWalletLedgerEntry[]
+  memories            DondieMemory[]
 
   @@index([status])
   @@map("dondie_agents")
+}
+
+model DondieWalletLedgerEntry {
+  id           String      @id @default(uuid()) @db.Uuid
+  agentId      String      @map("agent_id") @db.Uuid
+  entryType    String      @map("entry_type")
+  reason       String
+  amount       Decimal     @db.Decimal(18, 4)
+  balanceAfter Decimal     @map("balance_after") @db.Decimal(18, 4)
+  metadata     Json        @default("{}") @map("metadata_json")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  agent        DondieAgent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, createdAt])
+  @@map("dondie_wallet_ledger")
+}
+
+model DondieMemory {
+  id         String      @id @default(uuid()) @db.Uuid
+  agentId    String      @map("agent_id") @db.Uuid
+  runId      String?     @map("run_id") @db.Uuid
+  summary    String
+  evaluation Json        @map("evaluation_json")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  agent      DondieAgent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, createdAt])
+  @@map("dondie_memories")
 }
 
 model PasswordResetToken {

@@ -8,9 +8,9 @@ Dondie trades markets autonomously, earns wallet balance from PnL, and spends th
 
 | Tier | Min wallet | Cost/run | Cognition |
 |------|------------|----------|-----------|
-| FREE | $0 | $0 | Signal-based (Phase 1 — implemented) |
-| STANDARD | $25 | $0.05 | LLM-assisted (planned) |
-| PRO | $100 | $0.25 | Advanced LLM (planned) |
+| FREE | $0 | $0 | Signal-based |
+| STANDARD | $25 | $0.05 | LLM-assisted (`DONDIE_LLM_STANDARD_MODEL`) |
+| PRO | $100 | $0.25 | Advanced LLM (`DONDIE_LLM_PRO_MODEL`) |
 
 See [`docs/dondie-survival-model.md`](docs/dondie-survival-model.md) for the full survival economics definition.
 
