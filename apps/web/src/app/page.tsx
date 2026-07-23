@@ -678,9 +678,9 @@ export default function Page(): ReactElement {
           orderType: "MARKET",
           mode: "AUTO",
           quantity: 100000,
-          price: 200,
-          stopLoss: 150,
-          takeProfit: 260
+          price: marketQuote.data?.price ?? 200,
+          stopLoss: Number((((marketQuote.data?.price ?? 200) * 0.75).toFixed(2))),
+          takeProfit: Number((((marketQuote.data?.price ?? 200) * 1.3).toFixed(2)))
         })
       }, token),
     onSuccess: async () => {
@@ -1217,14 +1217,40 @@ export default function Page(): ReactElement {
                   onSubmit={(event) => {
                     event.preventDefault();
                     const formData = new FormData(event.currentTarget);
+                    const side = String(formData.get("side") ?? "BUY") as OrderSide;
+                    const orderType = String(formData.get("orderType") ?? "MARKET") as OrderType;
+                    const referencePrice = Number(formData.get("price"));
+                    const livePrice = marketQuote.data?.price;
+                    // Market fills use the live quote; keep protective levels on the correct side of entry.
+                    const entryPrice =
+                      orderType === "MARKET" && livePrice && livePrice > 0 ? livePrice : referencePrice;
+                    let stopLoss = Number(formData.get("stopLoss"));
+                    let takeProfit = Number(formData.get("takeProfit"));
+                    if (orderType === "MARKET" && entryPrice > 0) {
+                      if (side === "BUY") {
+                        if (!(stopLoss < entryPrice)) {
+                          stopLoss = Number((entryPrice * 0.98).toFixed(2));
+                        }
+                        if (!(takeProfit > entryPrice)) {
+                          takeProfit = Number((entryPrice * 1.05).toFixed(2));
+                        }
+                      } else {
+                        if (!(stopLoss > entryPrice)) {
+                          stopLoss = Number((entryPrice * 1.02).toFixed(2));
+                        }
+                        if (!(takeProfit < entryPrice)) {
+                          takeProfit = Number((entryPrice * 0.95).toFixed(2));
+                        }
+                      }
+                    }
                     manualTradeMutation.mutate({
                       symbol: String(formData.get("symbol") ?? "AAPL").toUpperCase(),
-                      side: String(formData.get("side") ?? "BUY") as OrderSide,
-                      orderType: String(formData.get("orderType") ?? "MARKET") as OrderType,
+                      side,
+                      orderType,
                       quantity: Number(formData.get("quantity")),
-                      price: Number(formData.get("price")),
-                      stopLoss: Number(formData.get("stopLoss")),
-                      takeProfit: Number(formData.get("takeProfit"))
+                      price: Number(entryPrice.toFixed(2)),
+                      stopLoss,
+                      takeProfit
                     });
                   }}
                 >
