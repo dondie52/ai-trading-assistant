@@ -53,6 +53,7 @@ import {
   calculateIndicators,
   generateSignal,
   normalizeEmail,
+  generateHistoricalPrices,
   runHistoricalBacktest,
   runWalkForwardBacktest,
   summarizePerformance,
@@ -1393,15 +1394,21 @@ export class PlatformService implements OnModuleInit {
     symbol = "AAPL",
     timeframe: MarketTimeframe = "1m"
   ): Promise<readonly MarketCandle[]> {
-    const credentials = this.resolveAlpacaCredentials(userId);
-    if (!credentials) {
-      throw new NotFoundException({
-        code: "BROKER_NOT_CONNECTED",
-        message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
-      });
-    }
     const normalizedSymbol = symbol.toUpperCase();
     const key = marketDataKey(normalizedSymbol, timeframe);
+    const credentials = this.resolveAlpacaCredentials(userId);
+    if (!credentials) {
+      if (!this.allowSimulatedMarketData()) {
+        throw new NotFoundException({
+          code: "BROKER_NOT_CONNECTED",
+          message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
+        });
+      }
+      // Enough history for default walk-forward (train 45 + test 20) with spare windows.
+      const simulated = generateHistoricalPrices(normalizedSymbol, 220, 185, timeframe);
+      this.store.marketData.set(key, simulated);
+      return simulated;
+    }
     const candles = await this.alpacaBroker.getBars(normalizedSymbol, timeframe, credentials);
     if (candles.length === 0) {
       throw new NotFoundException({
@@ -1435,10 +1442,27 @@ export class PlatformService implements OnModuleInit {
     const normalizedSymbol = symbol.toUpperCase();
     const credentials = this.resolveAlpacaCredentials(userId);
     if (!credentials) {
-      throw new NotFoundException({
-        code: "BROKER_NOT_CONNECTED",
-        message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
-      });
+      if (!this.allowSimulatedMarketData()) {
+        throw new NotFoundException({
+          code: "BROKER_NOT_CONNECTED",
+          message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
+        });
+      }
+      const candles = await this.listMarketData(userId, normalizedSymbol, timeframe);
+      const latest = candles[candles.length - 1]!;
+      const previousClose = candles[candles.length - 2]?.close ?? latest.close;
+      return {
+        symbol: normalizedSymbol,
+        price: Number(latest.close.toFixed(2)),
+        bid: Number((latest.close - 0.01).toFixed(2)),
+        ask: Number((latest.close + 0.01).toFixed(2)),
+        changePercent:
+          previousClose > 0
+            ? Number((((latest.close - previousClose) / previousClose) * 100).toFixed(2))
+            : 0,
+        timestamp: latest.timestamp,
+        source: "SIMULATED"
+      };
     }
     const candles = await this.listMarketData(userId, normalizedSymbol, timeframe);
     const latestQuote = await this.alpacaBroker.getLatestQuote(normalizedSymbol, credentials);
@@ -2390,6 +2414,10 @@ export class PlatformService implements OnModuleInit {
       }
     }
     return resolveEnvAlpacaCredentials();
+  }
+
+  private allowSimulatedMarketData(): boolean {
+    return process.env.ENABLE_E2E_SEED === "true" || process.env.NODE_ENV === "test";
   }
 
   private getAlpacaBrokerAccount(userId: UUID): BrokerAccount | undefined {

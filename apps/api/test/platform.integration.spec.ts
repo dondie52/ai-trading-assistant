@@ -95,6 +95,8 @@ describe("platform integration", () => {
 
   beforeEach(() => {
     process.env.AUTH_PROVIDER = "legacy";
+    // Keep unit/integration expectations independent of e2e seed funding.
+    delete process.env.ENABLE_E2E_SEED;
     installAlpacaFetchMock();
   });
 

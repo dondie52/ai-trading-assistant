@@ -247,14 +247,15 @@ export class PlatformStore {
 
   ensureDefaultAccountState(userId: UUID): void {
     const now = isoNow();
+    const seedPaperCash = process.env.ENABLE_E2E_SEED === "true" ? 100_000 : 0;
 
     if (![...this.portfolios.values()].some((portfolio) => portfolio.userId === userId)) {
       const portfolio: Portfolio = {
         id: randomUUID(),
         userId,
         portfolioName: "Broker Account",
-        portfolioValue: 0,
-        cashBalance: 0,
+        portfolioValue: seedPaperCash,
+        cashBalance: seedPaperCash,
         realizedPnl: 0,
         unrealizedPnl: 0,
         createdAt: now
