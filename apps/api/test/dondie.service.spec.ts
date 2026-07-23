@@ -130,8 +130,8 @@ describe("Dondie survival loop", () => {
       status: "ACTIVE",
       configuration: { confidenceThreshold: 50, stopLossPercent: 5, takeProfitPercent: 8 }
     });
-    let agent = await dondie.activate(user.id, { strategyId: strategy.id });
-    agent = await wallet.credit(agent, 30, "TEST_GRANT");
+    const agent = await dondie.activate(user.id, { strategyId: strategy.id });
+    await wallet.credit(agent, 30, "TEST_GRANT");
     const walletView = dondie.getWallet(user.id);
     expect(walletView.balance).toBe(30);
     expect(walletView.tier).toBe("STANDARD");

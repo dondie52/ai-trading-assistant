@@ -225,8 +225,8 @@ describe("Dondie survival loop extras", () => {
       status: "ACTIVE",
       configuration: { confidenceThreshold: 100, stopLossPercent: 5, takeProfitPercent: 8 }
     });
-    let agent = await dondie.activate(user.id, { strategyId: strategy.id });
-    agent = await wallet.credit(agent, 30, "TEST_GRANT");
+    const agent = await dondie.activate(user.id, { strategyId: strategy.id });
+    await wallet.credit(agent, 30, "TEST_GRANT");
     const result = await dondie.run(user.id, { symbol: "AAPL" });
     expect(result.brain).toBe("standard");
     expect(dondie.getWallet(user.id).balance).toBeLessThan(30);
@@ -353,5 +353,130 @@ describe("Dondie survival loop extras", () => {
     expect(memory.listMemories(agent.id).length).toBe(3);
     const updated = await memory.updateSymbolUniverse(agent.userId, agent, ["TSLA"]);
     expect(updated.symbolUniverse).toContain("TSLA");
+  });
+
+  it("credits wallet from executed trade PnL and picks watchlist symbols", async () => {
+    installAlpacaFetchMock();
+    const { dondie, platform, store } = createStack();
+    const user = store.createUser({
+      email: `dondie-pnl-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Dondie",
+      lastName: "Trader",
+      role: "TRADER"
+    });
+    fundPaperPortfolio(store, user.id, 100_000);
+    store.watchlists.set(randomUUID(), {
+      id: randomUUID(),
+      userId: user.id,
+      name: "Primary",
+      symbols: ["NVDA"],
+      createdAt: new Date().toISOString()
+    });
+    const strategy = platform.createStrategy(user.id, {
+      name: "PnL Strategy",
+      description: "PnL",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { confidenceThreshold: 1, stopLossPercent: 5, takeProfitPercent: 8 }
+    });
+    await dondie.activate(user.id, { strategyId: strategy.id });
+
+    vi.spyOn(platform, "runAutomation").mockResolvedValue({
+      status: "EXECUTED",
+      mode: "AUTO",
+      strategyId: strategy.id,
+      symbol: "NVDA",
+      signal: {
+        id: randomUUID(),
+        userId: user.id,
+        strategyId: strategy.id,
+        symbol: "NVDA",
+        signalType: "BUY",
+        confidenceScore: 90,
+        modelVersion: "mvp-baseline-1.0.0",
+        features: {},
+        generatedAt: new Date().toISOString()
+      },
+      execution: {
+        order: {
+          id: randomUUID(),
+          userId: user.id,
+          symbol: "NVDA",
+          side: "BUY",
+          type: "MARKET",
+          quantity: 1,
+          status: "FILLED",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        trade: {
+          id: randomUUID(),
+          userId: user.id,
+          orderId: randomUUID(),
+          symbol: "NVDA",
+          side: "BUY",
+          quantity: 1,
+          price: 100,
+          fees: 0,
+          pnl: 50,
+          executedAt: new Date().toISOString()
+        }
+      }
+    } as never);
+
+    const result = await dondie.run(user.id, {});
+    expect(result.automation.symbol).toBe("NVDA");
+    expect(dondie.getWallet(user.id).balance).toBe(5);
+    expect(dondie.getWallet(user.id).ledger[0]?.reason).toBe("TRADE_PNL_SHARE");
+  });
+
+  it("covers activate/run validation and idle scheduled runs", async () => {
+    installAlpacaFetchMock();
+    const { dondie, platform, store } = createStack();
+    const user = store.createUser({
+      email: `dondie-val-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Dondie",
+      lastName: "Trader",
+      role: "TRADER"
+    });
+    await expect(dondie.activate(user.id, { strategyId: randomUUID() })).rejects.toBeInstanceOf(BadRequestException);
+
+    const strategy = platform.createStrategy(user.id, {
+      name: "Val",
+      description: "Val",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { confidenceThreshold: 100, stopLossPercent: 5, takeProfitPercent: 8 }
+    });
+    const agent = await dondie.activate(user.id, { strategyId: strategy.id });
+    expect(await dondie.activate(user.id, { strategyId: strategy.id })).toEqual(agent);
+
+    store.dondieAgents.set(agent.id, { ...agent, strategyId: undefined });
+    await expect(dondie.run(user.id, {})).rejects.toBeInstanceOf(BadRequestException);
+
+    await dondie.runScheduled(randomUUID());
+    store.dondieAgents.set(agent.id, { ...agent, status: "PAUSED", strategyId: strategy.id });
+    await dondie.runScheduled(user.id);
+  });
+
+  it("surfaces LLM HTTP and empty-response failures", async () => {
+    process.env.DONDIE_LLM_API_KEY = "test-key";
+    const brain = new DondieBrainLlmService();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    );
+    await expect(brain.plan("STANDARD", sampleSignal(), "AAPL", "1h", "user-1")).rejects.toBeTruthy();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: {} }] })
+      })
+    );
+    await expect(brain.plan("PRO", sampleSignal(), "AAPL", "1h", "user-1")).rejects.toBeTruthy();
   });
 });
