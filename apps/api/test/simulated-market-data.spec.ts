@@ -42,9 +42,20 @@ const createPlatform = (): PlatformService => {
 };
 
 describe("simulated market data fallback", () => {
+  const previousEnableE2ESeed = process.env.ENABLE_E2E_SEED;
+  const previousNodeEnv = process.env.NODE_ENV;
+
   afterEach(() => {
-    delete process.env.ENABLE_E2E_SEED;
-    delete process.env.NODE_ENV;
+    if (previousEnableE2ESeed === undefined) {
+      delete process.env.ENABLE_E2E_SEED;
+    } else {
+      process.env.ENABLE_E2E_SEED = previousEnableE2ESeed;
+    }
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
   });
 
   it("serves simulated candles and quotes when e2e seed mode is enabled", async () => {
@@ -62,7 +73,8 @@ describe("simulated market data fallback", () => {
 
   it("rejects market data when simulation is disabled and Alpaca is missing", async () => {
     delete process.env.ENABLE_E2E_SEED;
-    process.env.NODE_ENV = "production";
+    // Avoid production JWT hard-fail while still disabling the test/e2e simulation path.
+    process.env.NODE_ENV = "development";
     const platform = createPlatform();
     await expect(platform.listMarketData(undefined, "AAPL", "1h")).rejects.toMatchObject({
       response: { code: "BROKER_NOT_CONNECTED" }
