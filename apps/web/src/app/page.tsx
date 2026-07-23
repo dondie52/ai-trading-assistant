@@ -1877,6 +1877,7 @@ export default function Page(): ReactElement {
                   name="startingEquity"
                   label="Starting equity"
                   value={primaryPortfolio?.portfolioValue && primaryPortfolio.portfolioValue > 0 ? primaryPortfolio.portfolioValue : 1}
+                  step="0.01"
                 />
                 <LabInput name="maxPositionPercent" label="Max position %" value={20} />
                 <LabInput name="fastPeriod" label="Fast period" value={10} />
