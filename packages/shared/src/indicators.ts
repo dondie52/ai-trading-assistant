@@ -2,6 +2,10 @@ import type { IndicatorSnapshot, MarketCandle, MarketTimeframe } from "@trading/
 
 const round = (value: number, precision = 4): number => Number(value.toFixed(precision));
 
+const assertNever = (value: never): never => {
+  throw new Error(`Unhandled value: ${String(value)}`);
+};
+
 export const sma = (values: readonly number[], period: number): number | null => {
   if (period <= 0 || values.length < period) {
     return null;
@@ -180,6 +184,8 @@ const timeframeStepMs = (timeframe: MarketTimeframe): number => {
       return 4 * 60 * 60_000;
     case "1d":
       return 24 * 60 * 60_000;
+    default:
+      return assertNever(timeframe);
   }
 };
 
@@ -197,6 +203,8 @@ const timeframeVolatility = (timeframe: MarketTimeframe): number => {
       return 2.2;
     case "1d":
       return 2.8;
+    default:
+      return assertNever(timeframe);
   }
 };
 

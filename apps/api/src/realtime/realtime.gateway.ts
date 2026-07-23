@@ -168,16 +168,25 @@ export class RealtimeGateway
 
     this.clearQuoteTimer(client.id);
     const publishQuotes = async (): Promise<void> => {
-      for (const symbol of symbols) {
-        const quote = await this.platform.getMarketQuoteForUser(
-          client.data.userId,
-          symbol,
-          timeframe as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
-        );
-        this.eventBus.publish({
-          userId: client.data.userId,
-          type: "market.price",
-          data: { quote, timeframe }
+      try {
+        for (const symbol of symbols) {
+          const quote = await this.platform.getMarketQuoteForUser(
+            client.data.userId,
+            symbol,
+            timeframe as "1m" | "5m" | "15m" | "1h" | "4h" | "1d"
+          );
+          this.eventBus.publish({
+            userId: client.data.userId,
+            type: "market.price",
+            data: { quote, timeframe }
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to publish market quotes.";
+        client.emit("realtime:error", {
+          code: "MARKET_QUOTE_UNAVAILABLE",
+          message
         });
       }
     };

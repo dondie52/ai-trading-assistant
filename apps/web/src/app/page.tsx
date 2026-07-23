@@ -34,7 +34,9 @@ import type {
   AutomationRunResult,
   AuthTokens,
   DondieAgent,
+  DondieMemory,
   DondieRunResult,
+  DondieWalletLedgerEntry,
   BacktestResult,
   IndicatorSnapshot,
   JsonObject,
@@ -279,6 +281,21 @@ export default function Page(): ReactElement {
     queryKey: ["dondie", accessToken],
     enabled: authenticated,
     queryFn: () => apiFetch<DondieAgent | null>("/dondie", {}, token)
+  });
+  const dondieWallet = useQuery({
+    queryKey: ["dondie-wallet", accessToken],
+    enabled: authenticated && Boolean(dondieAgent.data),
+    queryFn: () =>
+      apiFetch<{
+        readonly balance: number;
+        readonly tier: DondieAgent["tier"];
+        readonly ledger: readonly DondieWalletLedgerEntry[];
+      }>("/dondie/wallet", {}, token)
+  });
+  const dondieMemories = useQuery({
+    queryKey: ["dondie-memories", accessToken],
+    enabled: authenticated && Boolean(dondieAgent.data),
+    queryFn: () => apiFetch<readonly DondieMemory[]>("/dondie/memories", {}, token)
   });
 
   useEffect(() => {
@@ -610,7 +627,12 @@ export default function Page(): ReactElement {
           ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
           : `Dondie skipped ${result.symbol}: ${result.reasoning}`
       );
-      await invalidateTradingData();
+      await Promise.all([
+        invalidateTradingData(),
+        queryClient.invalidateQueries({ queryKey: ["dondie"] }),
+        queryClient.invalidateQueries({ queryKey: ["dondie-wallet"] }),
+        queryClient.invalidateQueries({ queryKey: ["dondie-memories"] })
+      ]);
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Dondie run failed.");
@@ -656,9 +678,9 @@ export default function Page(): ReactElement {
           orderType: "MARKET",
           mode: "AUTO",
           quantity: 100000,
-          price: 200,
-          stopLoss: 150,
-          takeProfit: 260
+          price: marketQuote.data?.price ?? 200,
+          stopLoss: Number((((marketQuote.data?.price ?? 200) * 0.75).toFixed(2))),
+          takeProfit: Number((((marketQuote.data?.price ?? 200) * 1.3).toFixed(2)))
         })
       }, token),
     onSuccess: async () => {
@@ -1032,6 +1054,14 @@ export default function Page(): ReactElement {
                         value={dondieAgent.data.lastRunAt ? new Date(dondieAgent.data.lastRunAt).toLocaleString() : "Never"}
                       />
                     </div>
+                    {typeof dondieAgent.data.lastEvaluationScore === "number" ? (
+                      <p className="text-xs text-slate-400">
+                        Last evaluation score: {dondieAgent.data.lastEvaluationScore}
+                        {dondieAgent.data.symbolUniverse.length > 0
+                          ? ` · Universe: ${dondieAgent.data.symbolUniverse.join(", ")}`
+                          : ""}
+                      </p>
+                    ) : null}
                     <div className="grid gap-3 md:grid-cols-3">
                       <button
                         data-testid="dondie-pause"
@@ -1061,6 +1091,41 @@ export default function Page(): ReactElement {
                         <Bot className="h-4 w-4" aria-hidden="true" />
                         Run now
                       </button>
+                    </div>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Wallet ledger</p>
+                        <div className="max-h-40 space-y-2 overflow-auto text-xs text-slate-300">
+                          {(dondieWallet.data?.ledger ?? []).slice(0, 8).map((entry) => (
+                            <div key={entry.id} className="flex items-center justify-between gap-3 border-b border-line/60 pb-1">
+                              <span>
+                                {entry.entryType} · {entry.reason}
+                              </span>
+                              <span className={entry.entryType === "CREDIT" ? "text-emerald-300" : "text-rose-300"}>
+                                {entry.entryType === "CREDIT" ? "+" : "-"}
+                                {formatCurrency(entry.amount)}
+                              </span>
+                            </div>
+                          ))}
+                          {(dondieWallet.data?.ledger?.length ?? 0) === 0 ? (
+                            <p className="text-slate-500">No ledger entries yet. Profitable runs credit the wallet.</p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Run memory</p>
+                        <div className="max-h-40 space-y-2 overflow-auto text-xs text-slate-300">
+                          {(dondieMemories.data ?? []).slice(0, 8).map((memory) => (
+                            <div key={memory.id} className="border-b border-line/60 pb-1">
+                              <p>{memory.summary}</p>
+                              <p className="text-slate-500">{new Date(memory.createdAt).toLocaleString()}</p>
+                            </div>
+                          ))}
+                          {(dondieMemories.data?.length ?? 0) === 0 ? (
+                            <p className="text-slate-500">No memories yet. Run Dondie to start building history.</p>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -1152,14 +1217,40 @@ export default function Page(): ReactElement {
                   onSubmit={(event) => {
                     event.preventDefault();
                     const formData = new FormData(event.currentTarget);
+                    const side = String(formData.get("side") ?? "BUY") as OrderSide;
+                    const orderType = String(formData.get("orderType") ?? "MARKET") as OrderType;
+                    const referencePrice = Number(formData.get("price"));
+                    const livePrice = marketQuote.data?.price;
+                    // Market fills use the live quote; keep protective levels on the correct side of entry.
+                    const entryPrice =
+                      orderType === "MARKET" && livePrice && livePrice > 0 ? livePrice : referencePrice;
+                    let stopLoss = Number(formData.get("stopLoss"));
+                    let takeProfit = Number(formData.get("takeProfit"));
+                    if (orderType === "MARKET" && entryPrice > 0) {
+                      if (side === "BUY") {
+                        if (!(stopLoss < entryPrice)) {
+                          stopLoss = Number((entryPrice * 0.98).toFixed(2));
+                        }
+                        if (!(takeProfit > entryPrice)) {
+                          takeProfit = Number((entryPrice * 1.05).toFixed(2));
+                        }
+                      } else {
+                        if (!(stopLoss > entryPrice)) {
+                          stopLoss = Number((entryPrice * 1.02).toFixed(2));
+                        }
+                        if (!(takeProfit < entryPrice)) {
+                          takeProfit = Number((entryPrice * 0.95).toFixed(2));
+                        }
+                      }
+                    }
                     manualTradeMutation.mutate({
                       symbol: String(formData.get("symbol") ?? "AAPL").toUpperCase(),
-                      side: String(formData.get("side") ?? "BUY") as OrderSide,
-                      orderType: String(formData.get("orderType") ?? "MARKET") as OrderType,
+                      side,
+                      orderType,
                       quantity: Number(formData.get("quantity")),
-                      price: Number(formData.get("price")),
-                      stopLoss: Number(formData.get("stopLoss")),
-                      takeProfit: Number(formData.get("takeProfit"))
+                      price: Number(entryPrice.toFixed(2)),
+                      stopLoss,
+                      takeProfit
                     });
                   }}
                 >
@@ -1786,6 +1877,7 @@ export default function Page(): ReactElement {
                   name="startingEquity"
                   label="Starting equity"
                   value={primaryPortfolio?.portfolioValue && primaryPortfolio.portfolioValue > 0 ? primaryPortfolio.portfolioValue : 1}
+                  step="0.01"
                 />
                 <LabInput name="maxPositionPercent" label="Max position %" value={20} />
                 <LabInput name="fastPeriod" label="Fast period" value={10} />

@@ -29,13 +29,17 @@ Survival agent endpoints:
 - `POST /dondie/pause` — stops scheduled and manual runs
 - `POST /dondie/resume` — re-enables runs
 - `POST /dondie/run` — optional `symbol`, `timeframe`; executes brain → automation pipeline
+- `GET /dondie/wallet` — wallet balance, tier, and immutable ledger (PnL credits + brain debits)
+- `GET /dondie/memories` — recent run memories and evaluation scores
+- `POST /dondie/universe` — body `{ "symbols": ["AAPL", ...] }` updates the agent's symbol universe
 
-Planned (survival loop):
+Survival loop behavior on `POST /dondie/run`:
 
-- Wallet ledger endpoints
-- Tier upgrade/downgrade events
-- Brain cost debits on run completion
-- PnL credits on trade close
+- Selects brain from wallet tier (FREE / STANDARD / PRO); STANDARD/PRO require `DONDIE_LLM_API_KEY`
+- Debits brain cost before LLM runs; falls back to FREE if funds are insufficient
+- Credits ~`DONDIE_PNL_CREDIT_PERCENT` of realized trade PnL to the wallet
+- Auto-upgrades/downgrades tier from wallet balance thresholds
+- Records a memory + evaluation score and may expand the symbol universe
 
 Survival config: `apps/api/src/dondie/dondie.config.ts` and `.env` (see `docs/dondie-survival-model.md`).
 
