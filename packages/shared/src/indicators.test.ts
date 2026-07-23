@@ -23,4 +23,8 @@ describe("market indicators", () => {
     expect(second?.timeframe).toBe("1h");
     expect(Date.parse(second?.timestamp ?? "") - Date.parse(first?.timestamp ?? "")).toBe(60 * 60_000);
   });
+
+  it("rejects unsupported timeframes", () => {
+    expect(() => generateHistoricalPrices("AAPL", 2, 100, "2h" as never)).toThrow(/Unhandled value/);
+  });
 });

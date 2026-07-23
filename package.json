@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "concurrently -k -n api,web \"npm run dev -w @trading/api\" \"npm run dev -w @trading/web\"",
     "build:packages": "npm run build -w @trading/types && npm run build -w @trading/shared",
+    "build:api": "npm run build:packages && npm run prisma:generate -w @trading/api && npm run build -w @trading/api",
     "e2e:servers": "npm run build:packages && concurrently -k -s first -n api,web \"npm run dev:e2e -w @trading/api\" \"npm run dev:e2e -w @trading/web\"",
     "lint": "eslint \"{apps,packages,tests}/**/*.{ts,tsx}\" --max-warnings=0",
     "test": "vitest run --coverage",
