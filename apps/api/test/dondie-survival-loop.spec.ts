@@ -453,7 +453,8 @@ describe("Dondie survival loop extras", () => {
     const agent = await dondie.activate(user.id, { strategyId: strategy.id });
     expect(await dondie.activate(user.id, { strategyId: strategy.id })).toEqual(agent);
 
-    store.dondieAgents.set(agent.id, { ...agent, strategyId: undefined });
+    const { strategyId: _removedStrategyId, ...agentWithoutStrategy } = agent;
+    store.dondieAgents.set(agent.id, agentWithoutStrategy);
     await expect(dondie.run(user.id, {})).rejects.toBeInstanceOf(BadRequestException);
 
     await dondie.runScheduled(randomUUID());

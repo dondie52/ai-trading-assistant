@@ -19,7 +19,7 @@
     "test": "vitest run --coverage",
     "test:fast": "vitest run",
     "test:e2e": "playwright test",
-    "build": "npm run build:packages && npm run build -w @trading/api && npm run build -w @trading/web",
+    "build": "npm run build:packages && npm run prisma:generate -w @trading/api && npm run build -w @trading/api && npm run build -w @trading/web",
     "validate": "npm run lint && npm run test && npm run test:e2e && npm run build",
     "seed": "npm run seed -w @trading/api",
     "db:link": "supabase link --project-ref axrclxwittqyurwqjvdq",
