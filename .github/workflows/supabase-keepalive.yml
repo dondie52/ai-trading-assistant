@@ -1,0 +1,64 @@
+# Keeps the Free-plan Supabase project from auto-pausing after ~7 days of inactivity.
+# Requires repository secrets:
+#   SUPABASE_URL          e.g. https://axrclxwittqyurwqjvdq.supabase.co
+#   SUPABASE_ANON_KEY     publishable / anon key (Dashboard → Project Settings → API)
+
+name: Supabase keepalive
+
+on:
+  schedule:
+    # Three times a week — enough headroom under the 7-day inactivity window.
+    - cron: "0 9 * * 1,3,5"
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set repository secrets SUPABASE_URL and SUPABASE_ANON_KEY (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Ping Supabase REST (users)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          BASE="${SUPABASE_URL%/}"
+          # Lightweight authenticated read — counts as database activity for pause prevention.
+          HTTP_CODE=$(curl -sS -o /tmp/supabase-keepalive.json -w "%{http_code}" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Accept: application/json" \
+            "${BASE}/rest/v1/users?select=id&limit=1")
+
+          echo "HTTP ${HTTP_CODE}"
+          head -c 500 /tmp/supabase-keepalive.json || true
+          echo
+
+          case "$HTTP_CODE" in
+            200|206) echo "Supabase keepalive OK" ;;
+            # RLS may deny anon reads; 401/403 still means the project answered (not paused).
+            401|403) echo "Supabase reachable (auth/RLS blocked read — still counts as activity)" ;;
+            404)
+              echo "::warning::users table not exposed via PostgREST; falling back to auth health"
+              curl -fsS "${BASE}/auth/v1/health"
+              echo
+              ;;
+            *)
+              echo "::error::Unexpected response from Supabase"
+              exit 1
+              ;;
+          esac
