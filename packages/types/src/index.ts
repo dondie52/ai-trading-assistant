@@ -266,6 +266,88 @@ export type DondieSubscriptionPlan = "FREE" | "PRO";
 export type DondieSubscriptionStatus = "ACTIVE" | "CANCELLED" | "PAST_DUE";
 export type DondieLedgerEntryType = "CREDIT" | "DEBIT";
 
+export type DondieLifestyleLevel = 1 | 2 | 3 | 4 | 5;
+export type DondieActivityState =
+  | "IDLE"
+  | "SLEEPING"
+  | "RESTING"
+  | "THINKING"
+  | "ANALYSING"
+  | "PREPARING_ORDER"
+  | "AWAITING_CONFIRMATION"
+  | "EXECUTING"
+  | "MONITORING"
+  | "CELEBRATING"
+  | "BLOCKED_BY_RISK"
+  | "BROKER_DISCONNECTED"
+  | "MARKET_CLOSED"
+  | "ERROR_RETRYING";
+
+export type DondieMood =
+  | "focused"
+  | "calm"
+  | "tired"
+  | "optimistic"
+  | "cautious"
+  | "blocked"
+  | "celebrating"
+  | "waiting";
+
+export interface DondieRoomTiers {
+  readonly room: DondieLifestyleLevel;
+  readonly desk: DondieLifestyleLevel;
+  readonly chair: DondieLifestyleLevel;
+  readonly monitor: DondieLifestyleLevel;
+  readonly bed: DondieLifestyleLevel;
+  readonly decor: DondieLifestyleLevel;
+  readonly lighting: DondieLifestyleLevel;
+}
+
+export interface DondieAchievement {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly unlocked: boolean;
+  readonly unlockedAt?: string;
+}
+
+export interface DondieLifestyleWorld {
+  readonly agentId?: UUID;
+  readonly lifestyleLevel: DondieLifestyleLevel;
+  readonly lifestyleLabel: string;
+  readonly walletBalance: number;
+  readonly paperTradingLabel: "PAPER" | "LIVE";
+  readonly brainTier: DondieTier;
+  readonly mood: DondieMood;
+  readonly activity: DondieActivityState;
+  readonly activityLabel: string;
+  readonly currentTask: string;
+  readonly lastEventSummary: string;
+  readonly lastTradeResult?: {
+    readonly symbol: string;
+    readonly pnl: number;
+    readonly side: OrderSide;
+    readonly closedAt?: string;
+  };
+  readonly room: DondieRoomTiers;
+  readonly nextUnlock: {
+    readonly level: DondieLifestyleLevel | null;
+    readonly label: string;
+    readonly walletRequired: number;
+    readonly progressPercent: number;
+  };
+  readonly achievements: readonly DondieAchievement[];
+  readonly stats: {
+    readonly completedRuns: number;
+    readonly closedTrades: number;
+    readonly profitableTrades: number;
+    readonly consecutiveProfitableTrades: number;
+    readonly cumulativePaperProfit: number;
+  };
+  readonly disclaimer: string;
+  readonly updatedAt: string;
+}
+
 export interface DondieAgent {
   readonly id: UUID;
   readonly userId: UUID;

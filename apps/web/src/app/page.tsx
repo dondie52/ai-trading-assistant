@@ -41,6 +41,7 @@ import type {
   BacktestResult,
   BrokerAccountView,
   DondieAgent,
+  DondieLifestyleWorld,
   DondieMemory,
   DondieRunResult,
   DondieWalletLedgerEntry,
@@ -73,6 +74,7 @@ import { SurvivalAgentCard } from "../components/control-room/agent-card";
 import { AutomationModesPanel } from "../components/control-room/automation-modes";
 import { BrokerConnectionCard } from "../components/control-room/broker-card";
 import { RiskResultBanner } from "../components/control-room/risk-result";
+import { DondieRoomPanel } from "../components/dondie/dondie-room";
 import { LandingPage } from "../components/landing-page";
 import { BottomNav, DesktopNav, type ControlRoomTab } from "../components/nav/control-room-nav";
 import { EmptyLine, MetricCard, Panel, RiskRow, SmallStat, StatusPill } from "../components/ui/primitives";
@@ -224,7 +226,8 @@ const refreshableQueryKeys = [
   ["admin-metrics"],
   ["dondie"],
   ["dondie-wallet"],
-  ["dondie-memories"]
+  ["dondie-memories"],
+  ["dondie-lifestyle"]
 ] as const;
 
 const normalizeDraftCalculations = (draft: OrderDraft): OrderDraft => {
@@ -446,6 +449,12 @@ export default function Page(): ReactElement {
     queryKey: ["dondie-memories", accessToken],
     enabled: authenticated && Boolean(dondieAgent.data),
     queryFn: () => apiFetch<readonly DondieMemory[]>("/dondie/memories", {}, token)
+  });
+  const dondieLifestyle = useQuery({
+    queryKey: ["dondie-lifestyle", accessToken],
+    enabled: authenticated,
+    refetchInterval: authenticated ? 15_000 : false,
+    queryFn: () => apiFetch<DondieLifestyleWorld>("/dondie/lifestyle", {}, token)
   });
 
   const primaryPortfolio = portfolios.data?.[0];
@@ -872,6 +881,7 @@ export default function Page(): ReactElement {
     onSuccess: async (agent) => {
       setNotice(`${agent.name} activated on ${agent.tier} tier.`);
       await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+      await queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] });
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Dondie activation failed.");
@@ -884,6 +894,7 @@ export default function Page(): ReactElement {
     onSuccess: async () => {
       setNotice("Dondie paused.");
       await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+      await queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] });
     }
   });
 
@@ -893,6 +904,7 @@ export default function Page(): ReactElement {
     onSuccess: async () => {
       setNotice("Dondie resumed.");
       await queryClient.invalidateQueries({ queryKey: ["dondie"] });
+      await queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] });
     }
   });
 
@@ -1821,6 +1833,14 @@ export default function Page(): ReactElement {
 
       {activeTab === "home" ? (
         <section data-testid="home-view" className="space-y-5">
+          <DondieRoomPanel
+            world={dondieLifestyle.data ?? null}
+            loading={dondieLifestyle.isLoading}
+            onOpenTimeline={() => {
+              const timeline = document.querySelector("[data-testid='home-view']");
+              timeline?.scrollIntoView({ behavior: "smooth", block: "end" });
+            }}
+          />
           <SurvivalAgentCard
             agent={dondieAgent.data}
             ledger={dondieWallet.data?.ledger ?? []}
