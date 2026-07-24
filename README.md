@@ -117,6 +117,46 @@ The web UI is organized around Dondie:
 
 Full API summary: [`docs/api.md`](docs/api.md)
 
+## Operator login (Vercel + Supabase)
+
+Vercel only hosts the **web** UI. Login needs:
+
+1. **Supabase Auth user** (not just a row in `public.users`)
+2. A live **API** URL in Vercel (`NEXT_PUBLIC_API_URL`)
+
+### 1) Create the Auth user (Dashboard)
+
+Supabase → **Authentication** → **Users** → **Add user** → Email + password  
+(Use the same email you want to log in with. Mark email confirmed.)
+
+Then promote in SQL Editor:
+
+```sql
+UPDATE public.users
+SET role = 'ADMIN', status = 'ACTIVE', updated_at = now()
+WHERE email = lower('your@email.com');
+```
+
+### 2) Deploy the API (Render)
+
+Use the Blueprint in `render.yaml`, or create a Node Web Service from this repo:
+
+- Build: `npm ci && npm run build:packages && npm run prisma:generate -w @trading/api && npm run build -w @trading/api`
+- Start: `npm run start -w @trading/api`
+- Health check: `/api/v1/health`
+
+Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and Supabase public URL/key on the service.
+
+### 3) Point Vercel at the API
+
+Vercel → Project → Settings → Environment Variables (Production + Preview):
+
+- `NEXT_PUBLIC_API_URL` = `https://<your-api>.onrender.com/api/v1`
+- `NEXT_PUBLIC_SUPABASE_URL` = `https://axrclxwittqyurwqjvdq.supabase.co`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = (Dashboard → Settings → API)
+
+Redeploy the web app after saving. Free Render APIs sleep after idle — the first login after sleep can take ~30–60s.
+
 ## Tests
 
 ```bash

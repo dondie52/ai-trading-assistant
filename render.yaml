@@ -1,0 +1,45 @@
+# Render Blueprint — Dondie API
+# Dashboard: https://dashboard.render.com/blueprints/new?repo=https://github.com/dondie52/ai-trading-assistant
+services:
+  - type: web
+    name: dondie-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: .
+    buildCommand: npm ci && npm run build:packages && npm run prisma:generate -w @trading/api && npm run build -w @trading/api
+    startCommand: npm run start -w @trading/api
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_PROVIDER
+        value: supabase
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: MFA_ENCRYPTION_KEY
+        generateValue: true
+      - key: BROKER_CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: ALPACA_ENVIRONMENT
+        value: PAPER
+      - key: DONDIE_SCHEDULER_ENABLED
+        value: "true"
