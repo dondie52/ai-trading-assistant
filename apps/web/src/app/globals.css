@@ -4,6 +4,11 @@
 
 :root {
   color-scheme: dark;
+  --color-profit: #10b981;
+  --color-loss: #f43f5e;
+  --color-caution: #f59e0b;
+  --color-ai: #8b5cf6;
+  --color-action: #06b6d4;
 }
 
 * {
@@ -19,6 +24,17 @@ body {
 button,
 input {
   font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer utilities {

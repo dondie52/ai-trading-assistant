@@ -220,7 +220,7 @@ export function AITradeCopilot({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <button
-            data-testid="execute-paper-trade"
+            data-testid="approve-paper-trade"
             type="button"
             disabled={!canApprove && automationMode !== "MANUAL"}
             onClick={() => draft && onApprovePaperTrade(draft)}
@@ -228,7 +228,7 @@ export function AITradeCopilot({
           >
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             {automationMode === "MANUAL"
-              ? "Use Trade tab order ticket"
+              ? "Use advanced order ticket"
               : submitting
                 ? "Submitting…"
                 : "Approve paper trade"}

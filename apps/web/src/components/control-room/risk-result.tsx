@@ -18,7 +18,7 @@ export function RiskResultBanner({
 
   return (
     <div
-      data-testid="risk-block-message"
+      data-testid="structured-risk-banner"
       role="alert"
       className="space-y-2 rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-3 text-sm text-rose-50"
     >

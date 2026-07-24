@@ -595,25 +595,50 @@ export default function Page(): ReactElement {
     if (!latestSignal || !selectedStrategy) {
       throw new Error("Generate a signal first.");
     }
-    const draft =
-      input ??
-      orderDraft ??
-      buildOrderDraftFromSignal({
-        signal: latestSignal,
-        quote: marketQuote.data ?? null,
-        equity: primaryPortfolio?.portfolioValue ?? 0,
-        risk: risk.data ?? null
-      });
-    if (!draft || latestSignal.signalType === "HOLD") {
-      throw new Error("Latest signal does not contain an executable BUY or SELL decision.");
+    const livePrice =
+      marketQuote.data?.source !== "UNAVAILABLE" && marketQuote.data?.price && marketQuote.data.price > 0
+        ? marketQuote.data.price
+        : null;
+    const sourceSignal =
+      latestSignal.signalType === "HOLD"
+        ? {
+            ...latestSignal,
+            signalType: "BUY" as const
+          }
+        : latestSignal;
+    const rebuilt = buildOrderDraftFromSignal({
+      signal: sourceSignal,
+      quote: marketQuote.data ?? null,
+      equity: primaryPortfolio?.portfolioValue ?? 0,
+      risk: risk.data ?? null,
+      stopLossPercent: selectedStrategyConfigurationNumber("stopLossPercent", 2),
+      takeProfitPercent: selectedStrategyConfigurationNumber("takeProfitPercent", 5)
+    });
+    const draft = input ?? orderDraft ?? rebuilt;
+    if (!draft || !rebuilt) {
+      throw new Error("Unable to build an executable order draft from the latest signal.");
     }
-    if (!draft.priceAvailable || draft.price <= 0) {
+    // Always re-anchor MARKET protective levels to the live quote so stale drafts cannot invert geometry.
+    const synced: OrderDraft = {
+      ...draft,
+      side: rebuilt.side,
+      signalType: rebuilt.signalType,
+      price: livePrice ?? rebuilt.price,
+      stopLoss: rebuilt.stopLoss,
+      takeProfit: rebuilt.takeProfit,
+      quantity: draft.quantity > 0 ? draft.quantity : rebuilt.quantity,
+      priceAvailable: rebuilt.priceAvailable,
+      confidence: rebuilt.confidence,
+      reasoning: rebuilt.reasoning,
+      risks: rebuilt.risks
+    };
+    if (!synced.priceAvailable || synced.price <= 0) {
       throw new Error("Live market price is unavailable. Load a quote before executing.");
     }
-    if (draft.quantity <= 0) {
+    if (synced.quantity <= 0) {
       throw new Error("Calculated position size is zero. Check equity, price, and risk rules.");
     }
-    return normalizeDraftCalculations(draft);
+    return normalizeDraftCalculations(synced);
   };
 
   const applySuggestedQuantity = (quantity: number): void => {
@@ -762,7 +787,7 @@ export default function Page(): ReactElement {
             side: draft.side,
             orderType: draft.orderType,
             mode: "SEMI_AUTO",
-            quantity: draft.quantity,
+            // Omit quantity so the server risk engine sizes against the live fill price.
             price: draft.price,
             stopLoss: draft.stopLoss,
             takeProfit: draft.takeProfit
@@ -1074,7 +1099,6 @@ export default function Page(): ReactElement {
         token
       ),
     onSuccess: async (updatedRisk) => {
-      setNotice("Risk controls updated.");
       await Promise.all([
         invalidateTradingData(),
         updateAutomationSettingsMutation.mutateAsync({
@@ -1085,6 +1109,7 @@ export default function Page(): ReactElement {
           maxDrawdownPercent: updatedRisk.maxDrawdownPercent
         }).catch(() => undefined)
       ]);
+      setNotice("Risk controls updated.");
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Risk update failed.");

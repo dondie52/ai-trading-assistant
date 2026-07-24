@@ -1,5 +1,4 @@
 import type { JsonObject, MarketQuote, OrderSide, RiskRules, Signal } from "@trading/types";
-import { calculatePositionSize } from "../../../../packages/shared/src/risk";
 
 export interface OrderDraft {
   readonly symbol: string;
@@ -22,6 +21,24 @@ export interface OrderDraft {
 const featureNumber = (features: JsonObject, key: string): number | null => {
   const value = features[key];
   return typeof value === "number" ? value : null;
+};
+
+/** Client-side mirror of shared risk sizing — keep server validateTradeRisk as authority. */
+const calculatePositionSize = (
+  equity: number,
+  maxRiskPerTradePercent: number,
+  entryPrice: number,
+  stopLossPrice: number
+): number => {
+  if (equity <= 0 || maxRiskPerTradePercent <= 0 || entryPrice <= 0 || stopLossPrice <= 0) {
+    return 0;
+  }
+  const riskAmount = equity * (maxRiskPerTradePercent / 100);
+  const stopLossDistance = Math.abs(entryPrice - stopLossPrice);
+  if (stopLossDistance <= 0) {
+    return 0;
+  }
+  return Number((riskAmount / stopLossDistance).toFixed(4));
 };
 
 export const buildOrderDraftFromSignal = (input: {

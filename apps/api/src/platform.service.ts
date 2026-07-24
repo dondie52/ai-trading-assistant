@@ -1730,7 +1730,7 @@ export class PlatformService implements OnModuleInit {
         symbol,
         side,
         orderType: "MARKET",
-        mode: settings.mode === "ASSISTED" ? "SEMI_AUTO" : "AUTO",
+        mode: "AUTO",
         price: Number(price.toFixed(2)),
         stopLoss: Number(stopLoss.toFixed(2)),
         takeProfit: Number(takeProfit.toFixed(2))
@@ -1960,8 +1960,24 @@ export class PlatformService implements OnModuleInit {
     await this.syncAlpacaState(userId);
     const marketPrice = (await this.getMarketQuote(userId, symbol, "1m")).price;
     const price = orderType === "MARKET" ? marketPrice : requestedPrice;
-    const stopLoss = readNumber(body, "stopLoss", { required: true, min: 0.01 });
-    const takeProfit = readNumber(body, "takeProfit", { required: true, min: 0.01 });
+    const requestedStopLoss = readNumber(body, "stopLoss", { required: true, min: 0.01 });
+    const requestedTakeProfit = readNumber(body, "takeProfit", { required: true, min: 0.01 });
+    const stopLoss = this.normalizeProtectivePrice({
+      orderType,
+      side,
+      entryPrice: price,
+      requestedEntryPrice: requestedPrice,
+      protectivePrice: requestedStopLoss,
+      kind: "stop"
+    });
+    const takeProfit = this.normalizeProtectivePrice({
+      orderType,
+      side,
+      entryPrice: price,
+      requestedEntryPrice: requestedPrice,
+      protectivePrice: requestedTakeProfit,
+      kind: "target"
+    });
     const quantityValue = body.quantity;
     const requestedQuantity =
       quantityValue === undefined || quantityValue === null || quantityValue === ""
@@ -2046,7 +2062,7 @@ export class PlatformService implements OnModuleInit {
       });
       this.operationalMetrics.recordTrade(performance.now() - startedAt, "rejected");
       throw new UnprocessableEntityException({
-        code: primary?.code ?? "RISK_REJECTED",
+        code: "RISK_REJECTED",
         message: primary?.message ?? riskDecision.reasons.join(" "),
         details: {
           orderId: order.id,
@@ -2856,7 +2872,7 @@ export class PlatformService implements OnModuleInit {
       status: account.status,
       hasCredentials: Boolean(account.encryptedApiKey && account.encryptedSecret),
       environment: account.environment ?? (account.brokerName === "ALPACA" ? "PAPER" : "PAPER"),
-      lastSyncedAt: account.status === "CONNECTED" ? isoNow() : undefined,
+      ...(account.status === "CONNECTED" ? { lastSyncedAt: isoNow() } : {}),
       createdAt: account.createdAt
     };
   }
@@ -2866,6 +2882,48 @@ export class PlatformService implements OnModuleInit {
     return this.listTrades(userId)
       .filter((trade) => trade.closedAt?.slice(0, 10) === today)
       .reduce((sum, trade) => sum + trade.pnl, 0);
+  }
+
+  private normalizeProtectivePrice(input: {
+    readonly orderType: OrderType;
+    readonly side: OrderSide;
+    readonly entryPrice: number;
+    readonly requestedEntryPrice: number;
+    readonly protectivePrice: number;
+    readonly kind: "stop" | "target";
+  }): number {
+    const { orderType, side, entryPrice, requestedEntryPrice, protectivePrice, kind } = input;
+    if (entryPrice <= 0 || protectivePrice <= 0) {
+      return protectivePrice;
+    }
+
+    let scaled = protectivePrice;
+    if (orderType === "MARKET" && requestedEntryPrice > 0) {
+      scaled = Number(((entryPrice * protectivePrice) / requestedEntryPrice).toFixed(2));
+    }
+
+    const stopIsValid =
+      kind === "stop"
+        ? side === "BUY"
+          ? scaled < entryPrice
+          : scaled > entryPrice
+        : side === "BUY"
+          ? scaled > entryPrice
+          : scaled < entryPrice;
+
+    if (stopIsValid) {
+      return scaled;
+    }
+
+    const defaultPercent = kind === "stop" ? 0.02 : 0.05;
+    if (kind === "stop") {
+      return Number(
+        (side === "BUY" ? entryPrice * (1 - defaultPercent) : entryPrice * (1 + defaultPercent)).toFixed(2)
+      );
+    }
+    return Number(
+      (side === "BUY" ? entryPrice * (1 + defaultPercent) : entryPrice * (1 - defaultPercent)).toFixed(2)
+    );
   }
 
   private evaluateOrderRisk(input: {
