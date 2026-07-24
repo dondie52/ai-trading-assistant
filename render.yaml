@@ -1,8 +1,8 @@
 # Render Blueprint — Dondie API
-# Dashboard: https://dashboard.render.com/blueprints/new?repo=https://github.com/dondie52/ai-trading-assistant
+# Production host used by Vercel: https://ai-trading-assistant-cgpp.onrender.com/api/v1
 services:
   - type: web
-    name: dondie-api
+    name: ai-trading-assistant-cgpp
     runtime: node
     plan: free
     region: frankfurt
@@ -18,11 +18,11 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
-        sync: false
+        value: https://axrclxwittqyurwqjvdq.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_URL
-        sync: false
+        value: https://axrclxwittqyurwqjvdq.supabase.co
       - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
         sync: false
       - key: MFA_ENCRYPTION_KEY
@@ -34,7 +34,7 @@ services:
       - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        sync: false
+        value: https://ai-trading-assistant-web.vercel.app
       - key: ALPACA_API_KEY
         sync: false
       - key: ALPACA_SECRET_KEY
@@ -43,3 +43,5 @@ services:
         value: PAPER
       - key: DONDIE_SCHEDULER_ENABLED
         value: "true"
+      - key: MFA_REQUIRED
+        value: "false"

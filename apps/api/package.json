@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "dev:e2e": "tsx src/main.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node build-output/apps/api/src/main.js",
     "seed": "tsx prisma/seed.ts",
     "prisma:generate": "prisma generate"
