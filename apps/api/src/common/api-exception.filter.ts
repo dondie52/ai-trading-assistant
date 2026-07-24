@@ -48,7 +48,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (typeof body === "string") {
       error = { code: "REQUEST_ERROR", message: body };
     } else if (isErrorBody(body)) {
-      error = body;
+      error = {
+        code: body.code,
+        message: body.message,
+        ...(body.details ? { details: body.details } : {})
+      };
     } else if (typeof body === "object" && body !== null) {
       const record = body as Record<string, unknown>;
       const message =
@@ -57,9 +61,18 @@ export class ApiExceptionFilter implements ExceptionFilter {
           : Array.isArray(record.message)
             ? record.message.join(", ")
             : error.message;
+      const details =
+        typeof record.details === "object" && record.details !== null
+          ? (record.details as JsonObject)
+          : undefined;
       error = {
-        code: typeof record.error === "string" ? record.error.toUpperCase().replace(/\s+/g, "_") : error.code,
-        message
+        code: typeof record.code === "string"
+          ? record.code
+          : typeof record.error === "string"
+            ? record.error.toUpperCase().replace(/\s+/g, "_")
+            : error.code,
+        message,
+        ...(details ? { details } : {})
       };
     }
 

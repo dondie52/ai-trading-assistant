@@ -1577,14 +1577,69 @@ export class PlatformService implements OnModuleInit {
     const symbol = readString(body, "symbol", { required: true, max: 16 }).toUpperCase();
     const strategyId = readString(body, "strategyId", { required: true });
     const timeframe = normalizeMarketTimeframe(body.timeframe);
+    const idempotencyKey =
+      readString(body, "idempotencyKey", { max: 128 }) ||
+      `${userId}:${strategyId}:${symbol}:${timeframe}:${new Date().toISOString().slice(0, 16)}`;
+
+    const cached = this.store.automationIdempotency.get(idempotencyKey);
+    if (cached) {
+      return cached;
+    }
+
     const strategy = this.requireStrategy(userId, strategyId);
     if (strategy.status !== "ACTIVE") {
       throw new BadRequestException({ code: "STRATEGY_INACTIVE", message: "Strategy must be active." });
     }
 
-    const confidenceThreshold = readPercentSetting(body, strategy.configuration, "confidenceThreshold", 60);
+    const settings = this.getAutomationSettings(userId);
+    if (settings.emergencyStop || settings.mode === "MANUAL") {
+      const blocked: AutomationRunResult = {
+        status: "SKIPPED",
+        mode: "AUTO",
+        strategyId: strategy.id,
+        symbol,
+        signal: await this.generateTradingSignal(userId, { strategyId: strategy.id, symbol, timeframe }),
+        reason:
+          settings.emergencyStop
+            ? "Emergency stop is active."
+            : "Automation mode is Manual — orders are not auto-submitted.",
+        idempotencyKey,
+        steps: [
+          { id: "sync", label: "Syncing account", status: "done" },
+          { id: "blocked", label: "Automation blocked", status: "failed", detail: settings.emergencyStop ? "Emergency stop" : "Manual mode" }
+        ],
+        summary: {
+          symbolsScanned: 1,
+          opportunitiesFound: 0,
+          qualifiedSignals: 0,
+          tradesCreated: 0,
+          signalsRejected: 1,
+          highestRejectionReason: settings.emergencyStop ? "Emergency stop is active." : "Manual mode"
+        }
+      };
+      this.store.automationIdempotency.set(idempotencyKey, blocked);
+      return blocked;
+    }
+
+    const confidenceThreshold = readPercentSetting(body, strategy.configuration, "confidenceThreshold", settings.minimumConfidence);
     const stopLossPercent = readPercentSetting(body, strategy.configuration, "stopLossPercent", 5);
     const takeProfitPercent = readPercentSetting(body, strategy.configuration, "takeProfitPercent", 8);
+
+    const steps: Array<{
+      id: string;
+      label: string;
+      status: "pending" | "running" | "done" | "skipped" | "failed";
+      detail?: string;
+    }> = [
+      { id: "sync", label: "Syncing account", status: "done" },
+      { id: "watchlist", label: "Loading watchlist", status: "done", detail: symbol },
+      { id: "market", label: "Fetching market data", status: "running" },
+      { id: "strategy", label: "Evaluating strategy", status: "pending" },
+      { id: "rank", label: "Ranking signals", status: "pending" },
+      { id: "risk", label: "Running risk validation", status: "pending" },
+      { id: "order", label: "Creating paper order", status: "pending" },
+      { id: "portfolio", label: "Updating portfolio", status: "pending" }
+    ];
 
     this.store.appendAudit({
       userId,
@@ -1592,15 +1647,29 @@ export class PlatformService implements OnModuleInit {
       action: "AUTOMATION_RUN_STARTED",
       entityType: "STRATEGY",
       entityId: strategy.id,
-      metadata: { symbol, timeframe, confidenceThreshold, stopLossPercent, takeProfitPercent }
+      metadata: { symbol, timeframe, confidenceThreshold, stopLossPercent, takeProfitPercent, idempotencyKey }
     });
 
+    await this.listMarketData(userId, symbol, timeframe);
+    steps[2] = { ...steps[2]!, status: "done" };
+    steps[3] = { ...steps[3]!, status: "running" };
+
     const signal = await this.generateTradingSignal(userId, { strategyId: strategy.id, symbol, timeframe });
+    steps[3] = { ...steps[3]!, status: "done" };
+    steps[4] = {
+      ...steps[4]!,
+      status: "done",
+      detail: `${signal.signalType} @ ${signal.confidenceScore}%`
+    };
+
     if (signal.signalType === "HOLD" || signal.confidenceScore < confidenceThreshold) {
       const reason =
         signal.signalType === "HOLD"
           ? "Signal was HOLD; automated execution skipped."
           : `Signal confidence ${signal.confidenceScore}% was below threshold ${confidenceThreshold}%.`;
+      steps[5] = { ...steps[5]!, status: "skipped", detail: reason };
+      steps[6] = { ...steps[6]!, status: "skipped" };
+      steps[7] = { ...steps[7]!, status: "skipped" };
       this.store.appendAudit({
         userId,
         actorUserId: userId,
@@ -1615,14 +1684,26 @@ export class PlatformService implements OnModuleInit {
         title: "Automation skipped",
         message: reason
       });
-      return {
+      const skipped: AutomationRunResult = {
         status: "SKIPPED",
         mode: "AUTO",
         strategyId: strategy.id,
         symbol,
         signal,
-        reason
+        reason,
+        idempotencyKey,
+        steps,
+        summary: {
+          symbolsScanned: 1,
+          opportunitiesFound: signal.signalType === "HOLD" ? 0 : 1,
+          qualifiedSignals: 0,
+          tradesCreated: 0,
+          signalsRejected: 1,
+          highestRejectionReason: reason
+        }
       };
+      this.store.automationIdempotency.set(idempotencyKey, skipped);
+      return skipped;
     }
 
     const price = readLatestClose(signal, await this.listMarketData(userId, symbol, timeframe));
@@ -1632,6 +1713,7 @@ export class PlatformService implements OnModuleInit {
     const takeProfit =
       side === "BUY" ? price * (1 + takeProfitPercent / 100) : price * (1 - takeProfitPercent / 100);
 
+    steps[5] = { ...steps[5]!, status: "running" };
     this.store.appendAudit({
       userId,
       actorUserId: userId,
@@ -1641,40 +1723,190 @@ export class PlatformService implements OnModuleInit {
       metadata: { symbol, timeframe, side, price, stopLoss, takeProfit }
     });
 
-    const execution = await this.createOrder(userId, {
-      strategyId: strategy.id,
-      signalId: signal.id,
-      symbol,
-      side,
-      orderType: "MARKET",
-      mode: "AUTO",
-      price: Number(price.toFixed(2)),
-      stopLoss: Number(stopLoss.toFixed(2)),
-      takeProfit: Number(takeProfit.toFixed(2))
-    });
+    try {
+      const execution = await this.createOrder(userId, {
+        strategyId: strategy.id,
+        signalId: signal.id,
+        symbol,
+        side,
+        orderType: "MARKET",
+        mode: settings.mode === "ASSISTED" ? "SEMI_AUTO" : "AUTO",
+        price: Number(price.toFixed(2)),
+        stopLoss: Number(stopLoss.toFixed(2)),
+        takeProfit: Number(takeProfit.toFixed(2))
+      });
 
+      steps[5] = { ...steps[5]!, status: "done", detail: "Risk checks passed" };
+      steps[6] = { ...steps[6]!, status: "done", detail: execution.order.status };
+      steps[7] = { ...steps[7]!, status: "done" };
+
+      this.store.appendAudit({
+        userId,
+        actorUserId: userId,
+        action: "AUTOMATION_EXECUTED",
+        entityType: "ORDER",
+        entityId: execution.order.id,
+        metadata: {
+          symbol,
+          side,
+          calculatedQuantity: execution.riskDecision.calculatedQuantity,
+          orderStatus: execution.order.status
+        }
+      });
+
+      const executed: AutomationRunResult = {
+        status: "EXECUTED",
+        mode: "AUTO",
+        strategyId: strategy.id,
+        symbol,
+        signal,
+        execution,
+        idempotencyKey,
+        steps,
+        summary: {
+          symbolsScanned: 1,
+          opportunitiesFound: 1,
+          qualifiedSignals: 1,
+          tradesCreated: 1,
+          signalsRejected: 0
+        }
+      };
+      this.store.automationIdempotency.set(idempotencyKey, executed);
+      return executed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Order rejected";
+      steps[5] = { ...steps[5]!, status: "failed", detail: message };
+      steps[6] = { ...steps[6]!, status: "skipped" };
+      steps[7] = { ...steps[7]!, status: "skipped" };
+      const rejected: AutomationRunResult = {
+        status: "SKIPPED",
+        mode: "AUTO",
+        strategyId: strategy.id,
+        symbol,
+        signal,
+        reason: message,
+        idempotencyKey,
+        steps,
+        summary: {
+          symbolsScanned: 1,
+          opportunitiesFound: 1,
+          qualifiedSignals: 1,
+          tradesCreated: 0,
+          signalsRejected: 1,
+          highestRejectionReason: message
+        }
+      };
+      this.store.automationIdempotency.set(idempotencyKey, rejected);
+      return rejected;
+    }
+  }
+
+  getAutomationSettings(userId: UUID): import("@trading/types").AutomationSettings {
+    const existing = this.store.automationSettings.get(userId);
+    if (existing) {
+      return existing;
+    }
+    const watchlist = this.listWatchlists(userId)[0]?.symbols ?? ["AAPL", "MSFT", "TSLA"];
+    const risk = this.getRiskRules(userId);
+    const defaults: import("@trading/types").AutomationSettings = {
+      mode: "ASSISTED",
+      watchlist: [...watchlist],
+      marketHoursOnly: true,
+      minimumConfidence: 60,
+      maxTradesPerDay: 5,
+      riskPerTradePercent: risk.maxRiskPerTradePercent,
+      maxPositionSizePercent: risk.maxPositionSizePercent,
+      dailyLossLimitPercent: risk.maxDailyLossPercent,
+      maxDrawdownPercent: risk.maxDrawdownPercent,
+      allowedAssetTypes: ["stock"],
+      cooldownSeconds: 60,
+      requireConfirmationAboveValue: 2_500,
+      emergencyStop: risk.stopTrading,
+      runtimeState: risk.stopTrading ? "RISK_LOCK" : "IDLE",
+      updatedAt: isoNow()
+    };
+    this.store.automationSettings.set(userId, defaults);
+    return defaults;
+  }
+
+  updateAutomationSettings(userId: UUID, bodyValue: unknown): import("@trading/types").AutomationSettings {
+    const body = asRecord(bodyValue);
+    const current = this.getAutomationSettings(userId);
+    const mode =
+      body.mode === "MANUAL" || body.mode === "ASSISTED" || body.mode === "AUTOPILOT"
+        ? body.mode
+        : current.mode;
+    const watchlist = Array.isArray(body.watchlist)
+      ? body.watchlist
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim().toUpperCase())
+          .filter(Boolean)
+          .slice(0, 50)
+      : current.watchlist;
+    const next: import("@trading/types").AutomationSettings = {
+      ...current,
+      mode,
+      watchlist,
+      marketHoursOnly: typeof body.marketHoursOnly === "boolean" ? body.marketHoursOnly : current.marketHoursOnly,
+      minimumConfidence:
+        typeof body.minimumConfidence === "number" ? body.minimumConfidence : current.minimumConfidence,
+      maxTradesPerDay:
+        typeof body.maxTradesPerDay === "number" ? Math.max(0, Math.floor(body.maxTradesPerDay)) : current.maxTradesPerDay,
+      riskPerTradePercent:
+        typeof body.riskPerTradePercent === "number" ? body.riskPerTradePercent : current.riskPerTradePercent,
+      maxPositionSizePercent:
+        typeof body.maxPositionSizePercent === "number"
+          ? body.maxPositionSizePercent
+          : current.maxPositionSizePercent,
+      dailyLossLimitPercent:
+        typeof body.dailyLossLimitPercent === "number"
+          ? body.dailyLossLimitPercent
+          : current.dailyLossLimitPercent,
+      maxDrawdownPercent:
+        typeof body.maxDrawdownPercent === "number" ? body.maxDrawdownPercent : current.maxDrawdownPercent,
+      allowedAssetTypes: Array.isArray(body.allowedAssetTypes)
+        ? body.allowedAssetTypes.filter((item): item is string => typeof item === "string")
+        : current.allowedAssetTypes,
+      cooldownSeconds:
+        typeof body.cooldownSeconds === "number" ? Math.max(0, Math.floor(body.cooldownSeconds)) : current.cooldownSeconds,
+      requireConfirmationAboveValue:
+        typeof body.requireConfirmationAboveValue === "number"
+          ? body.requireConfirmationAboveValue
+          : current.requireConfirmationAboveValue,
+      emergencyStop: typeof body.emergencyStop === "boolean" ? body.emergencyStop : current.emergencyStop,
+      runtimeState: (() => {
+        const emergencyStop =
+          typeof body.emergencyStop === "boolean" ? body.emergencyStop : current.emergencyStop;
+        if (emergencyStop) {
+          return "RISK_LOCK";
+        }
+        if (mode === "AUTOPILOT") {
+          return "RUNNING";
+        }
+        if (mode === "ASSISTED") {
+          return "IDLE";
+        }
+        return "PAUSED";
+      })(),
+      updatedAt: isoNow()
+    };
+    this.store.automationSettings.set(userId, next);
+    if (typeof body.emergencyStop === "boolean") {
+      this.updateRiskRules(userId, { stopTrading: body.emergencyStop });
+    }
     this.store.appendAudit({
       userId,
       actorUserId: userId,
-      action: "AUTOMATION_EXECUTED",
-      entityType: "ORDER",
-      entityId: execution.order.id,
-      metadata: {
-        symbol,
-        side,
-        calculatedQuantity: execution.riskDecision.calculatedQuantity,
-        orderStatus: execution.order.status
-      }
+      action: "AUTOMATION_SETTINGS_UPDATED",
+      entityType: "USER",
+      entityId: userId,
+      metadata: { mode: next.mode, emergencyStop: next.emergencyStop, runtimeState: next.runtimeState }
     });
+    return next;
+  }
 
-    return {
-      status: "EXECUTED",
-      mode: "AUTO",
-      strategyId: strategy.id,
-      symbol,
-      signal,
-      execution
-    };
+  emergencyPause(userId: UUID): import("@trading/types").AutomationSettings {
+    return this.updateAutomationSettings(userId, { emergencyStop: true, mode: "MANUAL" });
   }
 
   listOrders(userId: UUID): readonly Order[] {
@@ -1791,25 +2023,52 @@ export class PlatformService implements OnModuleInit {
     });
 
     if (!riskDecision.approved) {
+      const primary = riskDecision.rejections?.[0];
       this.store.appendAudit({
         userId,
         actorUserId: userId,
         action: "RISK_REJECTED_ORDER",
         entityType: "ORDER",
         entityId: order.id,
-        metadata: { symbol, side, reasons: [...riskDecision.reasons] }
+        metadata: {
+          symbol,
+          side,
+          reasons: [...riskDecision.reasons],
+          rejectionCodes: (riskDecision.rejections ?? []).map((item) => item.code),
+          suggestedQuantity: riskDecision.suggestedQuantity ?? null
+        }
       });
       this.addNotification({
         userId,
         notificationType: "RISK",
-        title: "Risk rule blocked trade",
-        message: riskDecision.reasons.join(" ")
+        title: primary?.title ?? "Risk rule blocked trade",
+        message: primary?.message ?? riskDecision.reasons.join(" ")
       });
       this.operationalMetrics.recordTrade(performance.now() - startedAt, "rejected");
       throw new UnprocessableEntityException({
-        code: "RISK_REJECTED",
-        message: riskDecision.reasons.join(" "),
-        details: { orderId: order.id }
+        code: primary?.code ?? "RISK_REJECTED",
+        message: primary?.message ?? riskDecision.reasons.join(" "),
+        details: {
+          orderId: order.id,
+          approved: false,
+          code: primary?.code ?? "RISK_REJECTED",
+          title: primary?.title ?? "Risk validation failed",
+          message: primary?.message ?? riskDecision.reasons.join(" "),
+          currentValue: primary?.currentValue ?? null,
+          limit: primary?.limit ?? null,
+          suggestedQuantity: riskDecision.suggestedQuantity ?? primary?.suggestedQuantity ?? null,
+          fixHint: primary?.fixHint ?? null,
+          rejections: riskDecision.rejections ?? [],
+          riskDecision: {
+            approved: riskDecision.approved,
+            reasons: [...riskDecision.reasons],
+            maxRiskAmount: riskDecision.maxRiskAmount,
+            proposedRiskAmount: riskDecision.proposedRiskAmount,
+            proposedPositionValue: riskDecision.proposedPositionValue,
+            calculatedQuantity: riskDecision.calculatedQuantity,
+            suggestedQuantity: riskDecision.suggestedQuantity ?? null
+          }
+        }
       });
     }
 
@@ -2585,13 +2844,19 @@ export class PlatformService implements OnModuleInit {
   }
 
   private sanitizeBrokerAccount(account: BrokerAccount): BrokerAccountView {
+    const maskedAccountId =
+      account.accountId.length <= 8
+        ? account.accountId
+        : `${account.accountId.slice(0, 4)}…${account.accountId.slice(-4)}`;
     return {
       id: account.id,
       userId: account.userId,
       brokerName: account.brokerName,
-      accountId: account.accountId,
+      accountId: maskedAccountId,
       status: account.status,
       hasCredentials: Boolean(account.encryptedApiKey && account.encryptedSecret),
+      environment: account.environment ?? (account.brokerName === "ALPACA" ? "PAPER" : "PAPER"),
+      lastSyncedAt: account.status === "CONNECTED" ? isoNow() : undefined,
       createdAt: account.createdAt
     };
   }

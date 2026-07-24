@@ -6,13 +6,16 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
+  BriefcaseBusiness,
+  CandlestickChart,
   CheckCircle2,
   ClipboardList,
-  Download,
   DollarSign,
+  Download,
   FlaskConical,
   Gauge,
   History,
+  Home,
   LineChart,
   ListFilter,
   Lock,
@@ -26,18 +29,21 @@ import {
   Users,
   WalletCards
 } from "lucide-react";
-import type { FormEvent, ReactElement, ReactNode } from "react";
+import type { FormEvent, ReactElement } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 import type {
   AuditLog,
+  AutomationMode,
   AutomationRunResult,
+  AutomationSettings,
   AuthTokens,
+  BacktestResult,
+  BrokerAccountView,
   DondieAgent,
   DondieMemory,
   DondieRunResult,
   DondieWalletLedgerEntry,
-  BacktestResult,
   IndicatorSnapshot,
   JsonObject,
   MarketCandle,
@@ -50,9 +56,8 @@ import type {
   OrderExecutionPayload,
   OrderSide,
   OrderType,
-  PerformanceSummary,
   PerformanceReport,
-  BrokerAccountView,
+  PerformanceSummary,
   Portfolio,
   Position,
   PublicUser,
@@ -63,34 +68,25 @@ import type {
   Trade,
   WalkForwardResult
 } from "@trading/types";
+import { AITradeCopilot } from "../components/control-room/ai-trade-copilot";
+import { SurvivalAgentCard } from "../components/control-room/agent-card";
+import { AutomationModesPanel } from "../components/control-room/automation-modes";
+import { BrokerConnectionCard } from "../components/control-room/broker-card";
+import { RiskResultBanner } from "../components/control-room/risk-result";
 import { LandingPage } from "../components/landing-page";
+import { BottomNav, DesktopNav, type ControlRoomTab } from "../components/nav/control-room-nav";
+import { EmptyLine, MetricCard, Panel, RiskRow, SmallStat, StatusPill } from "../components/ui/primitives";
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
 import { refreshSupabaseSession, signInWithSupabase, signOutSupabase } from "../lib/auth";
+import { formatCurrency, formatPercent, insufficientHistoryLabel } from "../lib/format";
+import { type OrderDraft, buildOrderDraftFromSignal } from "../lib/order-draft";
+import {
+  formatRiskResultMessage,
+  parseStructuredRiskError,
+  type StructuredRiskResult
+} from "../lib/risk-display";
 import { isSupabaseAuthEnabled } from "../lib/supabase/client";
 import { useSessionStore } from "../store/session";
-
-const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2
-});
-
-const formatCurrency = (value: number | undefined): string => currency.format(value ?? 0);
-const formatPercent = (value: number | undefined): string => `${(value ?? 0).toFixed(2)}%`;
-
-const featureNumber = (features: JsonObject, key: string): number | null => {
-  const value = features[key];
-  return typeof value === "number" ? value : null;
-};
-
-const jsonText = (value: JsonObject | undefined, key: string, fallback = "unknown"): string => {
-  const nested = value?.[key];
-  return typeof nested === "string" || typeof nested === "number" || typeof nested === "boolean"
-    ? String(nested)
-    : fallback;
-};
-
-type TerminalTab = "overview" | "market" | "strategies" | "risk" | "lab" | "admin";
 
 interface WatchlistView {
   readonly id: string;
@@ -107,7 +103,92 @@ interface SystemHealthView {
   readonly uptimeSeconds?: number;
 }
 
+interface StrategyTemplate {
+  readonly name: string;
+  readonly description: string;
+  readonly timeframe: MarketTimeframe | "custom";
+  readonly riskProfile: string;
+  readonly indicators: readonly string[];
+}
+
+const strategyTemplates: readonly StrategyTemplate[] = [
+  {
+    name: "Momentum",
+    description: "High-confidence momentum continuation using EMA, RSI, MACD, and volume confirmation.",
+    timeframe: "1h",
+    riskProfile: "moderate",
+    indicators: ["EMA", "RSI", "MACD", "Volume"]
+  },
+  {
+    name: "Trend following",
+    description: "Slower trend capture focused on moving-average alignment and ATR-aware exits.",
+    timeframe: "4h",
+    riskProfile: "balanced",
+    indicators: ["SMA", "EMA", "ATR", "MACD"]
+  },
+  {
+    name: "Mean reversion",
+    description: "Counter-trend entries around stretched RSI and Bollinger Band extremes.",
+    timeframe: "1h",
+    riskProfile: "moderate",
+    indicators: ["RSI", "Bollinger Bands", "ATR"]
+  },
+  {
+    name: "Breakout",
+    description: "Volatility expansion strategy for range breaks with strict stop placement.",
+    timeframe: "15m",
+    riskProfile: "aggressive",
+    indicators: ["ATR", "Volume", "Bollinger Bands"]
+  },
+  {
+    name: "Conservative swing",
+    description: "Lower-turnover swing setup with smaller per-trade risk and wider confirmation.",
+    timeframe: "1d",
+    riskProfile: "conservative",
+    indicators: ["SMA", "RSI", "ATR"]
+  },
+  {
+    name: "Custom",
+    description: "Operator-defined strategy shell for custom signals and risk controls.",
+    timeframe: "custom",
+    riskProfile: "custom",
+    indicators: ["Custom"]
+  }
+];
+
+const defaultStrategyTemplate = strategyTemplates[0] as StrategyTemplate;
 const timeframes: readonly MarketTimeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+const featureNumber = (features: JsonObject, key: string): number | null => {
+  const value = features[key];
+  return typeof value === "number" ? value : null;
+};
+
+const jsonText = (value: JsonObject | undefined, key: string, fallback = "unknown"): string => {
+  const nested = value?.[key];
+  return typeof nested === "string" || typeof nested === "number" || typeof nested === "boolean"
+    ? String(nested)
+    : fallback;
+};
+
+const formatIndicator = (value: number | null | undefined, digits = 2): string =>
+  typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "Loading";
+
+const formatRatio = (value: number | undefined): string => {
+  if (value === Infinity) {
+    return "Inf";
+  }
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "0.00";
+};
+
+const analyticsValue = (
+  closedTrades: number,
+  value: number | undefined,
+  formatter: (input: number | undefined) => string = formatRatio
+): string => {
+  const unavailable = insufficientHistoryLabel(closedTrades);
+  return unavailable || formatter(value);
+};
 
 const downloadReport = (report: PerformanceReport): void => {
   const binary = window.atob(report.contentBase64);
@@ -118,6 +199,62 @@ const downloadReport = (report: PerformanceReport): void => {
   anchor.download = report.fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+};
+
+const refreshableQueryKeys = [
+  ["portfolios"],
+  ["strategies"],
+  ["signals"],
+  ["orders"],
+  ["trades"],
+  ["positions"],
+  ["risk"],
+  ["analytics"],
+  ["notifications"],
+  ["profile"],
+  ["market-prices"],
+  ["market-quote"],
+  ["market-indicators"],
+  ["watchlists"],
+  ["broker-accounts"],
+  ["automation-settings"],
+  ["admin-audit"],
+  ["admin-users"],
+  ["admin-health"],
+  ["admin-metrics"],
+  ["dondie"],
+  ["dondie-wallet"],
+  ["dondie-memories"]
+] as const;
+
+const normalizeDraftCalculations = (draft: OrderDraft): OrderDraft => {
+  const estimatedValue = Number((draft.price * draft.quantity).toFixed(2));
+  const maxExpectedLoss = Number((Math.abs(draft.price - draft.stopLoss) * draft.quantity).toFixed(2));
+  const rewardAmount = Math.abs(draft.takeProfit - draft.price) * draft.quantity;
+  return {
+    ...draft,
+    estimatedValue,
+    maxExpectedLoss,
+    riskRewardRatio: maxExpectedLoss > 0 ? Number((rewardAmount / maxExpectedLoss).toFixed(2)) : 0
+  };
+};
+
+const automationNotice = (payload: AutomationRunResult): string => {
+  const summary = payload.summary
+    ? ` ${payload.summary.symbolsScanned} scanned, ${payload.summary.opportunitiesFound} opportunity(s), ${payload.summary.tradesCreated} trade(s).`
+    : "";
+  if (payload.status === "EXECUTED") {
+    return `Automated paper trade ${payload.execution?.order.status.toLowerCase() ?? "submitted"} for ${payload.symbol}.${summary}`;
+  }
+  return `Automation skipped for ${payload.symbol}: ${payload.reason ?? "No qualified setup."}${summary}`;
+};
+
+const createIdempotencyKey = (strategyId: string, symbol: string, timeframe: MarketTimeframe): string => {
+  const randomPart =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${strategyId}:${symbol}:${timeframe}:${randomPart}`;
 };
 
 export default function Page(): ReactElement {
@@ -132,9 +269,10 @@ export default function Page(): ReactElement {
   const [mfaCode, setMfaCode] = useState("");
   const [auditFilter, setAuditFilter] = useState("");
   const [strategyName, setStrategyName] = useState("Momentum Guard");
+  const [strategyTemplateName, setStrategyTemplateName] = useState<StrategyTemplate["name"]>("Momentum");
   const [symbol, setSymbol] = useState("AAPL");
   const [timeframe, setTimeframe] = useState<MarketTimeframe>("1h");
-  const [activeTab, setActiveTab] = useState<TerminalTab>("overview");
+  const [activeTab, setActiveTab] = useState<ControlRoomTab>("home");
   const [selectedStrategyId, setSelectedStrategyId] = useState("");
   const [watchlistInput, setWatchlistInput] = useState("");
   const [alpacaApiKey, setAlpacaApiKey] = useState("");
@@ -143,6 +281,10 @@ export default function Page(): ReactElement {
   const [walkForwardResult, setWalkForwardResult] = useState<WalkForwardResult | null>(null);
   const [notice, setNotice] = useState("");
   const [riskNotice, setRiskNotice] = useState("");
+  const [riskResult, setRiskResult] = useState<StructuredRiskResult | null>(null);
+  const [riskPassed, setRiskPassed] = useState(false);
+  const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
+  const [automationRunResult, setAutomationRunResult] = useState<AutomationRunResult | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -151,6 +293,8 @@ export default function Page(): ReactElement {
 
   const token = accessToken ?? "";
   const authenticated = Boolean(accessToken && user);
+  const showAdmin = user?.role === "ADMIN";
+  const showDevDiagnostics = process.env.NODE_ENV !== "production";
 
   useEffect(() => {
     if (!supabaseAuthEnabled || authenticated) {
@@ -168,6 +312,7 @@ export default function Page(): ReactElement {
   const portfolios = useQuery({
     queryKey: ["portfolios", accessToken],
     enabled: authenticated,
+    refetchInterval: authenticated ? 15_000 : false,
     queryFn: () => apiFetchPage<Portfolio>("/portfolios", {}, token)
   });
   const strategies = useQuery({
@@ -220,6 +365,11 @@ export default function Page(): ReactElement {
     enabled: authenticated,
     queryFn: () => apiFetchPage<BrokerAccountView>("/brokers/accounts", {}, token)
   });
+  const automationSettings = useQuery({
+    queryKey: ["automation-settings", accessToken],
+    enabled: authenticated,
+    queryFn: () => apiFetch<AutomationSettings>("/automation/settings", {}, token)
+  });
   const marketPrices = useQuery({
     queryKey: ["market-prices", symbol, timeframe, accessToken],
     enabled: authenticated,
@@ -258,22 +408,22 @@ export default function Page(): ReactElement {
   });
   const auditLogs = useQuery({
     queryKey: ["admin-audit", accessToken],
-    enabled: authenticated && user?.role === "ADMIN",
+    enabled: authenticated && showAdmin,
     queryFn: () => apiFetchPage<AuditLog>("/admin/audit-logs", {}, token)
   });
   const adminUsers = useQuery({
     queryKey: ["admin-users", accessToken],
-    enabled: authenticated && user?.role === "ADMIN",
+    enabled: authenticated && showAdmin,
     queryFn: () => apiFetchPage<PublicUser>("/admin/users", {}, token)
   });
   const systemHealth = useQuery({
     queryKey: ["admin-health", accessToken],
-    enabled: authenticated && user?.role === "ADMIN",
+    enabled: authenticated && showAdmin,
     queryFn: () => apiFetch<SystemHealthView>("/admin/system-health", {}, token)
   });
   const operationalMetrics = useQuery({
     queryKey: ["admin-metrics", accessToken],
-    enabled: authenticated && user?.role === "ADMIN",
+    enabled: authenticated && showAdmin,
     refetchInterval: 10_000,
     queryFn: () => apiFetch<OperationalMetricsSnapshot>("/admin/metrics", {}, token)
   });
@@ -297,6 +447,75 @@ export default function Page(): ReactElement {
     enabled: authenticated && Boolean(dondieAgent.data),
     queryFn: () => apiFetch<readonly DondieMemory[]>("/dondie/memories", {}, token)
   });
+
+  const primaryPortfolio = portfolios.data?.[0];
+  const latestSignal = signals.data?.[signals.data.length - 1];
+  const activeStrategy = useMemo(
+    () => strategies.data?.find((strategy) => strategy.status === "ACTIVE") ?? strategies.data?.[0],
+    [strategies.data]
+  );
+  const selectedStrategy = useMemo(
+    () =>
+      strategies.data?.find((strategy) => strategy.id === selectedStrategyId) ??
+      activeStrategy,
+    [activeStrategy, selectedStrategyId, strategies.data]
+  );
+  const selectedTemplate = useMemo(
+    () =>
+      strategyTemplates.find((template) => template.name === strategyTemplateName) ??
+      defaultStrategyTemplate,
+    [strategyTemplateName]
+  );
+  const latestCandle = marketPrices.data?.[marketPrices.data.length - 1];
+  const closedTradeCount = useMemo(
+    () => (trades.data ?? []).filter((trade) => Boolean(trade.closedAt)).length,
+    [trades.data]
+  );
+  const todaysPnl = (primaryPortfolio?.realizedPnl ?? 0) + (primaryPortfolio?.unrealizedPnl ?? 0);
+  const brokerConnected = useMemo(
+    () =>
+      (brokerAccounts.data ?? []).some(
+        (account) =>
+          account.status === "CONNECTED" &&
+          (account.hasCredentials || account.brokerName === "PAPER")
+      ),
+    [brokerAccounts.data]
+  );
+  const currentOrderDraft = useMemo(() => {
+    if (!latestSignal) {
+      return null;
+    }
+    return buildOrderDraftFromSignal({
+      signal: latestSignal,
+      quote: marketQuote.data ?? null,
+      equity: primaryPortfolio?.portfolioValue ?? 0,
+      risk: risk.data ?? null
+    });
+  }, [latestSignal, marketQuote.data, primaryPortfolio?.portfolioValue, risk.data]);
+  const visibleAuditLogs = useMemo(() => {
+    const filter = auditFilter.trim().toLowerCase();
+    const logs = auditLogs.data ?? [];
+    if (!filter) {
+      return logs;
+    }
+    return logs.filter((log) =>
+      `${log.action} ${log.entityType} ${log.userId ?? ""} ${JSON.stringify(log.metadata)}`
+        .toLowerCase()
+        .includes(filter)
+    );
+  }, [auditFilter, auditLogs.data]);
+
+  useEffect(() => {
+    if (!selectedStrategyId && activeStrategy?.id) {
+      setSelectedStrategyId(activeStrategy.id);
+    }
+  }, [activeStrategy?.id, selectedStrategyId]);
+
+  useEffect(() => {
+    setOrderDraft(null);
+    setRiskResult(null);
+    setRiskPassed(false);
+  }, [latestSignal?.id, symbol]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -363,68 +582,46 @@ export default function Page(): ReactElement {
     };
   }, [accessToken, authenticated, queryClient, symbol, timeframe, token]);
 
-  const primaryPortfolio = portfolios.data?.[0];
-  const latestSignal = signals.data?.[signals.data.length - 1];
-  const activeStrategy = useMemo(
-    () => strategies.data?.find((strategy) => strategy.status === "ACTIVE") ?? strategies.data?.[0],
-    [strategies.data]
-  );
-  const selectedStrategy = useMemo(
-    () =>
-      strategies.data?.find((strategy) => strategy.id === selectedStrategyId) ??
-      activeStrategy,
-    [activeStrategy, selectedStrategyId, strategies.data]
-  );
-  const latestCandle = marketPrices.data?.[marketPrices.data.length - 1];
-  const visibleAuditLogs = useMemo(() => {
-    const filter = auditFilter.trim().toLowerCase();
-    const logs = auditLogs.data ?? [];
-    if (!filter) {
-      return logs;
-    }
-    return logs.filter((log) =>
-      `${log.action} ${log.entityType} ${log.userId ?? ""} ${JSON.stringify(log.metadata)}`
-        .toLowerCase()
-        .includes(filter)
-    );
-  }, [auditFilter, auditLogs.data]);
-  const terminalTabs: readonly {
-    readonly id: TerminalTab;
-    readonly label: string;
-    readonly icon: ReactNode;
-  }[] = [
-    { id: "overview", label: "Dondie", icon: <Sparkles className="h-4 w-4" aria-hidden="true" /> },
-    { id: "market", label: "Market", icon: <LineChart className="h-4 w-4" aria-hidden="true" /> },
-    { id: "strategies", label: "Strategies", icon: <Bot className="h-4 w-4" aria-hidden="true" /> },
-    { id: "risk", label: "Risk & Alerts", icon: <Shield className="h-4 w-4" aria-hidden="true" /> },
-    { id: "lab", label: "Simulation Lab", icon: <FlaskConical className="h-4 w-4" aria-hidden="true" /> },
-    ...(user?.role === "ADMIN"
-      ? [{ id: "admin" as const, label: "Admin", icon: <Users className="h-4 w-4" aria-hidden="true" /> }]
-      : [])
-  ];
-
   const invalidateTradingData = async (): Promise<void> => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["portfolios"] }),
-      queryClient.invalidateQueries({ queryKey: ["strategies"] }),
-      queryClient.invalidateQueries({ queryKey: ["signals"] }),
-      queryClient.invalidateQueries({ queryKey: ["orders"] }),
-      queryClient.invalidateQueries({ queryKey: ["trades"] }),
-      queryClient.invalidateQueries({ queryKey: ["positions"] }),
-      queryClient.invalidateQueries({ queryKey: ["risk"] }),
-      queryClient.invalidateQueries({ queryKey: ["analytics"] }),
-      queryClient.invalidateQueries({ queryKey: ["notifications"] }),
-      queryClient.invalidateQueries({ queryKey: ["profile"] }),
-      queryClient.invalidateQueries({ queryKey: ["market-prices"] }),
-      queryClient.invalidateQueries({ queryKey: ["market-quote"] }),
-      queryClient.invalidateQueries({ queryKey: ["market-indicators"] }),
-      queryClient.invalidateQueries({ queryKey: ["watchlists"] }),
-      queryClient.invalidateQueries({ queryKey: ["broker-accounts"] }),
-      queryClient.invalidateQueries({ queryKey: ["admin-audit"] }),
-      queryClient.invalidateQueries({ queryKey: ["admin-users"] }),
-      queryClient.invalidateQueries({ queryKey: ["admin-health"] }),
-      queryClient.invalidateQueries({ queryKey: ["dondie"] })
-    ]);
+    await Promise.all(
+      refreshableQueryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey }))
+    );
+  };
+
+  const selectedStrategyConfigurationNumber = (key: string, fallback: number): number =>
+    selectedStrategy ? featureNumber(selectedStrategy.configuration, key) ?? fallback : fallback;
+
+  const getExecutableDraft = (input?: OrderDraft): OrderDraft => {
+    if (!latestSignal || !selectedStrategy) {
+      throw new Error("Generate a signal first.");
+    }
+    const draft =
+      input ??
+      orderDraft ??
+      buildOrderDraftFromSignal({
+        signal: latestSignal,
+        quote: marketQuote.data ?? null,
+        equity: primaryPortfolio?.portfolioValue ?? 0,
+        risk: risk.data ?? null
+      });
+    if (!draft || latestSignal.signalType === "HOLD") {
+      throw new Error("Latest signal does not contain an executable BUY or SELL decision.");
+    }
+    if (!draft.priceAvailable || draft.price <= 0) {
+      throw new Error("Live market price is unavailable. Load a quote before executing.");
+    }
+    if (draft.quantity <= 0) {
+      throw new Error("Calculated position size is zero. Check equity, price, and risk rules.");
+    }
+    return normalizeDraftCalculations(draft);
+  };
+
+  const applySuggestedQuantity = (quantity: number): void => {
+    const base = orderDraft ?? currentOrderDraft;
+    if (!base) {
+      return;
+    }
+    setOrderDraft(normalizeDraftCalculations({ ...base, quantity }));
   };
 
   const loginMutation = useMutation({
@@ -458,57 +655,88 @@ export default function Page(): ReactElement {
   const logoutMutation = useMutation({
     mutationFn: async () => {
       if (token) {
-        await apiFetch<{ readonly loggedOut: true }>("/auth/logout", {
-          method: "POST",
-          body: JSON.stringify({})
-        }, token).catch(() => undefined);
+        await apiFetch<{ readonly loggedOut: true }>(
+          "/auth/logout",
+          {
+            method: "POST",
+            body: JSON.stringify({})
+          },
+          token
+        ).catch(() => undefined);
       }
       await signOutSupabase();
     },
     onSettled: () => {
       clearSession();
       setNotice("Logged out.");
-      setActiveTab("overview");
+      setActiveTab("home");
       setMfaSetup(null);
       setMfaCode("");
+      setOrderDraft(null);
+      setRiskResult(null);
+      setRiskPassed(false);
     }
   });
 
   const createStrategyMutation = useMutation({
     mutationFn: () =>
-      apiFetch<Strategy>("/strategies", {
-        method: "POST",
-        body: JSON.stringify({
-          name: strategyName,
-          description: "EMA, RSI, and MACD assisted paper strategy.",
-          status: "ACTIVE",
-          configuration: {
-            riskPercent: 1,
-            indicators: ["EMA", "RSI", "MACD"],
-            automationMode: "SEMI_AUTO"
-          }
-        })
-      }, token),
+      apiFetch<Strategy>(
+        "/strategies",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: strategyName,
+            description: selectedTemplate.description,
+            status: "ACTIVE",
+            configuration: {
+              automationMode: "SEMI_AUTO",
+              indicators: selectedTemplate.indicators,
+              description: selectedTemplate.description,
+              timeframe: selectedTemplate.timeframe,
+              riskProfile: selectedTemplate.riskProfile,
+              template: selectedTemplate.name,
+              riskPercent: selectedTemplate.riskProfile === "conservative" ? 0.5 : 1,
+              confidenceThreshold: selectedTemplate.riskProfile === "aggressive" ? 65 : 60,
+              stopLossPercent: selectedTemplate.riskProfile === "conservative" ? 3 : 5,
+              takeProfitPercent: selectedTemplate.riskProfile === "conservative" ? 6 : 8
+            }
+          })
+        },
+        token
+      ),
     onSuccess: async (strategy) => {
-      setNotice(`Strategy ${strategy.name} created.`);
+      setSelectedStrategyId(strategy.id);
+      setNotice(`Strategy ${strategy.name} created from ${selectedTemplate.name}.`);
       await invalidateTradingData();
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Strategy creation failed.");
     }
   });
 
   const generateSignalMutation = useMutation({
     mutationFn: () => {
-      if (!activeStrategy) {
+      if (!selectedStrategy) {
         throw new Error("Create a strategy first.");
       }
-      return apiFetch<Signal>("/signals/generate", {
-        method: "POST",
-        body: JSON.stringify({
-          strategyId: activeStrategy.id,
-          symbol
-        })
-      }, token);
+      return apiFetch<Signal>(
+        "/signals/generate",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            strategyId: selectedStrategy.id,
+            selectedStrategyId: selectedStrategy.id,
+            symbol,
+            timeframe
+          })
+        },
+        token
+      );
     },
     onSuccess: async (signal) => {
+      setOrderDraft(null);
+      setRiskResult(null);
+      setRiskPassed(false);
       setNotice(`${signal.signalType} signal generated for ${signal.symbol}.`);
       await invalidateTradingData();
     },
@@ -518,36 +746,47 @@ export default function Page(): ReactElement {
   });
 
   const executeTradeMutation = useMutation({
-    mutationFn: () => {
-      if (!latestSignal || !activeStrategy) {
+    mutationFn: (draftInput?: OrderDraft) => {
+      if (!latestSignal || !selectedStrategy) {
         throw new Error("Generate a signal first.");
       }
-      const price = featureNumber(latestSignal.features, "latestClose") ?? 195;
-      const side = latestSignal.signalType === "SELL" ? "SELL" : "BUY";
-      const stopLoss = side === "BUY" ? price * 0.98 : price * 1.02;
-      const takeProfit = side === "BUY" ? price * 1.05 : price * 0.95;
-      return apiFetch<OrderExecutionPayload>("/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          strategyId: activeStrategy.id,
-          signalId: latestSignal.id,
-          symbol: latestSignal.symbol,
-          side,
-          orderType: "MARKET",
-          mode: "SEMI_AUTO",
-          quantity: 5,
-          price: Number(price.toFixed(2)),
-          stopLoss: Number(stopLoss.toFixed(2)),
-          takeProfit: Number(takeProfit.toFixed(2))
-        })
-      }, token);
+      const draft = getExecutableDraft(draftInput);
+      return apiFetch<OrderExecutionPayload>(
+        "/orders",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            strategyId: selectedStrategy.id,
+            signalId: latestSignal.id,
+            symbol: draft.symbol,
+            side: draft.side,
+            orderType: draft.orderType,
+            mode: "SEMI_AUTO",
+            quantity: draft.quantity,
+            price: draft.price,
+            stopLoss: draft.stopLoss,
+            takeProfit: draft.takeProfit
+          })
+        },
+        token
+      );
     },
     onSuccess: async (payload) => {
+      setRiskPassed(true);
+      setRiskResult(null);
+      setRiskNotice("");
       setNotice(`Paper trade ${payload.order.status.toLowerCase()} for ${payload.order.symbol}.`);
       await invalidateTradingData();
     },
     onError: (error) => {
-      setNotice(error instanceof Error ? error.message : "Trade execution failed.");
+      const structured = parseStructuredRiskError(error);
+      if (structured) {
+        setRiskResult(structured);
+        setRiskPassed(false);
+        setNotice(`Risk check failed: ${formatRiskResultMessage(structured)}`);
+      } else {
+        setNotice(error instanceof Error ? error.message : "Trade execution failed.");
+      }
     }
   });
 
@@ -561,32 +800,49 @@ export default function Page(): ReactElement {
       readonly stopLoss: number;
       readonly takeProfit: number;
     }) =>
-      apiFetch<OrderExecutionPayload>("/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          ...order,
-          mode: "MANUAL"
-        })
-      }, token),
+      apiFetch<OrderExecutionPayload>(
+        "/orders",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            ...order,
+            mode: "MANUAL"
+          })
+        },
+        token
+      ),
     onSuccess: async (payload) => {
+      setRiskPassed(true);
+      setRiskResult(null);
       setNotice(`Manual paper order ${payload.order.status.toLowerCase()} for ${payload.order.symbol}.`);
       await invalidateTradingData();
     },
     onError: async (error) => {
-      setNotice(error instanceof Error ? error.message : "Manual order failed.");
+      const structured = parseStructuredRiskError(error);
+      if (structured) {
+        setRiskResult(structured);
+        setRiskPassed(false);
+        setNotice(`Manual order blocked: ${formatRiskResultMessage(structured)}`);
+      } else {
+        setNotice(error instanceof Error ? error.message : "Manual order failed.");
+      }
       await invalidateTradingData();
     }
   });
 
   const activateDondieMutation = useMutation({
     mutationFn: () => {
-      if (!activeStrategy) {
+      if (!selectedStrategy) {
         throw new Error("Create a strategy first.");
       }
-      return apiFetch<DondieAgent>("/dondie/activate", {
-        method: "POST",
-        body: JSON.stringify({ strategyId: activeStrategy.id })
-      }, token);
+      return apiFetch<DondieAgent>(
+        "/dondie/activate",
+        {
+          method: "POST",
+          body: JSON.stringify({ strategyId: selectedStrategy.id })
+        },
+        token
+      );
     },
     onSuccess: async (agent) => {
       setNotice(`${agent.name} activated on ${agent.tier} tier.`);
@@ -617,92 +873,160 @@ export default function Page(): ReactElement {
 
   const runDondieMutation = useMutation({
     mutationFn: () =>
-      apiFetch<DondieRunResult>("/dondie/run", {
-        method: "POST",
-        body: JSON.stringify({ symbol, timeframe })
-      }, token),
+      apiFetch<DondieRunResult>(
+        "/dondie/run",
+        {
+          method: "POST",
+          body: JSON.stringify({ symbol, timeframe })
+        },
+        token
+      ),
     onSuccess: async (result) => {
+      setAutomationRunResult(result.automation);
       setNotice(
         result.automation.status === "EXECUTED"
           ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
           : `Dondie skipped ${result.symbol}: ${result.reasoning}`
       );
-      await Promise.all([
-        invalidateTradingData(),
-        queryClient.invalidateQueries({ queryKey: ["dondie"] }),
-        queryClient.invalidateQueries({ queryKey: ["dondie-wallet"] }),
-        queryClient.invalidateQueries({ queryKey: ["dondie-memories"] })
-      ]);
+      await invalidateTradingData();
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Dondie run failed.");
     }
   });
 
+  const updateAutomationSettingsMutation = useMutation({
+    mutationFn: (patch: Partial<AutomationSettings>) =>
+      apiFetch<AutomationSettings>(
+        "/automation/settings",
+        {
+          method: "PUT",
+          body: JSON.stringify(patch)
+        },
+        token
+      ),
+    onSuccess: async (settings) => {
+      setNotice(`Automation mode set to ${settings.mode}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["automation-settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["risk"] })
+      ]);
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Automation settings update failed.");
+    }
+  });
+
+  const emergencyPauseMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<AutomationSettings>(
+        "/automation/emergency-pause",
+        { method: "POST", body: JSON.stringify({}) },
+        token
+      ),
+    onSuccess: async () => {
+      setNotice("Emergency pause engaged. Automation is now manual only.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["automation-settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["risk"] })
+      ]);
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Emergency pause failed.");
+    }
+  });
+
   const automatedRunMutation = useMutation({
     mutationFn: () => {
-      if (!activeStrategy) {
+      if (!selectedStrategy) {
         throw new Error("Create a strategy first.");
       }
-      return apiFetch<AutomationRunResult>("/automation/run", {
-        method: "POST",
-        body: JSON.stringify({
-          strategyId: activeStrategy.id,
-          symbol,
-          confidenceThreshold: 60,
-          stopLossPercent: 5,
-          takeProfitPercent: 8
-        })
-      }, token);
+      const idempotencyKey = createIdempotencyKey(selectedStrategy.id, symbol, timeframe);
+      return apiFetch<AutomationRunResult>(
+        "/automation/run",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            strategyId: selectedStrategy.id,
+            selectedStrategyId: selectedStrategy.id,
+            symbol,
+            timeframe,
+            idempotencyKey,
+            confidenceThreshold: automationSettings.data?.minimumConfidence ?? selectedStrategyConfigurationNumber("confidenceThreshold", 60),
+            stopLossPercent: selectedStrategyConfigurationNumber("stopLossPercent", 5),
+            takeProfitPercent: selectedStrategyConfigurationNumber("takeProfitPercent", 8)
+          })
+        },
+        token
+      );
     },
     onSuccess: async (payload) => {
-      setNotice(
-        payload.status === "EXECUTED"
-          ? `Automated paper trade ${payload.execution?.order.status.toLowerCase()} for ${payload.symbol}.`
-          : `Automation skipped for ${payload.symbol}.`
-      );
+      setAutomationRunResult(payload);
+      if (payload.status === "EXECUTED") {
+        setRiskPassed(true);
+        setRiskResult(null);
+      }
+      setNotice(automationNotice(payload));
       await invalidateTradingData();
     },
     onError: (error) => {
-      setNotice(error instanceof Error ? error.message : "Automation run failed.");
+      const structured = parseStructuredRiskError(error);
+      if (structured) {
+        setRiskResult(structured);
+        setRiskPassed(false);
+        setNotice(`Automation blocked: ${formatRiskResultMessage(structured)}`);
+      } else {
+        setNotice(error instanceof Error ? error.message : "Automation run failed.");
+      }
     }
   });
 
   const invalidTradeMutation = useMutation({
     mutationFn: () =>
-      apiFetch<OrderExecutionPayload>("/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          symbol,
-          side: "BUY",
-          orderType: "MARKET",
-          mode: "AUTO",
-          quantity: 100000,
-          price: marketQuote.data?.price ?? 200,
-          stopLoss: Number((((marketQuote.data?.price ?? 200) * 0.75).toFixed(2))),
-          takeProfit: Number((((marketQuote.data?.price ?? 200) * 1.3).toFixed(2)))
-        })
-      }, token),
+      apiFetch<OrderExecutionPayload>(
+        "/orders",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            symbol,
+            side: "BUY",
+            orderType: "MARKET",
+            mode: "AUTO",
+            quantity: 100000,
+            price: marketQuote.data?.price ?? 200,
+            stopLoss: Number(((marketQuote.data?.price ?? 200) * 0.75).toFixed(2)),
+            takeProfit: Number(((marketQuote.data?.price ?? 200) * 1.3).toFixed(2))
+          })
+        },
+        token
+      ),
     onSuccess: async () => {
       setRiskNotice("Unexpected approval.");
       await invalidateTradingData();
     },
     onError: async (error) => {
-      const message =
-        error instanceof ApiError && error.code === "RISK_REJECTED"
-          ? `Risk rule blocked invalid trade: ${error.message}`
-          : "Risk validation failed.";
-      setRiskNotice(message);
+      const structured = parseStructuredRiskError(error);
+      const title = structured?.title ?? "Risk check failed";
+      const message = structured?.message ?? (error instanceof Error ? error.message : "Invalid trade was rejected.");
+      if (structured) {
+        setRiskResult(structured);
+      }
+      setRiskPassed(false);
+      setRiskNotice(`Risk rule blocked invalid trade: ${title} — ${message}`);
       await invalidateTradingData();
     }
   });
 
   const updateWatchlistMutation = useMutation({
     mutationFn: (symbols: readonly string[]) =>
-      apiFetch<WatchlistView>("/market/watchlists", {
-        method: "PUT",
-        body: JSON.stringify({ symbols })
-      }, token),
+      apiFetch<WatchlistView>(
+        "/market/watchlists",
+        {
+          method: "PUT",
+          body: JSON.stringify({ symbols })
+        },
+        token
+      ),
     onSuccess: async (watchlist) => {
       setNotice(`Watchlist updated with ${watchlist.symbols.length} symbols.`);
       await invalidateTradingData();
@@ -721,11 +1045,16 @@ export default function Page(): ReactElement {
         readonly configuration: JsonObject;
       };
     }) =>
-      apiFetch<Strategy>(`/strategies/${input.id}`, {
-        method: "PUT",
-        body: JSON.stringify(input.body)
-      }, token),
+      apiFetch<Strategy>(
+        `/strategies/${input.id}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input.body)
+        },
+        token
+      ),
     onSuccess: async (strategy) => {
+      setSelectedStrategyId(strategy.id);
       setNotice(`Strategy ${strategy.name} updated.`);
       await invalidateTradingData();
     },
@@ -736,13 +1065,26 @@ export default function Page(): ReactElement {
 
   const updateRiskMutation = useMutation({
     mutationFn: (body: Record<string, number | boolean>) =>
-      apiFetch<RiskRules>("/risk", {
-        method: "PUT",
-        body: JSON.stringify(body)
-      }, token),
-    onSuccess: async () => {
+      apiFetch<RiskRules>(
+        "/risk",
+        {
+          method: "PUT",
+          body: JSON.stringify(body)
+        },
+        token
+      ),
+    onSuccess: async (updatedRisk) => {
       setNotice("Risk controls updated.");
-      await invalidateTradingData();
+      await Promise.all([
+        invalidateTradingData(),
+        updateAutomationSettingsMutation.mutateAsync({
+          emergencyStop: updatedRisk.stopTrading,
+          riskPerTradePercent: updatedRisk.maxRiskPerTradePercent,
+          maxPositionSizePercent: updatedRisk.maxPositionSizePercent,
+          dailyLossLimitPercent: updatedRisk.maxDailyLossPercent,
+          maxDrawdownPercent: updatedRisk.maxDrawdownPercent
+        }).catch(() => undefined)
+      ]);
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Risk update failed.");
@@ -751,10 +1093,14 @@ export default function Page(): ReactElement {
 
   const updatePreferencesMutation = useMutation({
     mutationFn: (notificationPreferences: PublicUser["notificationPreferences"]) =>
-      apiFetch<PublicUser>("/users/profile", {
-        method: "PUT",
-        body: JSON.stringify({ notificationPreferences })
-      }, token),
+      apiFetch<PublicUser>(
+        "/users/profile",
+        {
+          method: "PUT",
+          body: JSON.stringify({ notificationPreferences })
+        },
+        token
+      ),
     onSuccess: async () => {
       setNotice("Alert preferences updated.");
       await invalidateTradingData();
@@ -766,15 +1112,19 @@ export default function Page(): ReactElement {
 
   const connectBrokerMutation = useMutation({
     mutationFn: () =>
-      apiFetch<BrokerAccountView>("/brokers/connect", {
-        method: "POST",
-        body: JSON.stringify({
-          brokerName: "ALPACA",
-          environment: "PAPER",
-          apiKey: alpacaApiKey.trim(),
-          secret: alpacaSecret.trim()
-        })
-      }, token),
+      apiFetch<BrokerAccountView>(
+        "/brokers/connect",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            brokerName: "ALPACA",
+            environment: "PAPER",
+            apiKey: alpacaApiKey.trim(),
+            secret: alpacaSecret.trim()
+          })
+        },
+        token
+      ),
     onSuccess: async () => {
       setAlpacaApiKey("");
       setAlpacaSecret("");
@@ -788,10 +1138,14 @@ export default function Page(): ReactElement {
 
   const markNotificationsReadMutation = useMutation({
     mutationFn: () =>
-      apiFetch<readonly Notification[]>("/notifications/read", {
-        method: "PUT",
-        body: JSON.stringify({})
-      }, token),
+      apiFetch<readonly Notification[]>(
+        "/notifications/read",
+        {
+          method: "PUT",
+          body: JSON.stringify({})
+        },
+        token
+      ),
     onSuccess: async () => {
       setNotice("Notifications marked as read.");
       await invalidateTradingData();
@@ -800,10 +1154,14 @@ export default function Page(): ReactElement {
 
   const setupMfaMutation = useMutation({
     mutationFn: () =>
-      apiFetch<MfaSetup>("/auth/mfa/setup", {
-        method: "POST",
-        body: JSON.stringify({})
-      }, token),
+      apiFetch<MfaSetup>(
+        "/auth/mfa/setup",
+        {
+          method: "POST",
+          body: JSON.stringify({})
+        },
+        token
+      ),
     onSuccess: (setup) => {
       setMfaSetup(setup);
       setMfaCode("");
@@ -816,10 +1174,14 @@ export default function Page(): ReactElement {
 
   const enableMfaMutation = useMutation({
     mutationFn: () =>
-      apiFetch<PublicUser>("/auth/mfa/enable", {
-        method: "POST",
-        body: JSON.stringify({ code: mfaCode })
-      }, token),
+      apiFetch<PublicUser>(
+        "/auth/mfa/enable",
+        {
+          method: "POST",
+          body: JSON.stringify({ code: mfaCode })
+        },
+        token
+      ),
     onSuccess: async () => {
       setMfaSetup(null);
       setMfaCode("");
@@ -833,10 +1195,14 @@ export default function Page(): ReactElement {
 
   const disableMfaMutation = useMutation({
     mutationFn: () =>
-      apiFetch<PublicUser>("/auth/mfa/disable", {
-        method: "POST",
-        body: JSON.stringify({ code: mfaCode })
-      }, token),
+      apiFetch<PublicUser>(
+        "/auth/mfa/disable",
+        {
+          method: "POST",
+          body: JSON.stringify({ code: mfaCode })
+        },
+        token
+      ),
     onSuccess: async () => {
       setMfaSetup(null);
       setMfaCode("");
@@ -850,16 +1216,20 @@ export default function Page(): ReactElement {
 
   const createAdminUserMutation = useMutation({
     mutationFn: () =>
-      apiFetch<{ readonly user: PublicUser; readonly temporaryPassword: string }>("/admin/users", {
-        method: "POST",
-        body: JSON.stringify({
-          email: newUserEmail,
-          password: newUserPassword,
-          firstName: newUserFirstName || "Platform",
-          lastName: newUserLastName || "User",
-          role: "TRADER"
-        })
-      }, token),
+      apiFetch<{ readonly user: PublicUser; readonly temporaryPassword: string }>(
+        "/admin/users",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: newUserEmail,
+            password: newUserPassword,
+            firstName: newUserFirstName || "Platform",
+            lastName: newUserLastName || "User",
+            role: "TRADER"
+          })
+        },
+        token
+      ),
     onSuccess: async (result) => {
       setNotice(`User ${result.user.email} created. Share the temporary password securely.`);
       setNewUserEmail("");
@@ -875,10 +1245,14 @@ export default function Page(): ReactElement {
 
   const updateAdminUserStatusMutation = useMutation({
     mutationFn: (input: { readonly userId: string; readonly status: PublicUser["status"] }) =>
-      apiFetch<PublicUser>(`/admin/users/${input.userId}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: input.status })
-      }, token),
+      apiFetch<PublicUser>(
+        `/admin/users/${input.userId}/status`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ status: input.status })
+        },
+        token
+      ),
     onSuccess: async (updated) => {
       setNotice(`${updated.email} is now ${updated.status.toLowerCase()}.`);
       await Promise.all([
@@ -903,10 +1277,14 @@ export default function Page(): ReactElement {
       readonly feePerTrade: number;
       readonly slippagePercent: number;
     }) =>
-      apiFetch<BacktestResult>("/backtests/run", {
-        method: "POST",
-        body: JSON.stringify(body)
-      }, token),
+      apiFetch<BacktestResult>(
+        "/backtests/run",
+        {
+          method: "POST",
+          body: JSON.stringify(body)
+        },
+        token
+      ),
     onSuccess: async (result) => {
       setBacktestResult(result);
       setNotice(`Backtest completed with ${result.totalTrades} closed trades.`);
@@ -929,10 +1307,14 @@ export default function Page(): ReactElement {
       readonly feePerTrade: number;
       readonly slippagePercent: number;
     }) =>
-      apiFetch<WalkForwardResult>("/backtests/walk-forward", {
-        method: "POST",
-        body: JSON.stringify(body)
-      }, token),
+      apiFetch<WalkForwardResult>(
+        "/backtests/walk-forward",
+        {
+          method: "POST",
+          body: JSON.stringify(body)
+        },
+        token
+      ),
     onSuccess: async (result) => {
       setWalkForwardResult(result);
       setNotice(`Walk-forward test completed with ${result.windows.length} out-of-sample windows.`);
@@ -956,6 +1338,405 @@ export default function Page(): ReactElement {
     }
   });
 
+  const desktopTabs: readonly {
+    readonly id: ControlRoomTab;
+    readonly label: string;
+    readonly testId: string;
+    readonly icon: ReactElement;
+  }[] = [
+    { id: "home", label: "Home", testId: "tab-home", icon: <Home className="h-4 w-4" aria-hidden="true" /> },
+    { id: "signals", label: "Signals", testId: "tab-signals", icon: <Sparkles className="h-4 w-4" aria-hidden="true" /> },
+    { id: "trade", label: "Trade", testId: "tab-trade", icon: <CandlestickChart className="h-4 w-4" aria-hidden="true" /> },
+    { id: "portfolio", label: "Portfolio", testId: "tab-portfolio", icon: <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" /> },
+    { id: "market", label: "Market", testId: "tab-market", icon: <LineChart className="h-4 w-4" aria-hidden="true" /> },
+    { id: "strategies", label: "Strategies", testId: "tab-strategies", icon: <Bot className="h-4 w-4" aria-hidden="true" /> },
+    { id: "risk", label: "Risk", testId: "tab-risk", icon: <Shield className="h-4 w-4" aria-hidden="true" /> },
+    { id: "lab", label: "Lab", testId: "tab-lab", icon: <FlaskConical className="h-4 w-4" aria-hidden="true" /> },
+    { id: "settings", label: "Settings", testId: "tab-settings", icon: <Settings2 className="h-4 w-4" aria-hidden="true" /> },
+    ...(showAdmin
+      ? [
+          {
+            id: "admin" as const,
+            label: "Admin",
+            testId: "tab-admin",
+            icon: <Users className="h-4 w-4" aria-hidden="true" />
+          }
+        ]
+      : [])
+  ];
+
+  const renderBrokerCard = (): ReactElement => (
+    <BrokerConnectionCard
+      accounts={brokerAccounts.data ?? []}
+      portfolio={primaryPortfolio ?? null}
+      apiKey={alpacaApiKey}
+      secret={alpacaSecret}
+      onApiKeyChange={setAlpacaApiKey}
+      onSecretChange={setAlpacaSecret}
+      onConnect={() => connectBrokerMutation.mutate()}
+      connecting={connectBrokerMutation.isPending}
+      onReconnect={() => void invalidateTradingData()}
+    />
+  );
+
+  const renderRiskRulesForm = (): ReactElement => (
+    <Panel title="Risk Control Matrix" icon={<SlidersHorizontal className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
+      {risk.data ? (
+        <form
+          key={risk.data.updatedAt}
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            updateRiskMutation.mutate({
+              maxRiskPerTradePercent: Number(formData.get("maxRiskPerTradePercent")),
+              maxDailyLossPercent: Number(formData.get("maxDailyLossPercent")),
+              maxDrawdownPercent: Number(formData.get("maxDrawdownPercent")),
+              maxPositionSizePercent: Number(formData.get("maxPositionSizePercent")),
+              stopTrading: formData.get("stopTrading") === "on"
+            });
+          }}
+        >
+          <RiskInput name="maxRiskPerTradePercent" label="Risk per trade %" value={risk.data.maxRiskPerTradePercent} max={2} />
+          <RiskInput name="maxPositionSizePercent" label="Max position %" value={risk.data.maxPositionSizePercent} />
+          <RiskInput name="maxDailyLossPercent" label="Daily loss limit %" value={risk.data.maxDailyLossPercent} />
+          <RiskInput name="maxDrawdownPercent" label="Max drawdown %" value={risk.data.maxDrawdownPercent} />
+          <label className="flex min-h-11 items-center gap-3 rounded-md border border-line bg-surface px-3 py-3 text-sm text-slate-200 sm:col-span-2">
+            <input name="stopTrading" type="checkbox" defaultChecked={risk.data.stopTrading} className="h-4 w-4 accent-rose-500" />
+            Stop all trading
+          </label>
+          <button data-testid="save-risk-rules" type="submit" className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950 sm:col-span-2">
+            <Save className="h-4 w-4" aria-hidden="true" />
+            Save Risk Rules
+          </button>
+        </form>
+      ) : (
+        <EmptyLine text="Risk rules are loading" />
+      )}
+    </Panel>
+  );
+
+  const renderAlertPreferences = (): ReactElement => (
+    <Panel title="Alert Routing" icon={<AlertTriangle className="h-5 w-5 text-caution" aria-hidden="true" />}>
+      <form
+        key={JSON.stringify(profile.data?.notificationPreferences ?? user?.notificationPreferences)}
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const formData = new FormData(event.currentTarget);
+          updatePreferencesMutation.mutate({
+            trade: formData.get("trade") === "on",
+            signal: formData.get("signal") === "on",
+            risk: formData.get("risk") === "on",
+            system: formData.get("system") === "on"
+          });
+        }}
+      >
+        {(["trade", "signal", "risk", "system"] as const).map((preference) => (
+          <label key={preference} className="flex min-h-11 items-center justify-between rounded-md border border-line bg-surface px-3 py-2 text-sm capitalize text-slate-200">
+            {preference} alerts
+            <input
+              name={preference}
+              type="checkbox"
+              defaultChecked={(profile.data?.notificationPreferences ?? user?.notificationPreferences)?.[preference] ?? true}
+              className="h-4 w-4 accent-violet-500"
+            />
+          </label>
+        ))}
+        <button data-testid="save-alert-preferences" type="submit" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white">
+          <Save className="h-4 w-4" aria-hidden="true" />
+          Save Alert Preferences
+        </button>
+      </form>
+    </Panel>
+  );
+
+  const renderMfaPanel = (): ReactElement => (
+    <Panel title="Account Security" icon={<Lock className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
+      <div className="space-y-3">
+        <div className="flex min-h-11 items-center justify-between rounded-md border border-line bg-surface px-3 py-3 text-sm">
+          <span className="text-slate-300">Authenticator MFA</span>
+          <span
+            data-testid="mfa-status"
+            className={`font-mono text-xs ${profile.data?.mfaEnabled ? "text-emerald-300" : "text-slate-400"}`}
+          >
+            {profile.data?.mfaEnabled ? "ENABLED" : "DISABLED"}
+          </span>
+        </div>
+
+        {!profile.data?.mfaEnabled && !mfaSetup ? (
+          <button
+            data-testid="setup-mfa"
+            type="button"
+            onClick={() => setupMfaMutation.mutate()}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white"
+          >
+            <Shield className="h-4 w-4" aria-hidden="true" />
+            Set Up Authenticator
+          </button>
+        ) : null}
+
+        {mfaSetup ? (
+          <div data-testid="mfa-setup" className="space-y-3 rounded-md border border-violet-400/30 bg-violet-400/5 p-3">
+            <label className="block text-xs uppercase text-slate-400">
+              Setup secret
+              <input
+                readOnly
+                value={mfaSetup.secret}
+                className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-sm text-white"
+              />
+            </label>
+            <a
+              href={mfaSetup.otpAuthUri}
+              className="block min-h-11 rounded-md border border-line bg-surface px-3 py-2 text-center text-sm text-slate-200"
+            >
+              Open Authenticator
+            </a>
+          </div>
+        ) : null}
+
+        {mfaSetup || profile.data?.mfaEnabled ? (
+          <>
+            <label className="block text-sm text-slate-300">
+              Authenticator code
+              <input
+                data-testid="mfa-code"
+                value={mfaCode}
+                onChange={(event) => setMfaCode(event.target.value.replace(/\D/gu, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white"
+              />
+            </label>
+            <button
+              data-testid={profile.data?.mfaEnabled ? "disable-mfa" : "enable-mfa"}
+              type="button"
+              onClick={() =>
+                profile.data?.mfaEnabled
+                  ? disableMfaMutation.mutate()
+                  : enableMfaMutation.mutate()
+              }
+              className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm ${
+                profile.data?.mfaEnabled
+                  ? "border border-rose-400/40 bg-rose-400/10 text-rose-200"
+                  : "bg-emerald-500 text-slate-950"
+              }`}
+            >
+              <Lock className="h-4 w-4" aria-hidden="true" />
+              {profile.data?.mfaEnabled ? "Disable MFA" : "Enable MFA"}
+            </button>
+          </>
+        ) : null}
+      </div>
+    </Panel>
+  );
+
+  const renderNotificationsPanel = (): ReactElement => (
+    <Panel title="Notifications" icon={<ClipboardList className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
+      <div className="space-y-2">
+        {(notifications.data ?? []).slice(-6).reverse().map((notification) => (
+          <div key={notification.id} className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm">
+            <span className="text-slate-200">{notification.title}</span>
+            <span className="font-mono text-xs text-slate-400">{notification.status}</span>
+          </div>
+        ))}
+        {(notifications.data ?? []).length === 0 ? <EmptyLine text="No notifications yet" /> : null}
+      </div>
+      <button type="button" onClick={() => markNotificationsReadMutation.mutate()} className="mt-3 min-h-11 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-slate-200">
+        Mark all read
+      </button>
+    </Panel>
+  );
+
+  const renderPositions = (): ReactElement => (
+    <Panel title="Positions" icon={<Activity className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
+      <div data-testid="positions-list" className="space-y-2">
+        {(positions.data ?? []).length === 0 ? (
+          <EmptyLine text="No open paper positions" />
+        ) : (
+          positions.data?.map((position) => (
+            <div key={position.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-4">
+              <span className="font-mono text-white">{position.symbol}</span>
+              <span>{position.quantity.toFixed(2)}</span>
+              <span className="sm:text-right">{formatCurrency(position.averagePrice)}</span>
+              <span className={`text-right ${position.unrealizedPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                {formatCurrency(position.unrealizedPnl)}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+
+  const renderTradeHistory = (): ReactElement => (
+    <Panel title="Trade History" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
+      <div data-testid="trade-history" className="space-y-2">
+        {(trades.data ?? []).length === 0 ? (
+          <EmptyLine text="No paper trades yet" />
+        ) : (
+          trades.data?.slice(-8).reverse().map((trade) => (
+            <div key={trade.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-5">
+              <span className="font-mono text-white">{trade.symbol}</span>
+              <span>{trade.side}</span>
+              <span>{trade.quantity.toFixed(2)}</span>
+              <span className="sm:text-right">{formatCurrency(trade.entryPrice)}</span>
+              <span className={`text-right ${trade.pnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                {trade.closedAt ? formatCurrency(trade.pnl) : "Open"}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+
+  const renderAnalytics = (): ReactElement => {
+    const empty = Boolean(insufficientHistoryLabel(closedTradeCount));
+    return (
+      <Panel title="Portfolio Analytics" icon={<LineChart className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
+        <details open={closedTradeCount >= 5} className="group">
+          <summary className="flex min-h-11 cursor-pointer items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm text-slate-200">
+            <span>Sharpe, Sortino, drawdown, and trade quality</span>
+            <span className="text-xs text-slate-500">{closedTradeCount} closed trades</span>
+          </summary>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <SmallStat label="Profit Factor" value={analyticsValue(closedTradeCount, analytics.data?.profitFactor)} empty={empty} />
+            <SmallStat label="Sharpe Ratio" value={analyticsValue(closedTradeCount, analytics.data?.sharpeRatio)} empty={empty} />
+            <SmallStat label="Sortino Ratio" value={analyticsValue(closedTradeCount, analytics.data?.sortinoRatio)} empty={empty} />
+            <SmallStat label="Total Return" value={analyticsValue(closedTradeCount, analytics.data?.totalReturn, formatPercent)} empty={empty} />
+            <SmallStat label="Average Trade" value={analyticsValue(closedTradeCount, analytics.data?.averageTrade, formatCurrency)} empty={empty} />
+            <SmallStat label="Risk / Reward" value={analyticsValue(closedTradeCount, analytics.data?.riskRewardRatio)} empty={empty} />
+          </div>
+        </details>
+      </Panel>
+    );
+  };
+
+  const renderManualOrderForm = (): ReactElement => (
+    <Panel title="Advanced Manual Order Ticket" icon={<ClipboardList className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
+      <details open className="space-y-3">
+        <summary className="mb-3 flex min-h-11 cursor-pointer items-center justify-between rounded-lg border border-line bg-surface px-3 py-2 text-sm text-slate-200">
+          Manual order controls
+          <span className="text-xs text-slate-500">Visible for e2e and operator override</span>
+        </summary>
+        <form
+          data-testid="manual-order-form"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const formData = new FormData(event.currentTarget);
+            const side = String(formData.get("side") ?? "BUY") as OrderSide;
+            const orderType = String(formData.get("orderType") ?? "MARKET") as OrderType;
+            const referencePrice = Number(formData.get("price"));
+            const livePrice = marketQuote.data?.price;
+            const entryPrice =
+              orderType === "MARKET" && livePrice && livePrice > 0 ? livePrice : referencePrice;
+            let stopLoss = Number(formData.get("stopLoss"));
+            let takeProfit = Number(formData.get("takeProfit"));
+            if (orderType === "MARKET" && entryPrice > 0) {
+              if (side === "BUY") {
+                if (!(stopLoss < entryPrice)) {
+                  stopLoss = Number((entryPrice * 0.98).toFixed(2));
+                }
+                if (!(takeProfit > entryPrice)) {
+                  takeProfit = Number((entryPrice * 1.05).toFixed(2));
+                }
+              } else {
+                if (!(stopLoss > entryPrice)) {
+                  stopLoss = Number((entryPrice * 1.02).toFixed(2));
+                }
+                if (!(takeProfit < entryPrice)) {
+                  takeProfit = Number((entryPrice * 0.95).toFixed(2));
+                }
+              }
+            }
+            manualTradeMutation.mutate({
+              symbol: String(formData.get("symbol") ?? "AAPL").toUpperCase(),
+              side,
+              orderType,
+              quantity: Number(formData.get("quantity")),
+              price: Number(entryPrice.toFixed(2)),
+              stopLoss,
+              takeProfit
+            });
+          }}
+        >
+          <label className="text-sm text-slate-300">
+            Symbol
+            <input name="symbol" defaultValue={symbol} className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white" />
+          </label>
+          <label className="text-sm text-slate-300">
+            Side
+            <select name="side" defaultValue="BUY" className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-white">
+              <option value="BUY">Buy</option>
+              <option value="SELL">Sell</option>
+            </select>
+          </label>
+          <label className="text-sm text-slate-300">
+            Order type
+            <select name="orderType" defaultValue="MARKET" className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-white">
+              <option value="MARKET">Market</option>
+              <option value="LIMIT">Limit</option>
+              <option value="STOP">Stop</option>
+            </select>
+          </label>
+          <ManualTradeInput name="quantity" label="Quantity" value={orderDraft?.quantity ?? currentOrderDraft?.quantity ?? 1} step="0.0001" />
+          <ManualTradeInput name="price" label="Reference price" value={marketQuote.data?.price ?? currentOrderDraft?.price ?? 200} step="0.01" />
+          <ManualTradeInput name="stopLoss" label="Stop loss" value={currentOrderDraft?.stopLoss ?? 196} step="0.01" />
+          <ManualTradeInput name="takeProfit" label="Take profit" value={currentOrderDraft?.takeProfit ?? 210} step="0.01" />
+          <button
+            data-testid="execute-manual-trade"
+            type="submit"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950"
+          >
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            Submit Manual Order
+          </button>
+        </form>
+      </details>
+    </Panel>
+  );
+
+  const renderPaperDiagnostics = (): ReactElement => (
+    <Panel title="Paper Trading Diagnostics" icon={<CheckCircle2 className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
+      <div className={`grid gap-3 ${showDevDiagnostics ? "md:grid-cols-2" : ""}`}>
+        <button
+          data-testid="execute-paper-trade"
+          type="button"
+          onClick={() => executeTradeMutation.mutate(orderDraft ?? currentOrderDraft ?? undefined)}
+          className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950"
+        >
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+          Execute Paper Trade
+        </button>
+        {showDevDiagnostics ? (
+          <button
+            data-testid="execute-invalid-trade"
+            type="button"
+            onClick={() => invalidTradeMutation.mutate()}
+            className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-rose-500 px-4 py-3 text-sm font-medium text-white"
+          >
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            Test Risk Block
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-3 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
+        Paper orders tracked: <span className="font-mono text-white">{orders.data?.length ?? 0}</span>
+      </div>
+      {riskNotice ? (
+        <p data-testid="risk-block-message" className="mt-3 rounded-md border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+          {riskNotice}
+        </p>
+      ) : null}
+      <div className="mt-3">
+        <RiskResultBanner result={riskResult} onApplySuggestedQuantity={applySuggestedQuantity} />
+      </div>
+    </Panel>
+  );
+
   if (!authenticated) {
     return (
       <LandingPage
@@ -977,15 +1758,15 @@ export default function Page(): ReactElement {
   }
 
   return (
-    <main className="min-h-screen px-4 py-5 md:px-6">
+    <main className="min-h-screen overflow-x-hidden px-4 py-5 pb-24 md:px-6 md:pb-5">
       <header className="mb-5 flex flex-col gap-4 border-b border-line pb-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10">
             <LineChart className="h-5 w-5 text-emerald-300" aria-hidden="true" />
           </div>
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-slate-400">Dondie Operator Console</p>
-            <h1 data-testid="dashboard-title" className="text-2xl font-semibold text-white">
+          <div className="min-w-0">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-slate-400 sm:tracking-[0.2em]">Dondie Operator Console</p>
+            <h1 data-testid="dashboard-title" className="truncate text-2xl font-semibold text-white">
               Dondie Control Room
             </h1>
           </div>
@@ -997,7 +1778,7 @@ export default function Page(): ReactElement {
           <button
             type="button"
             onClick={() => logoutMutation.mutate()}
-            className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-slate-200"
+            className="flex min-h-11 items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-slate-200"
           >
             <LogOut className="h-4 w-4" aria-hidden="true" />
             Logout
@@ -1011,169 +1792,100 @@ export default function Page(): ReactElement {
         </div>
       ) : null}
 
-      <nav
-        aria-label="Terminal views"
-        className="mb-5 flex gap-1 overflow-x-auto border-b border-line pb-2"
-      >
-        {terminalTabs.map((tab) => (
-          <button
-            key={tab.id}
-            data-testid={`tab-${tab.id}`}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            aria-current={activeTab === tab.id ? "page" : undefined}
-            className={`flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm ${
-              activeTab === tab.id
-                ? "bg-emerald-500 text-slate-950"
-                : "border border-line bg-surface text-slate-300"
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+      <DesktopNav activeTab={activeTab} onChange={setActiveTab} tabs={desktopTabs} />
 
-      {activeTab === "overview" ? (
-        <>
-          <section className="mb-5">
-            <Panel title="Dondie — Survival Agent" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
-              <div data-testid="dondie-panel" className="space-y-4">
-                <p className="text-sm text-slate-300">
-                  Dondie trades to fund its own cognition. Profits credit its wallet; brain runs debit it.
-                  Higher wallet balance unlocks STANDARD and PRO brains.
-                </p>
-                {dondieAgent.data ? (
-                  <>
-                    <div className="grid gap-2 text-sm text-slate-200 sm:grid-cols-4">
-                      <SmallStat label="Tier" value={dondieAgent.data.tier} />
-                      <SmallStat label="Status" value={dondieAgent.data.status} />
-                      <SmallStat label="Wallet" value={formatCurrency(dondieAgent.data.walletBalance)} />
-                      <SmallStat
-                        label="Last run"
-                        value={dondieAgent.data.lastRunAt ? new Date(dondieAgent.data.lastRunAt).toLocaleString() : "Never"}
-                      />
-                    </div>
-                    {typeof dondieAgent.data.lastEvaluationScore === "number" ? (
-                      <p className="text-xs text-slate-400">
-                        Last evaluation score: {dondieAgent.data.lastEvaluationScore}
-                        {dondieAgent.data.symbolUniverse.length > 0
-                          ? ` · Universe: ${dondieAgent.data.symbolUniverse.join(", ")}`
-                          : ""}
-                      </p>
-                    ) : null}
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <button
-                        data-testid="dondie-pause"
-                        type="button"
-                        disabled={dondieAgent.data.status !== "ACTIVE"}
-                        onClick={() => pauseDondieMutation.mutate()}
-                        className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
-                      >
-                        Pause agent
-                      </button>
-                      <button
-                        data-testid="dondie-resume"
-                        type="button"
-                        disabled={dondieAgent.data.status === "ACTIVE"}
-                        onClick={() => resumeDondieMutation.mutate()}
-                        className="rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200 disabled:opacity-40"
-                      >
-                        Resume agent
-                      </button>
-                      <button
-                        data-testid="dondie-run"
-                        type="button"
-                        disabled={dondieAgent.data.status !== "ACTIVE"}
-                        onClick={() => runDondieMutation.mutate()}
-                        className="flex items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
-                      >
-                        <Bot className="h-4 w-4" aria-hidden="true" />
-                        Run now
-                      </button>
-                    </div>
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div>
-                        <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Wallet ledger</p>
-                        <div className="max-h-40 space-y-2 overflow-auto text-xs text-slate-300">
-                          {(dondieWallet.data?.ledger ?? []).slice(0, 8).map((entry) => (
-                            <div key={entry.id} className="flex items-center justify-between gap-3 border-b border-line/60 pb-1">
-                              <span>
-                                {entry.entryType} · {entry.reason}
-                              </span>
-                              <span className={entry.entryType === "CREDIT" ? "text-emerald-300" : "text-rose-300"}>
-                                {entry.entryType === "CREDIT" ? "+" : "-"}
-                                {formatCurrency(entry.amount)}
-                              </span>
-                            </div>
-                          ))}
-                          {(dondieWallet.data?.ledger?.length ?? 0) === 0 ? (
-                            <p className="text-slate-500">No ledger entries yet. Profitable runs credit the wallet.</p>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-500">Run memory</p>
-                        <div className="max-h-40 space-y-2 overflow-auto text-xs text-slate-300">
-                          {(dondieMemories.data ?? []).slice(0, 8).map((memory) => (
-                            <div key={memory.id} className="border-b border-line/60 pb-1">
-                              <p>{memory.summary}</p>
-                              <p className="text-slate-500">{new Date(memory.createdAt).toLocaleString()}</p>
-                            </div>
-                          ))}
-                          {(dondieMemories.data?.length ?? 0) === 0 ? (
-                            <p className="text-slate-500">No memories yet. Run Dondie to start building history.</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-sm text-slate-400">
-                      Link a strategy below, then activate Dondie on the FREE tier to begin survival runs.
-                    </p>
-                    <button
-                      data-testid="dondie-activate"
-                      type="button"
-                      disabled={!activeStrategy}
-                      onClick={() => activateDondieMutation.mutate()}
-                      className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
-                    >
-                      <Sparkles className="h-4 w-4" aria-hidden="true" />
-                      Activate Dondie
-                    </button>
-                  </div>
-                )}
+      {activeTab === "home" ? (
+        <section data-testid="home-view" className="space-y-5">
+          <SurvivalAgentCard
+            agent={dondieAgent.data}
+            ledger={dondieWallet.data?.ledger ?? []}
+            memories={dondieMemories.data ?? []}
+            portfolioPnlToday={todaysPnl}
+            onActivate={() => activateDondieMutation.mutate()}
+            onPause={() => pauseDondieMutation.mutate()}
+            onResume={() => resumeDondieMutation.mutate()}
+            onRun={() => runDondieMutation.mutate()}
+            canActivate={Boolean(selectedStrategy)}
+            busy={
+              activateDondieMutation.isPending ||
+              pauseDondieMutation.isPending ||
+              resumeDondieMutation.isPending ||
+              runDondieMutation.isPending
+            }
+          />
+
+          <div className="grid gap-3 xl:grid-cols-[0.8fr_1.2fr]">
+            <Panel title="Broker and Runtime" icon={<WalletCards className="h-5 w-5 text-cyan-300" aria-hidden="true" />} compact>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
+                <StatusPill label={brokerConnected ? "Broker connected" : "Broker disconnected"} tone={brokerConnected ? "emerald" : "amber"} />
+                <StatusPill label={automationSettings.data?.runtimeState?.replaceAll("_", " ") ?? "Loading"} tone={risk.data?.stopTrading ? "rose" : "cyan"} />
+                <span className="rounded-md border border-line bg-surface px-3 py-2">
+                  Mode: <span className="font-mono text-white">{automationSettings.data?.mode ?? "ASSISTED"}</span>
+                </span>
+                <span className="rounded-md border border-line bg-surface px-3 py-2">
+                  Quote: <span className="font-mono text-white">{marketQuote.data?.source ?? "loading"}</span>
+                </span>
               </div>
             </Panel>
-          </section>
+            <AutomationModesPanel
+              settings={automationSettings.data ?? null}
+              runResult={automationRunResult}
+              running={automatedRunMutation.isPending}
+              onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
+              onEmergencyPause={() => emergencyPauseMutation.mutate()}
+              onRun={() => automatedRunMutation.mutate()}
+              onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
+            />
+          </div>
 
-          <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <MetricCard icon={<WalletCards />} label="Agent Wallet" value={formatCurrency(dondieAgent.data?.walletBalance)} tone="violet" />
-            <MetricCard icon={<DollarSign />} label="Portfolio Value" value={formatCurrency(primaryPortfolio?.portfolioValue)} tone="emerald" />
-            <MetricCard icon={<Gauge />} label="Cash Balance" value={formatCurrency(primaryPortfolio?.cashBalance)} tone="violet" />
-            <MetricCard icon={<LineChart />} label="Realized P&L" value={formatCurrency(primaryPortfolio?.realizedPnl)} tone="emerald" />
-            <MetricCard icon={<Activity />} label="Unrealized P&L" value={formatCurrency(primaryPortfolio?.unrealizedPnl)} tone="cyan" />
-            <MetricCard icon={<Shield />} label="Max Drawdown" value={formatPercent(analytics.data?.maxDrawdown)} tone="rose" />
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <MetricCard icon={<DollarSign />} label="Portfolio Value" value={formatCurrency(primaryPortfolio?.portfolioValue)} tone="emerald" hint="Paper account equity" />
+            <MetricCard icon={<LineChart />} label="Today's P&L" value={formatCurrency(todaysPnl)} tone={todaysPnl >= 0 ? "cyan" : "rose"} hint="Realized + unrealized" />
+            <MetricCard
+              icon={<Shield />}
+              label="Risk usage"
+              value={risk.data?.stopTrading ? "Stopped" : formatPercent(risk.data?.maxRiskPerTradePercent)}
+              tone={risk.data?.stopTrading ? "rose" : "amber"}
+              hint={`Max position ${formatPercent(risk.data?.maxPositionSizePercent)}`}
+            />
+            <MetricCard
+              icon={<Sparkles />}
+              label="Best AI opportunity"
+              value={latestSignal ? `${latestSignal.signalType} ${latestSignal.symbol}` : "No signal"}
+              tone="violet"
+              hint={latestSignal ? `${latestSignal.confidenceScore}% confidence` : "Generate a signal"}
+            />
+            <MetricCard icon={<Activity />} label="Open positions" value={String(positions.data?.length ?? 0)} tone="cyan" hint="Paper positions" />
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
-              <Panel title="Strategy (Agent Link)" icon={<Bot className="h-5 w-5" aria-hidden="true" />}>
-                <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+              <Panel title="Strategy Quick Create" icon={<Bot className="h-5 w-5" aria-hidden="true" />}>
+                <div className="grid gap-3 md:grid-cols-[1fr_190px_auto_auto]">
                   <input
                     data-testid="strategy-name"
                     aria-label="New strategy name"
-                    className="rounded-md border border-line bg-surface px-3 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                    className="min-h-11 rounded-md border border-line bg-surface px-3 py-3 text-sm text-white outline-none focus:border-emerald-400"
                     value={strategyName}
                     onChange={(event) => setStrategyName(event.target.value)}
                   />
+                  <select
+                    aria-label="Strategy template"
+                    className="min-h-11 rounded-md border border-line bg-surface px-3 py-3 text-sm text-white"
+                    value={strategyTemplateName}
+                    onChange={(event) => setStrategyTemplateName(event.target.value)}
+                  >
+                    {strategyTemplates.map((template) => (
+                      <option key={template.name} value={template.name}>
+                        {template.name}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     data-testid="create-strategy"
                     type="button"
                     onClick={() => createStrategyMutation.mutate()}
-                    className="flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950"
                   >
                     <Plus className="h-4 w-4" aria-hidden="true" />
                     Create Strategy
@@ -1182,160 +1894,24 @@ export default function Page(): ReactElement {
                     {strategies.data?.length ?? 0} configured
                   </span>
                 </div>
+                <p className="mt-3 text-xs text-slate-400">
+                  {selectedTemplate.description} Timeframe: {selectedTemplate.timeframe}. Risk: {selectedTemplate.riskProfile}.
+                </p>
               </Panel>
 
-              <Panel title="AI Signal Center" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
-                <div className="grid gap-3 md:grid-cols-[160px_auto_1fr]">
-                  <input
-                    data-testid="signal-symbol"
-                    aria-label="Signal symbol"
-                    className="rounded-md border border-line bg-surface px-3 py-3 font-mono text-sm text-white outline-none focus:border-violetSignal"
-                    value={symbol}
-                    onChange={(event) => setSymbol(event.target.value.toUpperCase())}
-                  />
-                  <button
-                    data-testid="generate-signal"
-                    type="button"
-                    onClick={() => generateSignalMutation.mutate()}
-                    className="flex items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm font-medium text-white"
-                  >
-                    <Sparkles className="h-4 w-4" aria-hidden="true" />
-                    Generate Signal
-                  </button>
-                  <div data-testid="latest-signal" className="rounded-md border border-line bg-white/5 px-4 py-3 text-sm text-slate-200">
-                    {latestSignal
-                      ? `${latestSignal.signalType} ${latestSignal.symbol} confidence ${latestSignal.confidenceScore}%`
-                      : "No signal yet"}
-                  </div>
-                </div>
-              </Panel>
-
-              <Panel title="Manual Order Ticket" icon={<ClipboardList className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
-                <form
-                  data-testid="manual-order-form"
-                  className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const formData = new FormData(event.currentTarget);
-                    const side = String(formData.get("side") ?? "BUY") as OrderSide;
-                    const orderType = String(formData.get("orderType") ?? "MARKET") as OrderType;
-                    const referencePrice = Number(formData.get("price"));
-                    const livePrice = marketQuote.data?.price;
-                    // Market fills use the live quote; keep protective levels on the correct side of entry.
-                    const entryPrice =
-                      orderType === "MARKET" && livePrice && livePrice > 0 ? livePrice : referencePrice;
-                    let stopLoss = Number(formData.get("stopLoss"));
-                    let takeProfit = Number(formData.get("takeProfit"));
-                    if (orderType === "MARKET" && entryPrice > 0) {
-                      if (side === "BUY") {
-                        if (!(stopLoss < entryPrice)) {
-                          stopLoss = Number((entryPrice * 0.98).toFixed(2));
-                        }
-                        if (!(takeProfit > entryPrice)) {
-                          takeProfit = Number((entryPrice * 1.05).toFixed(2));
-                        }
-                      } else {
-                        if (!(stopLoss > entryPrice)) {
-                          stopLoss = Number((entryPrice * 1.02).toFixed(2));
-                        }
-                        if (!(takeProfit < entryPrice)) {
-                          takeProfit = Number((entryPrice * 0.95).toFixed(2));
-                        }
-                      }
-                    }
-                    manualTradeMutation.mutate({
-                      symbol: String(formData.get("symbol") ?? "AAPL").toUpperCase(),
-                      side,
-                      orderType,
-                      quantity: Number(formData.get("quantity")),
-                      price: Number(entryPrice.toFixed(2)),
-                      stopLoss,
-                      takeProfit
-                    });
-                  }}
-                >
-                  <label className="text-sm text-slate-300">
-                    Symbol
-                    <input name="symbol" defaultValue="AAPL" className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white" />
-                  </label>
-                  <label className="text-sm text-slate-300">
-                    Side
-                    <select name="side" defaultValue="BUY" className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-white">
-                      <option value="BUY">Buy</option>
-                      <option value="SELL">Sell</option>
-                    </select>
-                  </label>
-                  <label className="text-sm text-slate-300">
-                    Order type
-                    <select name="orderType" defaultValue="MARKET" className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-white">
-                      <option value="MARKET">Market</option>
-                      <option value="LIMIT">Limit</option>
-                      <option value="STOP">Stop</option>
-                    </select>
-                  </label>
-                  <ManualTradeInput name="quantity" label="Quantity" value={1} step="0.0001" />
-                  <ManualTradeInput name="price" label="Reference price" value={200} step="0.01" />
-                  <ManualTradeInput name="stopLoss" label="Stop loss" value={196} step="0.01" />
-                  <ManualTradeInput name="takeProfit" label="Take profit" value={210} step="0.01" />
-                  <button
-                    data-testid="execute-manual-trade"
-                    type="submit"
-                    className="flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950"
-                  >
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    Submit Manual Order
-                  </button>
-                </form>
-              </Panel>
-
-              <Panel title="Paper Trading" icon={<CheckCircle2 className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <button
-                    data-testid="execute-paper-trade"
-                    type="button"
-                    onClick={() => executeTradeMutation.mutate()}
-                    className="flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950"
-                  >
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    Execute Paper Trade
-                  </button>
-                  <button
-                    data-testid="run-automation"
-                    type="button"
-                    onClick={() => automatedRunMutation.mutate()}
-                    className="flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950"
-                  >
-                    <Bot className="h-4 w-4" aria-hidden="true" />
-                    Run Automation
-                  </button>
-                  <button
-                    data-testid="execute-invalid-trade"
-                    type="button"
-                    onClick={() => invalidTradeMutation.mutate()}
-                    className="flex items-center justify-center gap-2 rounded-md bg-rose-500 px-4 py-3 text-sm font-medium text-white"
-                  >
-                    <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                    Test Risk Block
-                  </button>
-                </div>
-                <div className="mt-3 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm text-slate-300">
-                  Paper orders tracked: <span className="font-mono text-white">{orders.data?.length ?? 0}</span>
-                </div>
-                {riskNotice ? (
-                  <p data-testid="risk-block-message" className="mt-3 rounded-md border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                    {riskNotice}
-                  </p>
-                ) : null}
-              </Panel>
-
-              <Panel title="Portfolio Intelligence" icon={<LineChart className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <SmallStat label="Profit Factor" value={analytics.data?.profitFactor === Infinity ? "Inf" : (analytics.data?.profitFactor ?? 0).toFixed(2)} />
-                  <SmallStat label="Sharpe Ratio" value={(analytics.data?.sharpeRatio ?? 0).toFixed(2)} />
-                  <SmallStat label="Sortino Ratio" value={(analytics.data?.sortinoRatio ?? 0).toFixed(2)} />
-                  <SmallStat label="Total Return" value={formatPercent(analytics.data?.totalReturn)} />
-                  <SmallStat label="Average Trade" value={formatCurrency(analytics.data?.averageTrade)} />
-                  <SmallStat label="Risk / Reward" value={(analytics.data?.riskRewardRatio ?? 0).toFixed(2)} />
+              <Panel title="Event Timeline" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
+                <div className="space-y-2">
+                  {(notifications.data ?? []).slice(-6).reverse().map((notification) => (
+                    <div key={notification.id} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium text-slate-200">{notification.title}</span>
+                        <span className="font-mono text-[10px] text-slate-500">{notification.notificationType}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">{notification.message}</p>
+                      <p className="mt-1 font-mono text-[10px] text-slate-500">{new Date(notification.createdAt).toLocaleString()}</p>
+                    </div>
+                  ))}
+                  {(notifications.data ?? []).length === 0 ? <EmptyLine text="No events yet" /> : null}
                 </div>
               </Panel>
             </div>
@@ -1347,47 +1923,195 @@ export default function Page(): ReactElement {
                   <RiskRow label="Max position size" value={formatPercent(risk.data?.maxPositionSizePercent)} />
                   <RiskRow label="Daily loss limit" value={formatPercent(risk.data?.maxDailyLossPercent)} />
                   <RiskRow label="Max drawdown" value={formatPercent(risk.data?.maxDrawdownPercent)} />
+                  <RiskRow label="Trading lock" value={risk.data?.stopTrading ? "ON" : "OFF"} />
                 </div>
               </Panel>
 
-              <Panel title="Positions" icon={<Activity className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
-                <div data-testid="positions-list" className="space-y-2">
-                  {(positions.data ?? []).length === 0 ? (
-                    <EmptyLine text="No open paper positions" />
-                  ) : (
-                    positions.data?.map((position) => (
-                      <div key={position.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-4">
-                        <span className="font-mono text-white">{position.symbol}</span>
-                        <span>{position.quantity.toFixed(2)}</span>
-                        <span className="sm:text-right">{formatCurrency(position.averagePrice)}</span>
-                        <span className={`text-right ${position.unrealizedPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                          {formatCurrency(position.unrealizedPnl)}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </Panel>
-
-              <Panel title="Trade History" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
-                <div data-testid="trade-history" className="space-y-2">
-                  {(trades.data ?? []).length === 0 ? (
-                    <EmptyLine text="No paper trades yet" />
-                  ) : (
-                    trades.data?.slice(-5).map((trade) => (
-                      <div key={trade.id} className="grid grid-cols-4 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm">
-                        <span className="font-mono text-white">{trade.symbol}</span>
-                        <span>{trade.side}</span>
-                        <span>{trade.quantity.toFixed(2)}</span>
-                        <span className="text-right">{formatCurrency(trade.entryPrice)}</span>
-                      </div>
-                    ))
-                  )}
+              <Panel title="Decision Context" icon={<Gauge className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
+                <div className="grid gap-3">
+                  <SmallStat label="Closed trade analytics" value={insufficientHistoryLabel(closedTradeCount) || "Ready"} empty={closedTradeCount < 5} />
+                  <SmallStat label="Latest quote" value={marketQuote.data?.price ? formatCurrency(marketQuote.data.price) : "Unavailable"} empty={!marketQuote.data?.price} />
+                  <SmallStat label="Selected strategy" value={selectedStrategy?.name ?? "Create a strategy"} empty={!selectedStrategy} />
                 </div>
               </Panel>
             </div>
           </section>
-        </>
+        </section>
+      ) : null}
+
+      {activeTab === "signals" ? (
+        <section data-testid="signals-view" className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+          <Panel title="Generate Signal" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
+            <div className="grid gap-3">
+              <label className="text-sm text-slate-300">
+                Symbol
+                <input
+                  data-testid="signal-symbol"
+                  aria-label="Signal symbol"
+                  className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-3 font-mono text-sm text-white outline-none focus:border-violetSignal"
+                  value={symbol}
+                  onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+                />
+              </label>
+              <label className="text-sm text-slate-300">
+                Strategy
+                <select
+                  className="mt-2 min-h-11 w-full rounded-md border border-line bg-surface px-3 py-3 text-sm text-white"
+                  value={selectedStrategy?.id ?? ""}
+                  onChange={(event) => setSelectedStrategyId(event.target.value)}
+                >
+                  {(strategies.data ?? []).length === 0 ? <option value="">Create a strategy first</option> : null}
+                  {(strategies.data ?? []).map((strategy) => (
+                    <option key={strategy.id} value={strategy.id}>
+                      {strategy.name} ({strategy.status})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                data-testid="generate-signal"
+                type="button"
+                onClick={() => generateSignalMutation.mutate()}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm font-medium text-white"
+              >
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                Generate Signal
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("trade")}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface px-4 py-3 text-sm text-slate-200"
+              >
+                Open AI Trade Copilot
+              </button>
+              <div data-testid="latest-signal" className="rounded-md border border-line bg-white/5 px-4 py-3 text-sm text-slate-200">
+                {latestSignal
+                  ? `${latestSignal.signalType} ${latestSignal.symbol} confidence ${latestSignal.confidenceScore}%`
+                  : "No signal yet"}
+              </div>
+            </div>
+          </Panel>
+
+          <Panel title="Signal History" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
+            <div data-testid="signal-history" className="space-y-2">
+              {(signals.data ?? []).length === 0 ? (
+                <EmptyLine text="No AI signals generated yet" />
+              ) : (
+                signals.data?.slice().reverse().map((signal) => (
+                  <div key={signal.id} className="grid gap-2 rounded-lg border border-line bg-surface px-3 py-3 text-sm sm:grid-cols-[1fr_auto_auto]">
+                    <div>
+                      <p className="font-mono text-white">{signal.symbol}</p>
+                      <p className="text-xs text-slate-500">{new Date(signal.generatedAt).toLocaleString()}</p>
+                    </div>
+                    <StatusPill label={signal.signalType} tone={signal.signalType === "BUY" ? "emerald" : signal.signalType === "SELL" ? "rose" : "slate"} />
+                    <span className="font-mono text-slate-200">{signal.confidenceScore}%</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Panel>
+        </section>
+      ) : null}
+
+      {activeTab === "trade" ? (
+        <section data-testid="trade-view" className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-5">
+            <AITradeCopilot
+              symbol={symbol}
+              onSymbolChange={setSymbol}
+              timeframeLabel={timeframe}
+              quote={marketQuote.data ?? null}
+              quoteLoading={marketQuote.isLoading}
+              strategies={strategies.data ?? []}
+              selectedStrategyId={selectedStrategy?.id ?? ""}
+              onStrategyChange={setSelectedStrategyId}
+              latestSignal={latestSignal ?? null}
+              portfolio={primaryPortfolio ?? null}
+              risk={risk.data ?? null}
+              automationMode={automationSettings.data?.mode ?? "ASSISTED"}
+              brokerConnected={brokerConnected}
+              analyzing={generateSignalMutation.isPending}
+              submitting={executeTradeMutation.isPending}
+              riskResult={riskResult}
+              riskPassed={riskPassed}
+              onAnalyze={() => generateSignalMutation.mutate()}
+              onApprovePaperTrade={(draft) => executeTradeMutation.mutate(draft)}
+              onApplySuggestedQuantity={applySuggestedQuantity}
+              draftOverride={orderDraft}
+              onDraftChange={(draft) => setOrderDraft(normalizeDraftCalculations(draft))}
+            />
+            {renderManualOrderForm()}
+          </div>
+          <div className="space-y-5">
+            <AutomationModesPanel
+              settings={automationSettings.data ?? null}
+              runResult={automationRunResult}
+              running={automatedRunMutation.isPending}
+              onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
+              onEmergencyPause={() => emergencyPauseMutation.mutate()}
+              onRun={() => automatedRunMutation.mutate()}
+              onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
+            />
+            {renderPaperDiagnostics()}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "portfolio" ? (
+        <section data-testid="portfolio-view" className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard icon={<DollarSign />} label="Portfolio Value" value={formatCurrency(primaryPortfolio?.portfolioValue)} tone="emerald" />
+            <MetricCard icon={<Gauge />} label="Cash Balance" value={formatCurrency(primaryPortfolio?.cashBalance)} tone="violet" />
+            <MetricCard icon={<LineChart />} label="Realized P&L" value={formatCurrency(primaryPortfolio?.realizedPnl)} tone="emerald" />
+            <MetricCard icon={<Activity />} label="Unrealized P&L" value={formatCurrency(primaryPortfolio?.unrealizedPnl)} tone="cyan" />
+          </div>
+          <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="space-y-5">
+              {renderPositions()}
+              {renderTradeHistory()}
+            </div>
+            <div className="space-y-5">
+              {renderAnalytics()}
+            </div>
+          </section>
+        </section>
+      ) : null}
+
+      {activeTab === "settings" ? (
+        <section data-testid="settings-view" className="space-y-5">
+          <Panel title="More Control Room Views" icon={<Settings2 className="h-5 w-5 text-slate-300" aria-hidden="true" />} compact>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {[
+                { id: "market" as const, label: "Market", testId: "tab-market" },
+                { id: "strategies" as const, label: "Strategies", testId: "tab-strategies" },
+                { id: "risk" as const, label: "Risk", testId: "tab-risk" },
+                { id: "lab" as const, label: "Lab", testId: "tab-lab" },
+                ...(showAdmin ? [{ id: "admin" as const, label: "Admin", testId: "tab-admin" }] : [])
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  data-testid={item.testId}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  className="flex min-h-11 items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-sm text-slate-200"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </Panel>
+          <section className="grid gap-5 xl:grid-cols-2">
+            <div className="space-y-5">
+              {renderBrokerCard()}
+              {renderRiskRulesForm()}
+            </div>
+            <div className="space-y-5">
+              {renderMfaPanel()}
+              {renderAlertPreferences()}
+              {renderNotificationsPanel()}
+            </div>
+          </section>
+        </section>
       ) : null}
 
       {activeTab === "market" ? (
@@ -1449,14 +2173,14 @@ export default function Page(): ReactElement {
             <div className="min-w-0 space-y-5">
               <Panel title="Indicator Snapshot" icon={<Activity className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <SmallStat label="SMA 20" value={(marketIndicators.data?.sma ?? 0).toFixed(2)} />
-                  <SmallStat label="EMA 20" value={(marketIndicators.data?.ema ?? 0).toFixed(2)} />
-                  <SmallStat label="RSI 14" value={(marketIndicators.data?.rsi ?? 0).toFixed(2)} />
-                  <SmallStat label="ATR 14" value={(marketIndicators.data?.atr ?? 0).toFixed(2)} />
-                  <SmallStat label="MACD" value={(marketIndicators.data?.macd.macd ?? 0).toFixed(2)} />
-                  <SmallStat label="MACD Signal" value={(marketIndicators.data?.macd.signal ?? 0).toFixed(2)} />
-                  <SmallStat label="Bollinger Upper" value={(marketIndicators.data?.bollingerBands.upper ?? 0).toFixed(2)} />
-                  <SmallStat label="Volume SMA" value={(marketIndicators.data?.volume.sma ?? 0).toFixed(0)} />
+                  <SmallStat label="SMA 20" value={formatIndicator(marketIndicators.data?.sma)} />
+                  <SmallStat label="EMA 20" value={formatIndicator(marketIndicators.data?.ema)} />
+                  <SmallStat label="RSI 14" value={formatIndicator(marketIndicators.data?.rsi)} />
+                  <SmallStat label="ATR 14" value={formatIndicator(marketIndicators.data?.atr)} />
+                  <SmallStat label="MACD" value={formatIndicator(marketIndicators.data?.macd.macd)} />
+                  <SmallStat label="MACD Signal" value={formatIndicator(marketIndicators.data?.macd.signal)} />
+                  <SmallStat label="Bollinger Upper" value={formatIndicator(marketIndicators.data?.bollingerBands.upper)} />
+                  <SmallStat label="Volume SMA" value={formatIndicator(marketIndicators.data?.volume.sma, 0)} />
                 </div>
               </Panel>
 
@@ -1497,7 +2221,7 @@ export default function Page(): ReactElement {
                     key={watchSymbol}
                     type="button"
                     onClick={() => setSymbol(watchSymbol)}
-                    className="flex w-full items-center justify-between rounded-md border border-line bg-surface px-3 py-2 text-left"
+                    className="flex min-h-11 w-full items-center justify-between rounded-md border border-line bg-surface px-3 py-2 text-left"
                   >
                     <span className="font-mono text-white">{watchSymbol}</span>
                     <span className="text-xs text-slate-400">Load</span>
@@ -1524,7 +2248,7 @@ export default function Page(): ReactElement {
                       .filter(Boolean)
                   )
                 }
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-3 py-2 text-sm text-white"
+                className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-3 py-2 text-sm text-white"
               >
                 <Save className="h-4 w-4" aria-hidden="true" />
                 Save Watchlist
@@ -1543,7 +2267,7 @@ export default function Page(): ReactElement {
                   key={strategy.id}
                   type="button"
                   onClick={() => setSelectedStrategyId(strategy.id)}
-                  className={`w-full rounded-md border px-3 py-3 text-left ${
+                  className={`min-h-11 w-full rounded-md border px-3 py-3 text-left ${
                     selectedStrategy?.id === strategy.id
                       ? "border-emerald-400 bg-emerald-400/10"
                       : "border-line bg-surface"
@@ -1558,6 +2282,7 @@ export default function Page(): ReactElement {
                   <p className="mt-1 text-xs text-slate-400">v{strategy.version}</p>
                 </button>
               ))}
+              {(strategies.data ?? []).length === 0 ? <EmptyLine text="Create a strategy from the Home tab" /> : null}
             </div>
           </Panel>
 
@@ -1608,13 +2333,13 @@ export default function Page(): ReactElement {
                   Take profit %
                   <input name="takeProfitPercent" type="number" min="0.01" step="0.01" defaultValue={featureNumber(selectedStrategy.configuration, "takeProfitPercent") ?? 8} className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-white" />
                 </label>
-                <button data-testid="save-strategy" type="submit" className="flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950 md:col-span-2">
+                <button data-testid="save-strategy" type="submit" className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950 md:col-span-2">
                   <Save className="h-4 w-4" aria-hidden="true" />
                   Save Strategy
                 </button>
               </form>
             ) : (
-              <EmptyLine text="Create a strategy on the Dondie tab to link the agent" />
+              <EmptyLine text="Create a strategy on the Home tab to link the agent" />
             )}
           </Panel>
         </section>
@@ -1622,221 +2347,15 @@ export default function Page(): ReactElement {
 
       {activeTab === "risk" ? (
         <section data-testid="risk-view" className="grid gap-5 xl:grid-cols-2">
-          <Panel title="Alpaca Broker Connection" icon={<WalletCards className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
-            <div className="space-y-4">
-              <p className="text-sm text-slate-300">
-                Connect your Alpaca paper API keys to load real balances, positions, market data, and route orders to Alpaca.
-              </p>
-              {(brokerAccounts.data ?? []).some((account) => account.brokerName === "ALPACA" && account.hasCredentials) ? (
-                <div
-                  data-testid="alpaca-connected"
-                  className="rounded-md border border-emerald-400/30 bg-emerald-400/5 px-3 py-3 text-sm text-emerald-200"
-                >
-                  Alpaca paper account connected. Portfolio values sync from your broker.
-                </div>
-              ) : (
-                <form
-                  className="space-y-3"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    connectBrokerMutation.mutate();
-                  }}
-                >
-                  <label className="block text-sm text-slate-300">
-                    API Key ID
-                    <input
-                      data-testid="alpaca-api-key"
-                      className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white"
-                      value={alpacaApiKey}
-                      onChange={(event) => setAlpacaApiKey(event.target.value)}
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label className="block text-sm text-slate-300">
-                    Secret Key
-                    <input
-                      data-testid="alpaca-secret-key"
-                      type="password"
-                      className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white"
-                      value={alpacaSecret}
-                      onChange={(event) => setAlpacaSecret(event.target.value)}
-                      autoComplete="off"
-                    />
-                  </label>
-                  <button
-                    data-testid="connect-alpaca"
-                    type="submit"
-                    className="flex w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950"
-                  >
-                    <WalletCards className="h-4 w-4" aria-hidden="true" />
-                    Connect Alpaca Paper
-                  </button>
-                </form>
-              )}
-            </div>
-          </Panel>
-
-          <Panel title="Risk Control Matrix" icon={<SlidersHorizontal className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
-            {risk.data ? (
-              <form
-                key={risk.data.updatedAt}
-                className="grid gap-4 sm:grid-cols-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const formData = new FormData(event.currentTarget);
-                  updateRiskMutation.mutate({
-                    maxRiskPerTradePercent: Number(formData.get("maxRiskPerTradePercent")),
-                    maxDailyLossPercent: Number(formData.get("maxDailyLossPercent")),
-                    maxDrawdownPercent: Number(formData.get("maxDrawdownPercent")),
-                    maxPositionSizePercent: Number(formData.get("maxPositionSizePercent")),
-                    stopTrading: formData.get("stopTrading") === "on"
-                  });
-                }}
-              >
-                <RiskInput name="maxRiskPerTradePercent" label="Risk per trade %" value={risk.data.maxRiskPerTradePercent} max={2} />
-                <RiskInput name="maxPositionSizePercent" label="Max position %" value={risk.data.maxPositionSizePercent} />
-                <RiskInput name="maxDailyLossPercent" label="Daily loss limit %" value={risk.data.maxDailyLossPercent} />
-                <RiskInput name="maxDrawdownPercent" label="Max drawdown %" value={risk.data.maxDrawdownPercent} />
-                <label className="flex items-center gap-3 rounded-md border border-line bg-surface px-3 py-3 text-sm text-slate-200 sm:col-span-2">
-                  <input name="stopTrading" type="checkbox" defaultChecked={risk.data.stopTrading} className="h-4 w-4 accent-rose-500" />
-                  Stop all trading
-                </label>
-                <button data-testid="save-risk-rules" type="submit" className="flex items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950 sm:col-span-2">
-                  <Save className="h-4 w-4" aria-hidden="true" />
-                  Save Risk Rules
-                </button>
-              </form>
-            ) : (
-              <EmptyLine text="Risk rules are loading" />
-            )}
-          </Panel>
-
+          {renderBrokerCard()}
+          {renderRiskRulesForm()}
           <div className="space-y-5">
-            <Panel title="Alert Routing" icon={<AlertTriangle className="h-5 w-5 text-caution" aria-hidden="true" />}>
-              <form
-                key={JSON.stringify(profile.data?.notificationPreferences ?? user?.notificationPreferences)}
-                className="space-y-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const formData = new FormData(event.currentTarget);
-                  updatePreferencesMutation.mutate({
-                    trade: formData.get("trade") === "on",
-                    signal: formData.get("signal") === "on",
-                    risk: formData.get("risk") === "on",
-                    system: formData.get("system") === "on"
-                  });
-                }}
-              >
-                {(["trade", "signal", "risk", "system"] as const).map((preference) => (
-                  <label key={preference} className="flex items-center justify-between rounded-md border border-line bg-surface px-3 py-2 text-sm capitalize text-slate-200">
-                    {preference} alerts
-                    <input
-                      name={preference}
-                      type="checkbox"
-                      defaultChecked={(profile.data?.notificationPreferences ?? user?.notificationPreferences)?.[preference] ?? true}
-                      className="h-4 w-4 accent-violet-500"
-                    />
-                  </label>
-                ))}
-                <button data-testid="save-alert-preferences" type="submit" className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white">
-                  <Save className="h-4 w-4" aria-hidden="true" />
-                  Save Alert Preferences
-                </button>
-              </form>
-            </Panel>
-
-            <Panel title="Account Security" icon={<Lock className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-md border border-line bg-surface px-3 py-3 text-sm">
-                  <span className="text-slate-300">Authenticator MFA</span>
-                  <span
-                    data-testid="mfa-status"
-                    className={`font-mono text-xs ${profile.data?.mfaEnabled ? "text-emerald-300" : "text-slate-400"}`}
-                  >
-                    {profile.data?.mfaEnabled ? "ENABLED" : "DISABLED"}
-                  </span>
-                </div>
-
-                {!profile.data?.mfaEnabled && !mfaSetup ? (
-                  <button
-                    data-testid="setup-mfa"
-                    type="button"
-                    onClick={() => setupMfaMutation.mutate()}
-                    className="flex w-full items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white"
-                  >
-                    <Shield className="h-4 w-4" aria-hidden="true" />
-                    Set Up Authenticator
-                  </button>
-                ) : null}
-
-                {mfaSetup ? (
-                  <div data-testid="mfa-setup" className="space-y-3 rounded-md border border-violet-400/30 bg-violet-400/5 p-3">
-                    <label className="block text-xs uppercase text-slate-400">
-                      Setup secret
-                      <input
-                        readOnly
-                        value={mfaSetup.secret}
-                        className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-sm text-white"
-                      />
-                    </label>
-                    <a
-                      href={mfaSetup.otpAuthUri}
-                      className="block rounded-md border border-line bg-surface px-3 py-2 text-center text-sm text-slate-200"
-                    >
-                      Open Authenticator
-                    </a>
-                  </div>
-                ) : null}
-
-                {(mfaSetup || profile.data?.mfaEnabled) ? (
-                  <>
-                    <label className="block text-sm text-slate-300">
-                      Authenticator code
-                      <input
-                        data-testid="mfa-code"
-                        value={mfaCode}
-                        onChange={(event) => setMfaCode(event.target.value.replace(/\D/gu, "").slice(0, 6))}
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        maxLength={6}
-                        className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 font-mono text-white"
-                      />
-                    </label>
-                    <button
-                      data-testid={profile.data?.mfaEnabled ? "disable-mfa" : "enable-mfa"}
-                      type="button"
-                      onClick={() =>
-                        profile.data?.mfaEnabled
-                          ? disableMfaMutation.mutate()
-                          : enableMfaMutation.mutate()
-                      }
-                      className={`flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm ${
-                        profile.data?.mfaEnabled
-                          ? "border border-rose-400/40 bg-rose-400/10 text-rose-200"
-                          : "bg-emerald-500 text-slate-950"
-                      }`}
-                    >
-                      <Lock className="h-4 w-4" aria-hidden="true" />
-                      {profile.data?.mfaEnabled ? "Disable MFA" : "Enable MFA"}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </Panel>
-
-            <Panel title="Notifications" icon={<ClipboardList className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
-              <div className="space-y-2">
-                {(notifications.data ?? []).slice(-6).reverse().map((notification) => (
-                  <div key={notification.id} className="flex items-center justify-between gap-3 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm">
-                    <span className="text-slate-200">{notification.title}</span>
-                    <span className="font-mono text-xs text-slate-400">{notification.status}</span>
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={() => markNotificationsReadMutation.mutate()} className="mt-3 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-slate-200">
-                Mark all read
-              </button>
-            </Panel>
+            {renderAlertPreferences()}
+            {renderNotificationsPanel()}
+          </div>
+          <div className="space-y-5">
+            {renderMfaPanel()}
+            {renderPaperDiagnostics()}
           </div>
         </section>
       ) : null}
@@ -1886,14 +2405,14 @@ export default function Page(): ReactElement {
                 <LabInput name="slippagePercent" label="Slippage %" value={0.05} step="0.01" />
                 <LabInput name="trainSize" label="Training candles" value={45} />
                 <LabInput name="testSize" label="Test candles" value={20} />
-                <button data-testid="run-backtest" type="submit" className="flex items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white sm:col-span-2">
+                <button data-testid="run-backtest" type="submit" className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white sm:col-span-2">
                   <FlaskConical className="h-4 w-4" aria-hidden="true" />
                   Run Backtest
                 </button>
                 <button
                   data-testid="run-walk-forward"
                   type="button"
-                  className="flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950 sm:col-span-2"
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-medium text-slate-950 sm:col-span-2"
                   onClick={(event) => {
                     const form = event.currentTarget.form;
                     if (!form) {
@@ -1921,11 +2440,11 @@ export default function Page(): ReactElement {
 
             <Panel title="Performance Reports" icon={<Download className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => reportMutation.mutate("csv")} className="flex items-center justify-center gap-2 rounded-md border border-line bg-surface px-3 py-3 text-sm text-slate-200">
+                <button type="button" onClick={() => reportMutation.mutate("csv")} className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface px-3 py-3 text-sm text-slate-200">
                   <Download className="h-4 w-4" aria-hidden="true" />
                   Export CSV
                 </button>
-                <button type="button" onClick={() => reportMutation.mutate("pdf")} className="flex items-center justify-center gap-2 rounded-md border border-line bg-surface px-3 py-3 text-sm text-slate-200">
+                <button type="button" onClick={() => reportMutation.mutate("pdf")} className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface px-3 py-3 text-sm text-slate-200">
                   <Download className="h-4 w-4" aria-hidden="true" />
                   Export PDF
                 </button>
@@ -1983,7 +2502,7 @@ export default function Page(): ReactElement {
         </section>
       ) : null}
 
-      {activeTab === "admin" && user?.role === "ADMIN" ? (
+      {activeTab === "admin" && showAdmin ? (
         <section data-testid="admin-view" className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <SmallStat label="API" value={systemHealth.data?.api ?? "loading"} />
@@ -2017,7 +2536,7 @@ export default function Page(): ReactElement {
                 <p className="text-sm font-medium text-white">Provision user (admin-set password)</p>
                 <input
                   data-testid="admin-create-email"
-                  className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                  className="min-h-11 w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
                   placeholder="Email"
                   value={newUserEmail}
                   onChange={(event) => setNewUserEmail(event.target.value)}
@@ -2025,7 +2544,7 @@ export default function Page(): ReactElement {
                 />
                 <input
                   data-testid="admin-create-password"
-                  className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                  className="min-h-11 w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
                   placeholder="Temporary password"
                   type="password"
                   value={newUserPassword}
@@ -2034,13 +2553,13 @@ export default function Page(): ReactElement {
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <input
-                    className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                    className="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
                     placeholder="First name"
                     value={newUserFirstName}
                     onChange={(event) => setNewUserFirstName(event.target.value)}
                   />
                   <input
-                    className="rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
+                    className="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm text-white"
                     placeholder="Last name"
                     value={newUserLastName}
                     onChange={(event) => setNewUserLastName(event.target.value)}
@@ -2049,7 +2568,7 @@ export default function Page(): ReactElement {
                 <button
                   data-testid="admin-create-submit"
                   type="submit"
-                  className="w-full rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-slate-950"
+                  className="min-h-11 w-full rounded-md bg-emerald-500 px-3 py-2 text-sm font-medium text-slate-950"
                 >
                   Create user
                 </button>
@@ -2078,7 +2597,7 @@ export default function Page(): ReactElement {
                               status: adminUser.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE"
                             })
                           }
-                          className="flex h-9 w-9 items-center justify-center rounded-md border border-line bg-white/5 text-slate-200"
+                          className="flex h-11 w-11 items-center justify-center rounded-md border border-line bg-white/5 text-slate-200"
                         >
                           <Settings2 className="h-4 w-4" aria-hidden="true" />
                           <span className="sr-only">
@@ -2117,64 +2636,9 @@ export default function Page(): ReactElement {
           </div>
         </section>
       ) : null}
+
+      <BottomNav activeTab={activeTab} onChange={setActiveTab} showAdmin={showAdmin} />
     </main>
-  );
-}
-
-function MetricCard({
-  icon,
-  label,
-  value,
-  tone
-}: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly value: string;
-  readonly tone: "emerald" | "violet" | "cyan" | "amber" | "rose";
-}): ReactElement {
-  const toneClass = {
-    emerald: "text-emerald-300 border-emerald-400/30",
-    violet: "text-violet-300 border-violet-400/30",
-    cyan: "text-cyan-300 border-cyan-400/30",
-    amber: "text-amber-300 border-amber-400/30",
-    rose: "text-rose-300 border-rose-400/30"
-  }[tone];
-
-  return (
-    <div className={`rounded-lg border bg-white/[0.035] p-4 ${toneClass}`}>
-      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-white/5 [&>svg]:h-5 [&>svg]:w-5">{icon}</div>
-      <p className="text-xs uppercase tracking-[0.16em] text-slate-400">{label}</p>
-      <p className="mt-2 font-mono text-2xl font-semibold text-white">{value}</p>
-    </div>
-  );
-}
-
-function Panel({
-  title,
-  icon,
-  children
-}: {
-  readonly title: string;
-  readonly icon: ReactNode;
-  readonly children: ReactNode;
-}): ReactElement {
-  return (
-    <section className="min-w-0 overflow-hidden rounded-lg border border-line bg-panel/90 p-4 shadow-xl">
-      <div className="mb-4 flex items-center gap-2">
-        {icon}
-        <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">{title}</h2>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function SmallStat({ label, value }: { readonly label: string; readonly value: string }): ReactElement {
-  return (
-    <div className="rounded-md border border-line bg-surface px-3 py-3">
-      <p className="text-xs text-slate-400">{label}</p>
-      <p className="mt-1 font-mono text-lg text-white">{value}</p>
-    </div>
   );
 }
 
@@ -2281,17 +2745,4 @@ function EquityCurve({ values }: { readonly values: readonly number[] }): ReactE
       </div>
     </div>
   );
-}
-
-function RiskRow({ label, value }: { readonly label: string; readonly value: string }): ReactElement {
-  return (
-    <div className="flex items-center justify-between rounded-md border border-line bg-surface px-3 py-2">
-      <span>{label}</span>
-      <span className="font-mono text-white">{value}</span>
-    </div>
-  );
-}
-
-function EmptyLine({ text }: { readonly text: string }): ReactElement {
-  return <div className="rounded-md border border-dashed border-line px-3 py-3 text-sm text-slate-400">{text}</div>;
 }

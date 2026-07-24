@@ -120,6 +120,8 @@ export class PlatformStore {
   readonly dondieAgents = new Map<UUID, DondieAgent>();
   readonly dondieWalletLedger = new Map<UUID, DondieWalletLedgerEntry>();
   readonly dondieMemories = new Map<UUID, DondieMemory>();
+  readonly automationSettings = new Map<UUID, import("@trading/types").AutomationSettings>();
+  readonly automationIdempotency = new Map<string, import("@trading/types").AutomationRunResult>();
   readonly auditLogs: AuditLog[] = [];
   private auditSink?: AuditSink;
 
