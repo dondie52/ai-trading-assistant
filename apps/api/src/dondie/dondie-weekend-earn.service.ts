@@ -86,21 +86,66 @@ export class DondieWeekendEarnService {
       roundUsd(dondieConfig.weekendEarnMaxPerDayUsd - this.creditedToday(agent.id, dayKey))
     );
 
-    const side = salt >= 0.48 ? "BUY" : "SELL";
-    const entryPrice = roundPrice(64_000 + (salt - 0.5) * 2_400);
-    const quantity = 0.01;
-    const movePct = 0.0012 + salt * 0.0038;
-    const won = salt < winChanceForTier(agent.tier);
-    const signedMove = won ? movePct : -movePct;
-    const exitPrice = roundPrice(entryPrice * (1 + (side === "BUY" ? signedMove : -signedMove)));
-    const grossPnl = roundUsd(quantity * (side === "BUY" ? exitPrice - entryPrice : entryPrice - exitPrice));
-    const walletCredit =
-      grossPnl > 0 ? roundUsd(Math.min(remainingDailyCap, Math.max(0.05, grossPnl * 0.35 + tierFloor(agent.tier)))) : 0;
-
     this.store.ensureDefaultAccountState(userId);
     const portfolio = [...this.store.portfolios.values()].find((entry) => entry.userId === userId);
     if (!portfolio) {
       throw new Error("Weekend crypto desk requires a portfolio.");
+    }
+
+    const side = salt >= 0.48 ? "BUY" : "SELL";
+    const entryPrice = roundPrice(64_000 + (salt - 0.5) * 2_400);
+    // Size to the real stake (e.g. $10) — never pretend a $640 BTC lot.
+    const stakeCash = Math.max(0, portfolio.cashBalance);
+    const notional = Math.min(Math.max(stakeCash * 0.85, stakeCash > 0 ? 1 : 0), Math.max(stakeCash, 0));
+    const quantity = entryPrice > 0 && notional > 0 ? Number((notional / entryPrice).toFixed(6)) : 0;
+    const movePct = 0.0012 + salt * 0.0038;
+    const won = salt < winChanceForTier(agent.tier);
+    const signedMove = won ? movePct : -movePct;
+    const exitPrice = roundPrice(entryPrice * (1 + (side === "BUY" ? signedMove : -signedMove)));
+    const grossPnl =
+      quantity > 0
+        ? roundUsd(quantity * (side === "BUY" ? exitPrice - entryPrice : entryPrice - exitPrice))
+        : 0;
+    const walletCredit =
+      grossPnl > 0
+        ? roundUsd(
+            Math.min(
+              remainingDailyCap,
+              Math.max(0.01, grossPnl * 0.5 + Math.min(0.05, tierFloor(agent.tier) * 0.15))
+            )
+          )
+        : 0;
+
+    if (!(quantity > 0)) {
+      const nowEmpty = isoNow();
+      const emptySignal: Signal = {
+        id: randomUUID(),
+        userId,
+        strategyId,
+        symbol,
+        signalType: "HOLD",
+        confidenceScore: 40,
+        modelVersion: dondieConfig.weekendEarnBrain,
+        features: { weekendGig: true, venue: "PAPER_CRYPTO", skipped: "NO_CASH" },
+        generatedAt: nowEmpty
+      };
+      return {
+        agentId: agent.id,
+        tier: agent.tier,
+        symbol,
+        brain: dondieConfig.weekendEarnBrain,
+        reasoning: "Weekend paper BTC skipped — stake cash is $0. Fund the account with your real $10 first.",
+        automation: {
+          status: "SKIPPED",
+          mode: "AUTO",
+          strategyId,
+          symbol,
+          signal: emptySignal,
+          reason: "No cash available to size a micro BTC paper scalp."
+        },
+        walletBalance: agent.walletBalance,
+        ranAt: nowEmpty
+      };
     }
     const broker =
       [...this.store.brokerAccounts.values()].find(

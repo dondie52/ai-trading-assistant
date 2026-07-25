@@ -442,13 +442,15 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
   }
 
   // --- Portfolio ---
-  const cashTooLow =
-    typeof input.portfolio?.cashBalance === "number" && input.portfolio.cashBalance > 0 && input.portfolio.cashBalance < 100;
+  const microStake =
+    typeof input.portfolio?.cashBalance === "number" &&
+    input.portfolio.cashBalance > 0 &&
+    input.portfolio.cashBalance <= 50;
   let portfolioAgent = buildAgent(
     "portfolio",
-    cashTooLow ? "alert" : "idle",
-    cashTooLow
-      ? `Cash $${input.portfolio!.cashBalance.toFixed(2)} — too low for equity shares`
+    microStake ? "working" : "idle",
+    microStake
+      ? `Micro stake $${input.portfolio!.cashBalance.toFixed(2)} — fractional shares`
       : openPositions.length > 0
         ? `Monitoring ${openPositions.length} open position(s)`
         : "No open positions",
@@ -456,8 +458,8 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
     input.portfolio
       ? [
           `Value ${input.portfolio.portfolioValue.toFixed(2)}`,
-          cashTooLow
-            ? "Fund Alpaca paper — weekend BTC desk still works"
+          microStake
+            ? "Dondie sizes tiny lots to your real cash"
             : `Unrealized ${input.portfolio.unrealizedPnl.toFixed(2)}`
         ]
       : []

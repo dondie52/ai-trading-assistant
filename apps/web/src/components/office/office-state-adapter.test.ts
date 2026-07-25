@@ -201,6 +201,26 @@ describe("buildOfficeWorld", () => {
     expect(world.agentActive).toBe(false);
   });
 
+  it("marks portfolio as micro-stake mode when cash is about $10", () => {
+    const world = buildOfficeWorld({
+      now: "2026-07-25T15:00:00.000Z",
+      agent: baseAgent,
+      lifestyle: baseLifestyle,
+      portfolio: {
+        id: "p1",
+        userId: "user-1",
+        portfolioName: "Broker",
+        portfolioValue: 10,
+        cashBalance: 10,
+        realizedPnl: 0,
+        unrealizedPnl: 0,
+        createdAt: "2026-07-25T10:00:00.000Z"
+      }
+    });
+    expect(world.agents.portfolio.status).toBe("working");
+    expect(world.agents.portfolio.activity.toLowerCase()).toContain("micro stake");
+  });
+
   it("lights up desks during weekend paper BTC side hustle", () => {
     const world = buildOfficeWorld({
       now: "2026-07-25T15:00:00.000Z",

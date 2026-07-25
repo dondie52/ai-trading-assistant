@@ -31,6 +31,18 @@ import { dondieConfig } from "../src/dondie/dondie.config.js";
 const saturday = new Date("2026-07-25T15:00:00.000Z");
 const wednesday = new Date("2026-07-22T15:00:00.000Z");
 
+const fundMicroStake = (store: PlatformStore, userId: string, cash = 10): void => {
+  const portfolio = [...store.portfolios.values()].find((entry) => entry.userId === userId);
+  if (!portfolio) {
+    return;
+  }
+  store.portfolios.set(portfolio.id, {
+    ...portfolio,
+    cashBalance: cash,
+    portfolioValue: cash
+  });
+};
+
 const createStack = (): {
   readonly dondie: DondieService;
   readonly platform: PlatformService;
@@ -103,6 +115,7 @@ describe("Dondie weekend paper BTC desk", () => {
       lastName: "Coin",
       role: "TRADER"
     });
+    fundMicroStake(store, user.id, 10);
     const now = saturday.toISOString();
     const agent: DondieAgent = {
       id: randomUUID(),
@@ -123,6 +136,8 @@ describe("Dondie weekend paper BTC desk", () => {
     expect(first.symbol).toBe("BTCUSD");
     expect(first.automation.status).toBe("EXECUTED");
     expect(first.automation.execution?.trade?.symbol).toBe("BTCUSD");
+    expect(first.automation.execution?.trade?.quantity ?? 0).toBeGreaterThan(0);
+    expect(first.automation.execution?.trade?.quantity ?? 1).toBeLessThan(0.01);
     expect(first.automation.signal.signalType === "BUY" || first.automation.signal.signalType === "SELL").toBe(
       true
     );
@@ -156,6 +171,7 @@ describe("Dondie weekend paper BTC desk", () => {
       configuration: { agentManaged: true, confidenceThreshold: 65 }
     });
     await dondie.activate(user.id, { strategyId: strategy.id });
+    fundMicroStake(store, user.id, 10);
     await dondie.updateSymbolUniverse(user.id, { symbols: ["AAPL", "MSFT"] });
     platform.updateAutomationSettings(user.id, { mode: "AUTOPILOT", emergencyStop: false });
 
@@ -181,6 +197,7 @@ describe("Dondie weekend paper BTC desk", () => {
       lastName: "Kick",
       role: "TRADER"
     });
+    fundMicroStake(store, user.id, 10);
     const paperId = randomUUID();
     store.brokerAccounts.set(paperId, {
       id: paperId,

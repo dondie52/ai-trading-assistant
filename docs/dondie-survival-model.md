@@ -110,11 +110,19 @@ DONDIE_LLM_STANDARD_MODEL=gpt-4o-mini
 DONDIE_LLM_PRO_MODEL=gpt-4o
 ```
 
+### Micro-stake survival ($10 IRL)
+
+Dondie is built to run on a real small stake, not a fake $100k paper fantasy:
+
+* Equity ≤ $50 → **micro-stake mode**: fractional shares, up to ~85% of cash, ~20% risk room
+* Qty displays show 4 decimals so `0.0036` SPY is not rendered as `0.00`
+* Weekend paper BTC sizes to **your cash** (e.g. ~$8.50 notional on a $10 stake)
+
 ### Weekend survival (paper BTC desk)
 
-US cash equities are closed Saturday and Sunday. Instead of idling, ACTIVE AUTOPILOT agents **paper-trade BTCUSD** on each schedule tick (and when the office loads if a run is due):
+US cash equities are closed Saturday and Sunday. Instead of idling, ACTIVE agents **paper-trade BTCUSD** on each schedule tick (and when the office loads if a run is due):
 
-* Builds a BUY/SELL signal, paper-fills a small BTC scalp, records order/trade/PnL
+* Builds a BUY/SELL signal, paper-fills a cash-sized BTC scalp, records order/trade/PnL
 * Credits the survival wallet under `WEEKEND_CRYPTO_DESK` from green scalps (hard daily cap)
 * Win rate is intentionally modest (~52–58% by tier) — not a guaranteed binary bot
 * Does **not** hit a live crypto venue yet (bridge until real crypto brokerage lands)
