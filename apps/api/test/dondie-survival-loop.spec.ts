@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { DondieAgent, Signal } from "@trading/types";
 import { PaperBrokerAdapter } from "../src/brokers/paper-broker.adapter.js";
 import { AlpacaBrokerAdapter } from "../src/brokers/alpaca-broker.adapter.js";
@@ -400,6 +400,8 @@ describe("Dondie survival loop extras", () => {
       configuration: { confidenceThreshold: 1, stopLossPercent: 5, takeProfitPercent: 8 }
     });
     await dondie.activate(user.id, { strategyId: strategy.id });
+    // Keep the scan to one symbol so this asserts a single PnL credit, not a full-universe run.
+    await dondie.updateSymbolUniverse(user.id, { symbols: ["NVDA"] });
 
     vi.spyOn(platform, "runAutomation").mockResolvedValue({
       status: "EXECUTED",
@@ -448,6 +450,42 @@ describe("Dondie survival loop extras", () => {
     expect(result.automation.symbol).toBe("NVDA");
     expect(dondie.getWallet(user.id).balance).toBe(5);
     expect(dondie.getWallet(user.id).ledger[0]?.reason).toBe("TRADE_PNL_SHARE");
+  });
+
+  it("surfaces nested HttpException messages when the universe has no usable data", async () => {
+    installAlpacaFetchMock();
+    const { dondie, platform, store } = createStack();
+    const user = store.createUser({
+      email: `dondie-universe-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Dondie",
+      lastName: "Trader",
+      role: "TRADER"
+    });
+    fundPaperPortfolio(store, user.id, 100_000);
+    const strategy = platform.createStrategy(user.id, {
+      name: "Universe Strategy",
+      description: "Universe",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { confidenceThreshold: 1, stopLossPercent: 5, takeProfitPercent: 8 }
+    });
+    await dondie.activate(user.id, { strategyId: strategy.id });
+    await dondie.updateSymbolUniverse(user.id, { symbols: ["AAPL"] });
+
+    vi.spyOn(platform, "generateTradingSignal").mockRejectedValue(
+      new NotFoundException({
+        code: "MARKET_DATA_UNAVAILABLE",
+        message: "Market data is unavailable for AAPL."
+      })
+    );
+
+    await expect(dondie.run(user.id, {})).rejects.toMatchObject({
+      response: {
+        code: "DONDIE_UNIVERSE_UNAVAILABLE",
+        message: expect.stringContaining("Market data is unavailable for AAPL.")
+      }
+    });
   });
 
   it("covers activate/run validation and idle scheduled runs", async () => {
