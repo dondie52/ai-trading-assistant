@@ -201,15 +201,15 @@ describe("buildOfficeWorld", () => {
     expect(world.agentActive).toBe(false);
   });
 
-  it("lights up desks during weekend crypto side hustle", () => {
+  it("lights up desks during weekend paper BTC side hustle", () => {
     const world = buildOfficeWorld({
       now: "2026-07-25T15:00:00.000Z",
       agent: baseAgent,
       lifestyle: {
         ...baseLifestyle,
         activity: "SIDE_HUSTLE",
-        activityLabel: "Weekend crypto desk — earning",
-        currentTask: "Weekend crypto desk — earning for the survival wallet",
+        activityLabel: "Weekend paper BTC — trading",
+        currentTask: "Paper-trading BTCUSD while equities sleep",
         mood: "optimistic"
       },
       automation: {
@@ -221,7 +221,7 @@ describe("buildOfficeWorld", () => {
     expect(world.agents.coordinator.status).toBe("working");
     expect(world.agents.signal.status).toBe("working");
     expect(world.agents.brain.status).toBe("working");
-    expect(world.agents.coordinator.activity.toLowerCase()).toContain("crypto");
+    expect(world.agents.coordinator.activity.toLowerCase()).toContain("btcusd");
     expect(world.night).toBe(false);
   });
 });

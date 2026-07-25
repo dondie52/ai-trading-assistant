@@ -38,7 +38,7 @@ Survival loop behavior on `POST /dondie/run`:
 - Selects brain from wallet tier (FREE / STANDARD / PRO); STANDARD/PRO require `DONDIE_LLM_API_KEY`
 - Debits brain cost before LLM runs; falls back to FREE if funds are insufficient
 - Credits ~`DONDIE_PNL_CREDIT_PERCENT` of realized trade PnL to the wallet
-- On US equity weekends (Sat/Sun ET), ACTIVE runs take the **weekend crypto desk** path instead: credits the wallet under `WEEKEND_CRYPTO_DESK` (capped daily; no broker orders)
+- On US equity weekends (Sat/Sun ET), ACTIVE runs take the **weekend paper BTC** path instead: paper-fills BTCUSD scalps and credits the wallet under `WEEKEND_CRYPTO_DESK` (capped daily; not a live crypto venue yet)
 - Auto-upgrades/downgrades tier from wallet balance thresholds
 - Records a memory + evaluation score and may expand the symbol universe
 

@@ -82,7 +82,7 @@ import { EmptyLine, MetricCard, Panel, SmallStat, StatusPill } from "../componen
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
 import { signInWithSupabase, signOutSupabase } from "../lib/auth";
 import { consumeAuthFailureMessage } from "../lib/auth-session";
-import { formatCurrency, formatPercent, insufficientHistoryLabel } from "../lib/format";
+import { formatCurrency, formatPercent, formatQty, insufficientHistoryLabel } from "../lib/format";
 import { type OrderDraft, buildOrderDraftFromSignal } from "../lib/order-draft";
 import {
   formatRiskResultMessage,
@@ -1723,7 +1723,7 @@ export default function Page(): ReactElement {
           positions.data?.map((position) => (
             <div key={position.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-4">
               <span className="font-mono text-white">{position.symbol}</span>
-              <span>{position.quantity.toFixed(2)}</span>
+              <span>{formatQty(position.quantity)}</span>
               <span className="sm:text-right">{formatCurrency(position.averagePrice)}</span>
               <span className={`text-right ${position.unrealizedPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                 {formatCurrency(position.unrealizedPnl)}
@@ -1745,7 +1745,7 @@ export default function Page(): ReactElement {
             <div key={trade.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-5">
               <span className="font-mono text-white">{trade.symbol}</span>
               <span>{trade.side}</span>
-              <span>{trade.quantity.toFixed(2)}</span>
+              <span>{formatQty(trade.quantity)}</span>
               <span className="sm:text-right">{formatCurrency(trade.entryPrice)}</span>
               <span className={`text-right ${trade.pnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                 {trade.closedAt ? formatCurrency(trade.pnl) : "Open"}

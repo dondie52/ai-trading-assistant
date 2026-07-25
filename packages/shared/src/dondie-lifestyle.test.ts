@@ -84,7 +84,7 @@ describe("dondie lifestyle progression", () => {
       weekendSideHustle: true
     });
     expect(activity.activity).toBe("SIDE_HUSTLE");
-    expect(activity.currentTask.toLowerCase()).toContain("crypto");
+    expect(activity.currentTask.toLowerCase()).toContain("btcusd");
   });
 
   it("builds a world snapshot with achievements and room tiers", () => {
