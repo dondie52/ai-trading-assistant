@@ -107,8 +107,17 @@ export class DondieService implements OnModuleInit {
     }
     this.scheduler.start(
       (scheduledUserId) => this.runScheduled(scheduledUserId),
-      () => this.listScheduledUserIds()
+      () => this.listDueScheduledUserIds()
     );
+  }
+
+  /** Wake path for external cron/keepalive — runs overdue AUTOPILOT agents. */
+  async tickDueAgents(): Promise<{
+    readonly attempted: number;
+    readonly succeeded: number;
+    readonly failed: number;
+  }> {
+    return this.scheduler.tickNow();
   }
 
   getAgent(userId: UUID): DondieAgent | undefined {
@@ -297,12 +306,75 @@ export class DondieService implements OnModuleInit {
     if (!agent || agent.status !== "ACTIVE") {
       return;
     }
-    await this.runUniverseScan(userId, agent, "1h");
+    const settings = this.platform.getAutomationSettings(userId);
+    if (settings.mode !== "AUTOPILOT" || settings.emergencyStop) {
+      return;
+    }
+    try {
+      await this.runUniverseScan(userId, agent, "1h");
+    } catch (error) {
+      // Advance lastRunAt + audit so silent schedule failures are visible and not tight-looped.
+      const now = isoNow();
+      const updated: DondieAgent = { ...agent, lastRunAt: now, updatedAt: now };
+      this.store.dondieAgents.set(agent.id, updated);
+      await this.repository.persistAgent(updated);
+      this.store.appendAudit({
+        userId,
+        actorUserId: userId,
+        action: "DONDIE_RUN",
+        entityType: "DONDIE_AGENT",
+        entityId: agent.id,
+        metadata: {
+          scheduled: true,
+          automationStatus: "SKIPPED",
+          error: errorMessage(error)
+        }
+      });
+      const memory = {
+        id: randomUUID(),
+        agentId: agent.id,
+        summary: `scheduler skipped on UNIVERSE: ${errorMessage(error)}`,
+        evaluation: {
+          scheduled: true,
+          automationStatus: "SKIPPED",
+          error: errorMessage(error),
+          score: 0
+        },
+        createdAt: now
+      };
+      this.store.dondieMemories.set(memory.id, memory);
+      await this.repository.persistMemory(memory);
+    }
   }
 
   listScheduledUserIds(): readonly UUID[] {
     return [...this.store.dondieAgents.values()]
       .filter((agent) => agent.status === "ACTIVE")
+      .map((agent) => agent.userId);
+  }
+
+  /** ACTIVE AUTOPILOT agents whose schedule interval has elapsed (or never ran). */
+  listDueScheduledUserIds(nowMs: number = Date.now()): readonly UUID[] {
+    return [...this.store.dondieAgents.values()]
+      .filter((agent) => {
+        if (agent.status !== "ACTIVE") {
+          return false;
+        }
+        const settings = this.platform.getAutomationSettings(agent.userId);
+        if (settings.mode !== "AUTOPILOT" || settings.emergencyStop) {
+          return false;
+        }
+        const scheduleMinutes = Math.max(1, agent.scheduleMinutes || dondieConfig.defaultScheduleMinutes);
+        const scheduleMs = Math.max(60_000, scheduleMinutes * 60_000);
+        if (!agent.lastRunAt) {
+          return true;
+        }
+        const last = Date.parse(agent.lastRunAt);
+        if (!Number.isFinite(last)) {
+          return true;
+        }
+        return nowMs - last >= scheduleMs;
+      })
       .map((agent) => agent.userId);
   }
 

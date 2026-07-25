@@ -281,6 +281,12 @@ describe("Dondie survival loop extras", () => {
     expect(withUniverse.symbolUniverse).toContain("AAPL");
 
     expect(dondie.listScheduledUserIds()).toContain(user.id);
+    platform.updateAutomationSettings(user.id, {
+      mode: "AUTOPILOT",
+      emergencyStop: false,
+      requireConfirmationAboveValue: 1_000_000_000
+    });
+    expect(dondie.listDueScheduledUserIds()).toContain(user.id);
     await dondie.runScheduled(user.id);
     expect(dondie.requireAgent(user.id).lastRunAt).toBeTruthy();
   });

@@ -42,6 +42,7 @@ import { PositionsController } from "./trading/positions.controller.js";
 import { TradesController } from "./trading/trades.controller.js";
 import { UsersController } from "./users/users.controller.js";
 import { DondieController } from "./dondie/dondie.controller.js";
+import { InternalDondieController } from "./dondie/internal-dondie.controller.js";
 import { DondieService } from "./dondie/dondie.service.js";
 import { DondieRepository } from "./dondie/dondie.repository.js";
 import { DondieBrainFreeService } from "./dondie/dondie-brain-free.service.js";
@@ -72,7 +73,8 @@ import { AutonomousBootstrapService } from "./dondie/autonomous-bootstrap.servic
     PositionsController,
     TradesController,
     UsersController,
-    DondieController
+    DondieController,
+    InternalDondieController
   ],
   providers: [
     AlpacaBrokerAdapter,

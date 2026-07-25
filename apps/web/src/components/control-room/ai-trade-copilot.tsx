@@ -160,6 +160,22 @@ export function AITradeCopilot({
               <p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Agent status</p>
               <p className="mt-1 text-white">{agent?.status ?? "Not started"}</p>
             </div>
+            <div className="rounded-lg border border-line bg-surface px-3 py-2 sm:col-span-2">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">
+                Last server scan
+              </p>
+              <p className="mt-1 text-white" data-testid="agent-last-run-at">
+                {agent?.lastRunAt
+                  ? new Date(agent.lastRunAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short"
+                    })
+                  : "Waiting for first scheduled scan"}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Runs on the server — closing this tab does not stop AUTOPILOT.
+              </p>
+            </div>
           </div>
 
           <div>
@@ -182,7 +198,7 @@ export function AITradeCopilot({
             <p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Recent agent decisions</p>
             {recent.length === 0 ? (
               <p className="mt-2 text-slate-400" data-testid="latest-signal">
-                No scans yet — the scheduler runs automatically, or tap Run agent now.
+                No scans yet — the server scheduler runs on its own. Optional: force a scan below.
               </p>
             ) : (
               <ul className="mt-2 space-y-2" data-testid="latest-signal">
@@ -200,14 +216,14 @@ export function AITradeCopilot({
             data-testid="generate-signal"
             disabled={!onRunAgent || agentBusy || agent?.status !== "ACTIVE"}
             onClick={() => onRunAgent?.()}
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950 disabled:opacity-40"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-slate-100 disabled:opacity-40"
           >
             {agentBusy ? (
               <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <Bot className="h-4 w-4" aria-hidden="true" />
             )}
-            Run agent now
+            Force scan now (optional)
           </button>
         </div>
       </Panel>

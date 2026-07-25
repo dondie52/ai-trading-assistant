@@ -2171,7 +2171,8 @@ export default function Page(): ReactElement {
             {automationSettings.data?.mode === "AUTOPILOT" ? (
               <Panel title="Hands-off controls" icon={<Shield className="h-5 w-5 text-rose-300" aria-hidden="true" />} compact>
                 <p className="mb-3 text-sm text-slate-400">
-                  Mode stays on AUTOPILOT. Use emergency stop only if you need the agent to halt.
+                  Mode stays on AUTOPILOT on the server — you can close this tab. Use emergency stop
+                  only if you need the agent to halt.
                 </p>
                 <button
                   type="button"

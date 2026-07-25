@@ -25,8 +25,14 @@ export class RateLimitGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<OptionalAuthenticatedRequest>();
     const path = request.route?.path ?? request.url ?? "unknown";
-    // Keepalive + Render probes must never compete with the rate limiter.
-    if (typeof path === "string" && (path.includes("/health") || path.endsWith("health"))) {
+    // Keepalive, Render probes, and external autopilot cron must never compete with the rate limiter.
+    if (
+      typeof path === "string" &&
+      (path.includes("/health") ||
+        path.endsWith("health") ||
+        path.includes("/internal/dondie") ||
+        path.includes("internal/dondie"))
+    ) {
       return true;
     }
 
