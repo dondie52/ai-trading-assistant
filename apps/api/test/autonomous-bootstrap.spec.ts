@@ -147,4 +147,15 @@ describe("AutonomousBootstrapService", () => {
     expect(result.agentStatus).toBe("ACTIVE");
     expect(dondie.getAgent(userId)?.status).toBe("ACTIVE");
   });
+
+  it("restores AUTOPILOT after in-memory automation settings are cleared", async () => {
+    const { bootstrap, platform, store, userId } = createHarness();
+    await bootstrap.ensureAutonomousMode(userId);
+    store.automationSettings.delete(userId);
+
+    const restored = platform.getAutomationSettings(userId);
+    expect(restored.mode).toBe("AUTOPILOT");
+    expect(restored.runtimeState).toBe("RUNNING");
+    expect(platform.hasHandsOffAgent(userId)).toBe(true);
+  });
 });

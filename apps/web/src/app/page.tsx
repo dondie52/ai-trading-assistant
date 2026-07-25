@@ -533,10 +533,20 @@ export default function Page(): ReactElement {
   }, [auditFilter, auditLogs.data]);
 
   useEffect(() => {
-    if (!selectedStrategyId && activeStrategy?.id) {
+    if (selectedStrategyId) {
+      return;
+    }
+    const managed = strategies.data?.find(
+      (strategy) => strategy.configuration.agentManaged === true && strategy.status === "ACTIVE"
+    );
+    if (managed) {
+      setSelectedStrategyId(managed.id);
+      return;
+    }
+    if (activeStrategy?.id) {
       setSelectedStrategyId(activeStrategy.id);
     }
-  }, [activeStrategy?.id, selectedStrategyId]);
+  }, [activeStrategy?.id, selectedStrategyId, strategies.data]);
 
   useEffect(() => {
     setOrderDraft(null);
@@ -933,21 +943,24 @@ export default function Page(): ReactElement {
   });
 
   const runDondieMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<DondieRunResult>(
+    mutationFn: () => {
+      // Hands-off: omit symbol so the agent scans its own universe.
+      const handsOff = automationSettings.data?.mode === "AUTOPILOT";
+      return apiFetch<DondieRunResult>(
         "/dondie/run",
         {
           method: "POST",
-          body: JSON.stringify({ symbol, timeframe })
+          body: JSON.stringify(handsOff ? { timeframe } : { symbol, timeframe })
         },
         token
-      ),
+      );
+    },
     onSuccess: async (result) => {
       setAutomationRunResult(result.automation);
       setNotice(
         result.automation.status === "EXECUTED"
           ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
-          : `Dondie skipped ${result.symbol}: ${result.reasoning}`
+          : `Dondie scanned and skipped ${result.symbol}: ${result.reasoning}`
       );
       await invalidateTradingData();
     },
@@ -2060,20 +2073,61 @@ export default function Page(): ReactElement {
               onApplySuggestedQuantity={applySuggestedQuantity}
               draftOverride={orderDraft}
               onDraftChange={(draft) => setOrderDraft(normalizeDraftCalculations(draft))}
+              agent={dondieAgent.data ?? null}
+              memories={dondieMemories.data ?? []}
+              onRunAgent={() => runDondieMutation.mutate()}
+              agentBusy={runDondieMutation.isPending || goAutonomousMutation.isPending}
             />
-            {renderManualOrderForm()}
+            {automationSettings.data?.mode !== "AUTOPILOT" ? (
+              <div
+                className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-3 text-sm text-cyan-50"
+                data-testid="trade-hands-off-cta"
+              >
+                <p className="font-medium">Do not want to pick symbols?</p>
+                <p className="mt-1 text-cyan-100/80">
+                  Start hands-off mode — Dondie chooses tickers and strategy, then trades on AUTOPILOT.
+                </p>
+                <button
+                  type="button"
+                  data-testid="trade-start-hands-off"
+                  disabled={goAutonomousMutation.isPending}
+                  onClick={() => goAutonomousMutation.mutate()}
+                  className="mt-3 flex min-h-11 items-center justify-center rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 disabled:opacity-40"
+                >
+                  Start hands-off (no symbols needed)
+                </button>
+              </div>
+            ) : null}
+            {automationSettings.data?.mode === "AUTOPILOT" ? null : renderManualOrderForm()}
           </div>
           <div className="space-y-5">
-            <AutomationModesPanel
-              settings={automationSettings.data ?? null}
-              runResult={automationRunResult}
-              running={automatedRunMutation.isPending}
-              onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
-              onEmergencyPause={() => emergencyPauseMutation.mutate()}
-              onRun={() => automatedRunMutation.mutate()}
-              onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
-            />
-            {renderPaperDiagnostics()}
+            {automationSettings.data?.mode === "AUTOPILOT" ? (
+              <Panel title="Hands-off controls" icon={<Shield className="h-5 w-5 text-rose-300" aria-hidden="true" />} compact>
+                <p className="mb-3 text-sm text-slate-400">
+                  Mode stays on AUTOPILOT. Use emergency stop only if you need the agent to halt.
+                </p>
+                <button
+                  type="button"
+                  data-testid="trade-emergency-stop"
+                  onClick={() => emergencyPauseMutation.mutate()}
+                  disabled={emergencyPauseMutation.isPending}
+                  className="flex min-h-11 w-full items-center justify-center rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100 disabled:opacity-40"
+                >
+                  Emergency stop
+                </button>
+              </Panel>
+            ) : (
+              <AutomationModesPanel
+                settings={automationSettings.data ?? null}
+                runResult={automationRunResult}
+                running={automatedRunMutation.isPending}
+                onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
+                onEmergencyPause={() => emergencyPauseMutation.mutate()}
+                onRun={() => automatedRunMutation.mutate()}
+                onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
+              />
+            )}
+            {automationSettings.data?.mode === "AUTOPILOT" ? null : renderPaperDiagnostics()}
           </div>
         </section>
       ) : null}

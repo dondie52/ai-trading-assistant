@@ -13,6 +13,8 @@ import type { ReactElement } from "react";
 import { useMemo, useState } from "react";
 import type {
   AutomationMode,
+  DondieAgent,
+  DondieMemory,
   MarketQuote,
   OrderSide,
   OrderType,
@@ -49,7 +51,11 @@ export function AITradeCopilot({
   onApprovePaperTrade,
   onApplySuggestedQuantity,
   draftOverride,
-  onDraftChange
+  onDraftChange,
+  agent,
+  memories,
+  onRunAgent,
+  agentBusy
 }: {
   readonly symbol: string;
   readonly onSymbolChange: (symbol: string) => void;
@@ -73,9 +79,14 @@ export function AITradeCopilot({
   readonly onApplySuggestedQuantity: (quantity: number) => void;
   readonly draftOverride?: OrderDraft | null;
   readonly onDraftChange?: (draft: OrderDraft) => void;
+  readonly agent?: DondieAgent | null;
+  readonly memories?: readonly DondieMemory[];
+  readonly onRunAgent?: () => void;
+  readonly agentBusy?: boolean;
 }): ReactElement {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [editing, setEditing] = useState(false);
+  const handsOff = automationMode === "AUTOPILOT";
 
   const autoDraft = useMemo(() => {
     if (!latestSignal || latestSignal.symbol !== symbol.toUpperCase()) {
@@ -111,6 +122,97 @@ export function AITradeCopilot({
     inlineErrors.length === 0 &&
     !submitting &&
     automationMode !== "MANUAL";
+
+  if (handsOff) {
+    const universe =
+      agent?.symbolUniverse && agent.symbolUniverse.length > 0
+        ? agent.symbolUniverse
+        : ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "SPY", "QQQ"];
+    const recent = (memories ?? []).slice(0, 5);
+    const strategyName =
+      strategies.find((strategy) => strategy.id === (agent?.strategyId ?? selectedStrategyId))?.name ??
+      "Agent managed";
+
+    return (
+      <Panel
+        title="AI Trade Copilot"
+        icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />}
+        action={<StatusPill label="AUTOPILOT" tone="emerald" />}
+      >
+        <div className="space-y-4" data-testid="ai-trade-copilot">
+          <div
+            className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 px-3 py-3 text-sm text-emerald-50"
+            data-testid="hands-off-trade-status"
+          >
+            <p className="font-medium">You do not pick symbols or strategies.</p>
+            <p className="mt-1 text-emerald-100/80">
+              Dondie scans its universe, chooses setups, and places paper orders on AUTOPILOT. Fund and
+              withdraw only in Alpaca.
+            </p>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 text-sm">
+            <div className="rounded-lg border border-line bg-surface px-3 py-2">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Strategy</p>
+              <p className="mt-1 text-white">{strategyName}</p>
+            </div>
+            <div className="rounded-lg border border-line bg-surface px-3 py-2">
+              <p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Agent status</p>
+              <p className="mt-1 text-white">{agent?.status ?? "Not started"}</p>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-slate-500">
+              Symbols Dondie watches
+            </p>
+            <div className="flex flex-wrap gap-2" data-testid="agent-symbol-universe">
+              {universe.map((ticker) => (
+                <span
+                  key={ticker}
+                  className="rounded-md border border-line bg-surface px-2 py-1 font-mono text-xs text-slate-200"
+                >
+                  {ticker}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-line bg-white/[0.03] px-3 py-3 text-sm text-slate-300">
+            <p className="font-mono text-[10px] uppercase tracking-wide text-slate-500">Recent agent decisions</p>
+            {recent.length === 0 ? (
+              <p className="mt-2 text-slate-400" data-testid="latest-signal">
+                No scans yet — the scheduler runs automatically, or tap Run agent now.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-2" data-testid="latest-signal">
+                {recent.map((memory) => (
+                  <li key={memory.id} className="text-slate-200">
+                    {memory.summary}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <button
+            type="button"
+            data-testid="generate-signal"
+            disabled={!onRunAgent || agentBusy || agent?.status !== "ACTIVE"}
+            onClick={() => onRunAgent?.()}
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950 disabled:opacity-40"
+          >
+            {agentBusy ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Bot className="h-4 w-4" aria-hidden="true" />
+            )}
+            Run agent now
+          </button>
+        </div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel
