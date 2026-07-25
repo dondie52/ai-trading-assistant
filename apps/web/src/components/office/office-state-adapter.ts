@@ -211,6 +211,14 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
       lifestyle?.updatedAt ?? nowIso,
       [lifestyle?.lastEventSummary ?? runtime ?? "Risk controls engaged."]
     );
+  } else if (activity === "SIDE_HUSTLE") {
+    coordinator = buildAgent(
+      "coordinator",
+      "working",
+      lifestyle?.activityLabel ?? "Weekend crypto desk",
+      lifestyle?.updatedAt ?? nowIso,
+      [lifestyle?.currentTask ?? "Earning for the survival wallet while equities sleep."]
+    );
   } else if (activity === "MARKET_CLOSED" || runtime === "WAITING_FOR_MARKET") {
     coordinator = buildAgent(
       "coordinator",

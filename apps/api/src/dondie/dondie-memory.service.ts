@@ -43,21 +43,31 @@ export class DondieMemoryService {
 
   async recordRun(agent: DondieAgent, result: DondieRunResult): Promise<DondieAgent> {
     const { score, evaluation } = this.evaluateRun(result);
+    const weekendGig = result.brain === dondieConfig.weekendEarnBrain;
     const memory: DondieMemory = {
       id: randomUUID(),
       agentId: agent.id,
-      summary: `${result.brain} brain ${result.automation.status.toLowerCase()} on ${result.symbol}: ${result.reasoning}`,
-      evaluation,
+      summary: weekendGig
+        ? `weekend crypto desk on ${result.symbol}: ${result.reasoning}`
+        : `${result.brain} brain ${result.automation.status.toLowerCase()} on ${result.symbol}: ${result.reasoning}`,
+      evaluation: {
+        ...evaluation,
+        ...(weekendGig ? { weekendGig: true } : {})
+      },
       createdAt: isoNow()
     };
     this.store.dondieMemories.set(memory.id, memory);
     await this.repository.persistMemory(memory);
     this.pruneMemories(agent.id);
 
-    const symbolUniverse = this.nextSymbolUniverse(agent, result.symbol, score);
+    // Weekend gigs must not pollute the equity trading universe.
+    const symbolUniverse = weekendGig
+      ? agent.symbolUniverse
+      : this.nextSymbolUniverse(agent, result.symbol, score);
     const updated: DondieAgent = {
       ...agent,
       lastEvaluationScore: score,
+      lastRunAt: result.ranAt ?? agent.lastRunAt,
       symbolUniverse,
       updatedAt: isoNow()
     };

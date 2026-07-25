@@ -24,6 +24,7 @@ import { DondieBrainService } from "../src/dondie/dondie-brain.service.js";
 import { DondieMemoryService } from "../src/dondie/dondie-memory.service.js";
 import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
 import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
+import { DondieWeekendEarnService } from "../src/dondie/dondie-weekend-earn.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
 
 const ensureTestPaperBroker = (store: PlatformStore, userId: string): void => {
@@ -88,8 +89,10 @@ const createDondie = (): {
   const freeBrain = new DondieBrainFreeService(platform);
   const llmBrain = new DondieBrainLlmService();
   const brain = new DondieBrainService(platform, freeBrain, llmBrain);
+  process.env.DONDIE_WEEKEND_EARN_ENABLED = "false";
   const wallet = new DondieWalletService(store, dondieRepository);
   const memory = new DondieMemoryService(store, dondieRepository);
+  const weekendEarn = new DondieWeekendEarnService(wallet);
   const dondie = new DondieService(
     store,
     platform,
@@ -97,7 +100,8 @@ const createDondie = (): {
     brain,
     new DondieScheduler(),
     wallet,
-    memory
+    memory,
+    weekendEarn
   );
   return { dondie, platform, store, wallet };
 };

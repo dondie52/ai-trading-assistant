@@ -51,6 +51,7 @@ export const resolveOfficePresentation = (activity: DondieActivityState): Office
         monitorsActive: true
       };
     case "ANALYSING":
+    case "SIDE_HUSTLE":
       return {
         pose: "desk",
         bubble: "chart",
