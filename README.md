@@ -160,7 +160,7 @@ Vercel → Project → Settings → Environment Variables (Production + Preview)
 - `NEXT_PUBLIC_SUPABASE_URL` = `https://axrclxwittqyurwqjvdq.supabase.co`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = (Dashboard → Settings → API)
 
-Redeploy the web app after saving. Free Render APIs sleep after idle — the first login after sleep can take ~30–60s.
+Redeploy the web app after saving. Free Render APIs sleep after idle — the web client retries/wakes the API automatically, and `.github/workflows/render-api-keepalive.yml` pings `/api/v1/health` every 12 minutes to limit cold starts.
 
 ## Tests
 

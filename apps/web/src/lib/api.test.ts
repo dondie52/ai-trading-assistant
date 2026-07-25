@@ -3,7 +3,9 @@ import {
   ApiError,
   apiFetch,
   apiFetchPage,
-  registerApiAuthHandlers
+  isRetryableTransportError,
+  registerApiAuthHandlers,
+  wakeTradingApi
 } from "./api";
 
 describe("apiFetch auth retry", () => {
@@ -11,6 +13,7 @@ describe("apiFetch auth retry", () => {
     registerApiAuthHandlers(null);
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("retries once after a recoverable 401 and succeeds with the refreshed token", async () => {
@@ -107,7 +110,9 @@ describe("apiFetch auth retry", () => {
       vi.fn().mockRejectedValue(new TypeError("Load failed"))
     );
 
-    await expect(apiFetch("/dondie/run", { method: "POST", body: "{}" }, "token")).rejects.toMatchObject({
+    await expect(
+      apiFetch("/dondie/run", { method: "POST", body: "{}", networkRetry: false }, "token")
+    ).rejects.toMatchObject({
       code: "NETWORK_ERROR",
       message: expect.stringMatching(/could not reach the trading api/i)
     });
@@ -116,8 +121,49 @@ describe("apiFetch auth retry", () => {
   it("maps Failed to fetch network errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
-    await expect(apiFetch("/health")).rejects.toMatchObject({
+    await expect(apiFetch("/health", { networkRetry: false })).rejects.toMatchObject({
       code: "NETWORK_ERROR"
+    });
+  });
+
+  it("retries network failures until the API wakes", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Load failed"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: { api: "ok" } })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: { id: "ready" } })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = apiFetch<{ id: string }>("/users/me", {}, "token");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(pending).resolves.toEqual({ id: "ready" });
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith("/health"))).toBe(true);
+  });
+
+  it("maps gateway HTML responses to NETWORK_ERROR", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON");
+        }
+      })
+    );
+
+    await expect(apiFetch("/health", { networkRetry: false })).rejects.toMatchObject({
+      code: "NETWORK_ERROR",
+      status: 502
     });
   });
 
@@ -133,7 +179,7 @@ describe("apiFetch auth retry", () => {
       })
     );
 
-    await expect(apiFetch("/health")).rejects.toMatchObject({
+    await expect(apiFetch("/health", { networkRetry: false })).rejects.toMatchObject({
       code: "INVALID_RESPONSE"
     });
   });
@@ -141,7 +187,7 @@ describe("apiFetch auth retry", () => {
   it("maps generic thrown Errors to REQUEST_ERROR", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("socket hang up")));
 
-    await expect(apiFetch("/health")).rejects.toMatchObject({
+    await expect(apiFetch("/health", { networkRetry: false })).rejects.toMatchObject({
       code: "REQUEST_ERROR",
       message: "socket hang up"
     });
@@ -150,7 +196,7 @@ describe("apiFetch auth retry", () => {
   it("maps unknown throwables to a generic REQUEST_ERROR", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue("boom"));
 
-    await expect(apiFetch("/health")).rejects.toMatchObject({
+    await expect(apiFetch("/health", { networkRetry: false })).rejects.toMatchObject({
       code: "REQUEST_ERROR",
       message: "Request failed."
     });
@@ -212,5 +258,25 @@ describe("apiFetch auth retry", () => {
     });
     expect(onAuthFailure).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("classifies cold-start transport errors as retryable", () => {
+    expect(isRetryableTransportError(new ApiError("NETWORK_ERROR", "down", 0))).toBe(true);
+    expect(isRetryableTransportError(new ApiError("INVALID_RESPONSE", "html", 0))).toBe(true);
+    expect(isRetryableTransportError(new ApiError("UPSTREAM", "bad gateway", 502))).toBe(true);
+    expect(isRetryableTransportError(new ApiError("INVALID_TOKEN", "nope", 401))).toBe(false);
+  });
+
+  it("wakeTradingApi succeeds on a healthy response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: { api: "ok" } })
+      })
+    );
+
+    await expect(wakeTradingApi({ force: true })).resolves.toBe(true);
   });
 });

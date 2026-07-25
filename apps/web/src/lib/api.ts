@@ -3,6 +3,9 @@ import type { ApiFailure, ApiResponse, JsonObject, PaginatedResult } from "@trad
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3001/api/v1";
 export const REALTIME_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/u, "");
 
+/** Delays between transport retries while a free Render instance wakes. */
+const NETWORK_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 12_000, 20_000] as const;
+
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
@@ -22,6 +25,8 @@ export class ApiError extends Error {
 export interface ApiFetchOptions extends RequestInit {
   /** When false, skips the one-shot auth refresh/retry. Defaults to true. */
   readonly authRetry?: boolean;
+  /** When false, skips cold-start/network retries. Defaults to true. */
+  readonly networkRetry?: boolean;
 }
 
 export interface ApiAuthHandlers {
@@ -31,10 +36,17 @@ export interface ApiAuthHandlers {
 }
 
 let apiAuthHandlers: ApiAuthHandlers | null = null;
+let wakeInFlight: Promise<boolean> | null = null;
+let lastWakeOkAt = 0;
 
 export const registerApiAuthHandlers = (handlers: ApiAuthHandlers | null): void => {
   apiAuthHandlers = handlers;
 };
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const isApiFailure = (value: unknown): value is ApiFailure => {
   if (typeof value !== "object" || value === null) {
@@ -86,12 +98,23 @@ const toTransportError = (error: unknown): ApiError => {
   return new ApiError("REQUEST_ERROR", "Request failed.", 0);
 };
 
+/** True for cold-start / gateway blips that often succeed after a short wait. */
+export const isRetryableTransportError = (error: unknown): boolean => {
+  if (!(error instanceof ApiError)) {
+    return isNetworkFailure(error) || error instanceof SyntaxError;
+  }
+  if (error.code === "NETWORK_ERROR" || error.code === "INVALID_RESPONSE") {
+    return true;
+  }
+  return error.status === 502 || error.status === 503 || error.status === 504;
+};
+
 const executeFetch = async <T>(
   path: string,
   options: ApiFetchOptions,
   token?: string
 ): Promise<T> => {
-  const { authRetry: _authRetry, ...requestInit } = options;
+  const { authRetry: _authRetry, networkRetry: _networkRetry, ...requestInit } = options;
   const headers = new Headers(requestInit.headers);
   headers.set("Content-Type", "application/json");
   if (token) {
@@ -113,6 +136,13 @@ const executeFetch = async <T>(
   try {
     payload = (await response.json()) as ApiResponse<T>;
   } catch (error) {
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      throw new ApiError(
+        "NETWORK_ERROR",
+        "Could not reach the trading API. If the service was asleep, wait a few seconds and try again.",
+        response.status
+      );
+    }
     throw toTransportError(error);
   }
 
@@ -126,13 +156,80 @@ const executeFetch = async <T>(
   return payload.data;
 };
 
+const executeFetchWithNetworkRetry = async <T>(
+  path: string,
+  options: ApiFetchOptions,
+  token?: string
+): Promise<T> => {
+  const allowNetworkRetry = options.networkRetry !== false;
+  let lastError: ApiError | undefined;
+
+  for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await executeFetch<T>(path, options, token);
+    } catch (error) {
+      const normalized = toTransportError(error);
+      lastError = normalized;
+      if (!allowNetworkRetry || !isRetryableTransportError(normalized)) {
+        throw normalized;
+      }
+      const delay = NETWORK_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        break;
+      }
+      // Nudge the free instance awake between retries.
+      if (attempt === 0 || attempt === 2) {
+        await wakeTradingApi({ force: true });
+      }
+      await sleep(delay);
+    }
+  }
+
+  throw lastError ?? new ApiError("NETWORK_ERROR", "Could not reach the trading API.", 0);
+};
+
+/**
+ * Pings the public health endpoint to wake a sleeping Render free instance.
+ * Concurrent callers share one in-flight wake; successful wakes are cached briefly.
+ */
+export async function wakeTradingApi(options: { readonly force?: boolean } = {}): Promise<boolean> {
+  const now = Date.now();
+  if (!options.force && now - lastWakeOkAt < 30_000) {
+    return true;
+  }
+  if (wakeInFlight) {
+    return wakeInFlight;
+  }
+
+  wakeInFlight = (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: "GET",
+        cache: "no-store",
+        headers: { Accept: "application/json" }
+      });
+      if (!response.ok) {
+        return false;
+      }
+      lastWakeOkAt = Date.now();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      wakeInFlight = null;
+    }
+  })();
+
+  return wakeInFlight;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {},
   token?: string
 ): Promise<T> {
   try {
-    return await executeFetch<T>(path, options, token);
+    return await executeFetchWithNetworkRetry<T>(path, options, token);
   } catch (error) {
     const normalized = toTransportError(error);
     const allowRetry = options.authRetry !== false;
@@ -148,7 +245,11 @@ export async function apiFetch<T>(
     }
 
     try {
-      return await executeFetch<T>(path, { ...options, authRetry: false }, nextToken);
+      return await executeFetchWithNetworkRetry<T>(
+        path,
+        { ...options, authRetry: false },
+        nextToken
+      );
     } catch (retryError) {
       const normalizedRetry = toTransportError(retryError);
       if (handlers.isRecoverableAuthError(normalizedRetry)) {

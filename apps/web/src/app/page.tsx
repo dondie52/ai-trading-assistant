@@ -313,6 +313,16 @@ export default function Page(): ReactElement {
     }
   }, [authenticated]);
 
+  useEffect(() => {
+    if (!realtimeConnected) {
+      return;
+    }
+    // Drop a stale cold-start banner once the API socket is live again.
+    if (/could not reach the trading api/i.test(notice)) {
+      setNotice("");
+    }
+  }, [notice, realtimeConnected]);
+
   const portfolios = useQuery({
     queryKey: ["portfolios", accessToken],
     enabled: authenticated,
