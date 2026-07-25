@@ -1,14 +1,14 @@
 import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 
-const withConnectTimeout = (databaseUrl: string | undefined): string | undefined => {
+/** Append connect_timeout so cold/paused Postgres fails fast instead of hanging probes. */
+export const withConnectTimeout = (databaseUrl: string | undefined): string | undefined => {
   if (!databaseUrl) {
     return databaseUrl;
   }
   try {
     const url = new URL(databaseUrl);
     if (!url.searchParams.has("connect_timeout")) {
-      // Fail fast on cold/paused Postgres instead of hanging Render health beyond 5s.
       url.searchParams.set("connect_timeout", "5");
     }
     return url.toString();
@@ -35,4 +35,3 @@ export class PrismaService implements OnModuleDestroy {
     await this.prisma?.$disconnect();
   }
 }
-
