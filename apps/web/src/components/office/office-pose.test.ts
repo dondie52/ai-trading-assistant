@@ -51,11 +51,11 @@ describe("office pose and flow", () => {
     expect(resolvePose(agent("coordinator", "idle", "Standing by"), true)).toBe("walk");
   });
 
-  it("animates weekend crypto desk hustle instead of a static sit", () => {
+  it("animates weekend paper BTC hustle instead of a static sit", () => {
     expect(
-      resolvePose(agent("coordinator", "working", "Weekend crypto desk — scanning for earn gigs"))
+      resolvePose(agent("coordinator", "working", "Paper-trading BTCUSD — weekend crypto desk"))
     ).toBe("think");
-    expect(statusBubbleText("working", "Weekend crypto desk — earning")).toBe("GIG");
+    expect(statusBubbleText("working", "Weekend paper BTC — trading")).toBe("GIG");
   });
 
   it("uses short operational bubble labels", () => {

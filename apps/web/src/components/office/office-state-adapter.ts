@@ -215,10 +215,12 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
     coordinator = buildAgent(
       "coordinator",
       "working",
-      lifestyle?.currentTask ?? "Weekend crypto desk — scanning for earn gigs",
+      lifestyle?.currentTask ?? "Paper-trading BTCUSD — weekend crypto desk",
       lifestyle?.updatedAt ?? nowIso,
-      [lifestyle?.activityLabel ?? "SIDE_HUSTLE", lifestyle?.lastEventSummary ?? "Equities closed — crypto desk active."]
-        .filter(Boolean)
+      [
+        lifestyle?.activityLabel ?? "SIDE_HUSTLE",
+        lifestyle?.lastEventSummary ?? "Equities closed — paper BTC scalps active."
+      ].filter(Boolean)
     );
   } else if (activity === "MARKET_CLOSED" || runtime === "WAITING_FOR_MARKET") {
     coordinator = buildAgent(
@@ -254,13 +256,13 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
       "signal",
       "working",
       activity === "SIDE_HUSTLE"
-        ? "Scanning weekend crypto tape for desk notes"
+        ? "Scanning BTCUSD weekend tape for paper scalps"
         : latestSignal
           ? `Scanning ${latestSignal.symbol} · ${latestSignal.signalType} ${latestSignal.confidenceScore}%`
           : "Scanning market / ranking setups",
       latestSignal?.generatedAt ?? lifestyle?.updatedAt ?? nowIso,
       activity === "SIDE_HUSTLE"
-        ? ["Weekend crypto desk", "No equity orders while cash session is closed"]
+        ? ["Paper crypto venue", "No live crypto broker yet — survival wallet path"]
         : latestSignal
           ? [`Model ${latestSignal.modelVersion}`, `Strategy ${latestSignal.strategyId.slice(0, 8)}…`]
           : [],
@@ -296,12 +298,12 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
       "brain",
       "working",
       activity === "SIDE_HUSTLE"
-        ? "Evaluating weekend crypto desk research brief"
+        ? "Evaluating paper BTCUSD scalp"
         : latestMemory?.summary ?? "Evaluating strategy decision",
       latestMemory?.createdAt ?? lifestyle?.updatedAt ?? nowIso,
       [
         `Tier ${agent.tier}`,
-        activity === "SIDE_HUSTLE" ? "Side hustle cognition" : latestMemory ? "Latest run memory attached" : ""
+        activity === "SIDE_HUSTLE" ? "Weekend paper crypto desk" : latestMemory ? "Latest run memory attached" : ""
       ].filter(Boolean),
       latestMemory?.runId ? { type: "run", id: latestMemory.runId } : undefined
     );

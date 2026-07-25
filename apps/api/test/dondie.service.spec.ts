@@ -92,7 +92,7 @@ const createDondie = (): {
   process.env.DONDIE_WEEKEND_EARN_ENABLED = "false";
   const wallet = new DondieWalletService(store, dondieRepository);
   const memory = new DondieMemoryService(store, dondieRepository);
-  const weekendEarn = new DondieWeekendEarnService(wallet);
+  const weekendEarn = new DondieWeekendEarnService(wallet, store);
   const dondie = new DondieService(
     store,
     platform,

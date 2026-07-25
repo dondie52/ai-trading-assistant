@@ -56,7 +56,7 @@ const activityLabels: Record<DondieActivityState, string> = {
   BLOCKED_BY_RISK: "Blocked by risk rules",
   BROKER_DISCONNECTED: "Broker disconnected",
   MARKET_CLOSED: "Market closed — waiting",
-  SIDE_HUSTLE: "Weekend crypto desk — earning",
+  SIDE_HUSTLE: "Weekend paper BTC — trading",
   ERROR_RETRYING: "Error — retrying"
 };
 
@@ -245,7 +245,7 @@ export const resolveDondieActivity = (input: {
     return {
       activity: "SIDE_HUSTLE",
       mood: "optimistic",
-      currentTask: "Weekend crypto desk — earning for the survival wallet"
+      currentTask: "Paper-trading BTCUSD while equities sleep"
     };
   }
   if (!input.marketOpen) {

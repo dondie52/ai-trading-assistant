@@ -97,7 +97,7 @@ const createStack = (): {
   const brain = new DondieBrainService(platform, freeBrain, llmBrain);
   const wallet = new DondieWalletService(store, dondieRepository);
   const memory = new DondieMemoryService(store, dondieRepository);
-  const weekendEarn = new DondieWeekendEarnService(wallet);
+  const weekendEarn = new DondieWeekendEarnService(wallet, store);
   const dondie = new DondieService(
     store,
     platform,

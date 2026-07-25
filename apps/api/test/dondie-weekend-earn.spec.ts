@@ -66,7 +66,7 @@ const createStack = (): {
   const brain = new DondieBrainService(platform, freeBrain, llmBrain);
   const wallet = new DondieWalletService(store, dondieRepository);
   const memory = new DondieMemoryService(store, dondieRepository);
-  const weekendEarn = new DondieWeekendEarnService(wallet);
+  const weekendEarn = new DondieWeekendEarnService(wallet, store);
   const dondie = new DondieService(
     store,
     platform,
@@ -80,7 +80,7 @@ const createStack = (): {
   return { dondie, platform, store, wallet, weekendEarn };
 };
 
-describe("Dondie weekend crypto desk", () => {
+describe("Dondie weekend paper BTC desk", () => {
   afterEach(() => {
     process.env.DONDIE_WEEKEND_EARN_ENABLED = "false";
     vi.restoreAllMocks();
@@ -94,12 +94,19 @@ describe("Dondie weekend crypto desk", () => {
     expect(weekendEarn.isWeekendEarnWindow(saturday)).toBe(false);
   });
 
-  it("credits the survival wallet from a weekend gig and respects the daily cap", async () => {
+  it("paper-trades BTCUSD, records fills, and caps wallet credits", async () => {
     const { weekendEarn, store, wallet } = createStack();
+    const user = store.createUser({
+      email: `btc-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Bit",
+      lastName: "Coin",
+      role: "TRADER"
+    });
     const now = saturday.toISOString();
     const agent: DondieAgent = {
       id: randomUUID(),
-      userId: randomUUID(),
+      userId: user.id,
       name: "Dondie",
       tier: "FREE",
       status: "ACTIVE",
@@ -111,23 +118,28 @@ describe("Dondie weekend crypto desk", () => {
     };
     store.dondieAgents.set(agent.id, agent);
 
-    const first = await weekendEarn.runWeekendGig(agent.userId, agent, saturday);
+    const first = await weekendEarn.runWeekendGig(user.id, agent, saturday);
     expect(first.brain).toBe(dondieConfig.weekendEarnBrain);
     expect(first.symbol).toBe("BTCUSD");
-    expect(first.walletBalance).toBeGreaterThan(0);
-    expect(wallet.listLedger(agent.id)[0]?.reason).toBe("WEEKEND_CRYPTO_DESK");
+    expect(first.automation.status).toBe("EXECUTED");
+    expect(first.automation.execution?.trade?.symbol).toBe("BTCUSD");
+    expect(first.automation.signal.signalType === "BUY" || first.automation.signal.signalType === "SELL").toBe(
+      true
+    );
+    expect([...store.trades.values()].some((trade) => trade.symbol === "BTCUSD")).toBe(true);
 
-    // Exhaust the daily cap with repeated gigs.
-    for (let index = 0; index < 20; index += 1) {
+    // Keep scalping until the daily wallet cap binds (or we exhaust attempts).
+    for (let index = 0; index < 40; index += 1) {
       const current = store.dondieAgents.get(agent.id)!;
       await weekendEarn.runWeekendGig(current.userId, current, saturday);
     }
     const earned = weekendEarn.creditedToday(agent.id, saturday.toISOString().slice(0, 10));
     expect(earned).toBeGreaterThan(0);
     expect(earned).toBeLessThanOrEqual(dondieConfig.weekendEarnMaxPerDayUsd + 0.0001);
+    expect(wallet.listLedger(agent.id).some((entry) => entry.reason === "WEEKEND_CRYPTO_DESK")).toBe(true);
   });
 
-  it("routes runs through the crypto desk without polluting the equity universe", async () => {
+  it("routes runs through paper BTC without polluting the equity universe", async () => {
     const { dondie, platform, store, weekendEarn } = createStack();
     const user = store.createUser({
       email: `weekend-${randomUUID()}@example.com`,
@@ -152,10 +164,11 @@ describe("Dondie weekend crypto desk", () => {
 
     expect(result.brain).toBe("weekend-crypto-desk");
     expect(result.symbol).toBe("BTCUSD");
-    expect(result.walletBalance).toBeGreaterThan(0);
+    expect(result.automation.status).toBe("EXECUTED");
     const refreshed = dondie.requireAgent(user.id);
     expect(refreshed.symbolUniverse).toEqual(["AAPL", "MSFT"]);
     expect(refreshed.symbolUniverse).not.toContain("BTCUSD");
     expect(dondie.listMemories(user.id)[0]?.evaluation.weekendGig).toBe(true);
+    expect(platform.listTrades(user.id).some((trade) => trade.symbol === "BTCUSD")).toBe(true);
   });
 });
