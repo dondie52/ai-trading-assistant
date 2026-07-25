@@ -702,7 +702,19 @@ export type RealtimeEvent =
     >
   | RealtimeEventBase<
       "trade.executed",
-      { readonly trade: Trade } | { readonly order: Order; readonly portfolio: Portfolio }
+      | { readonly trade: Trade }
+      | { readonly order: Order; readonly portfolio: Portfolio }
+      | {
+          readonly trade: Trade;
+          readonly position?: Position;
+          readonly portfolio?: Portfolio;
+        }
+      | {
+          readonly order: Order;
+          readonly portfolio: Portfolio;
+          readonly trade?: Trade;
+          readonly position?: Position;
+        }
     >
   | RealtimeEventBase<"notification.created", { readonly notification: Notification }>;
 

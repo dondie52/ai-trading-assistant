@@ -23,9 +23,15 @@ export class RateLimitGuard implements CanActivate {
       return true;
     }
 
+    const request = context.switchToHttp().getRequest<OptionalAuthenticatedRequest>();
+    const path = request.route?.path ?? request.url ?? "unknown";
+    // Keepalive + Render probes must never compete with the rate limiter.
+    if (typeof path === "string" && (path.includes("/health") || path.endsWith("health"))) {
+      return true;
+    }
+
     const windowMs = readPositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000);
     const maxRequests = readPositiveInteger(process.env.RATE_LIMIT_MAX, 600);
-    const request = context.switchToHttp().getRequest<OptionalAuthenticatedRequest>();
     const now = Date.now();
     const identity =
       request.user?.sub ??
@@ -33,7 +39,6 @@ export class RateLimitGuard implements CanActivate {
       request.socket.remoteAddress ??
       request.headers["x-forwarded-for"] ??
       "anonymous";
-    const path = request.route?.path ?? request.url ?? "unknown";
     const key = `${identity}:${request.method}:${path}`;
     const existing = this.buckets.get(key);
     const bucket = !existing || existing.resetAt <= now ? { count: 0, resetAt: now + windowMs } : existing;
