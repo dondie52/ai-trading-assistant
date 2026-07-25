@@ -374,9 +374,13 @@ export default function Page(): ReactElement {
     enabled: authenticated,
     queryFn: () => apiFetch<AutomationSettings>("/automation/settings", {}, token)
   });
+  const manualMarketEnabled =
+    authenticated &&
+    !automationSettings.isLoading &&
+    automationSettings.data?.mode !== "AUTOPILOT";
   const marketPrices = useQuery({
     queryKey: ["market-prices", symbol, timeframe, accessToken],
-    enabled: authenticated && automationSettings.data?.mode !== "AUTOPILOT",
+    enabled: manualMarketEnabled,
     queryFn: () =>
       apiFetchPage<MarketCandle>(
         `/market/prices/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
@@ -387,7 +391,8 @@ export default function Page(): ReactElement {
   const marketQuote = useQuery({
     queryKey: ["market-quote", symbol, timeframe, accessToken],
     // AUTOPILOT picks its own symbols — do not poll a manual ticker (avoids AAPL noise).
-    enabled: authenticated && automationSettings.data?.mode !== "AUTOPILOT",
+    // Wait until automation settings resolve so we do not race-poll AAPL on load.
+    enabled: manualMarketEnabled,
     refetchInterval: realtimeConnected ? false : 5_000,
     queryFn: () =>
       apiFetch<MarketQuote>(
@@ -398,7 +403,7 @@ export default function Page(): ReactElement {
   });
   const marketIndicators = useQuery({
     queryKey: ["market-indicators", symbol, timeframe, accessToken],
-    enabled: authenticated && automationSettings.data?.mode !== "AUTOPILOT",
+    enabled: manualMarketEnabled,
     queryFn: () =>
       apiFetch<IndicatorSnapshot>(
         `/market/indicators/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
@@ -569,6 +574,10 @@ export default function Page(): ReactElement {
     });
 
     const subscribe = (): void => {
+      // AUTOPILOT owns its universe — skip the default manual AAPL quote stream.
+      if (automationSettings.data?.mode === "AUTOPILOT") {
+        return;
+      }
       socket.emit("market:subscribe", { symbols: [symbol], timeframe });
     };
     const handleRealtimeEvent = (event: RealtimeEvent): void => {
@@ -633,7 +642,15 @@ export default function Page(): ReactElement {
       socket.removeAllListeners();
       socket.disconnect();
     };
-  }, [accessToken, authenticated, queryClient, symbol, timeframe, token]);
+  }, [
+    accessToken,
+    authenticated,
+    automationSettings.data?.mode,
+    queryClient,
+    symbol,
+    timeframe,
+    token
+  ]);
 
   const invalidateTradingData = async (): Promise<void> => {
     await Promise.all(

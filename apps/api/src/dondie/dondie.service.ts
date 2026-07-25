@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -47,6 +48,28 @@ const readString = (body: Record<string, unknown>, key: string, required = false
     throw new BadRequestException({ code: "VALIDATION_ERROR", message: `${key} must be a string.` });
   }
   return value.trim();
+};
+
+const errorMessage = (error: unknown): string => {
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+    if (typeof response === "string" && response.trim()) {
+      return response;
+    }
+    if (typeof response === "object" && response !== null) {
+      const message = (response as Record<string, unknown>).message;
+      if (typeof message === "string" && message.trim()) {
+        return message;
+      }
+      if (Array.isArray(message)) {
+        return message.map(String).join(", ");
+      }
+    }
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return "unknown error";
 };
 
 @Injectable()
@@ -308,8 +331,7 @@ export class DondieService implements OnModuleInit {
           tradesRemaining -= 1;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "unknown error";
-        failures.push(`${symbol}: ${message}`);
+        failures.push(`${symbol}: ${errorMessage(error)}`);
       }
     }
 

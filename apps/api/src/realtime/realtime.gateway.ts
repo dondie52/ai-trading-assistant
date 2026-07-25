@@ -182,8 +182,21 @@ export class RealtimeGateway
           });
         }
       } catch (error) {
+        // AUTOPILOT clients may still have a stale AAPL subscription; keep the
+        // socket alive and avoid spamming opaque Nest exception payloads.
+        const response =
+          error && typeof error === "object" && "getResponse" in error
+            ? (error as { getResponse: () => unknown }).getResponse()
+            : undefined;
+        const nested =
+          typeof response === "object" &&
+          response !== null &&
+          typeof (response as { message?: unknown }).message === "string"
+            ? (response as { message: string }).message
+            : undefined;
         const message =
-          error instanceof Error ? error.message : "Failed to publish market quotes.";
+          nested ??
+          (error instanceof Error ? error.message : "Failed to publish market quotes.");
         client.emit("realtime:error", {
           code: "MARKET_QUOTE_UNAVAILABLE",
           message
