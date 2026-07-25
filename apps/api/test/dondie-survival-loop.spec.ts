@@ -26,6 +26,7 @@ import { DondieBrainService } from "../src/dondie/dondie-brain.service.js";
 import { DondieMemoryService } from "../src/dondie/dondie-memory.service.js";
 import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
 import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
+import { DondieWeekendEarnService } from "../src/dondie/dondie-weekend-earn.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
 
 const ensureTestPaperBroker = (store: PlatformStore, userId: string): void => {
@@ -70,6 +71,7 @@ const createStack = (): {
 } => {
   process.env.AUTH_PROVIDER = "legacy";
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
+  process.env.DONDIE_WEEKEND_EARN_ENABLED = "false";
   const prisma = new PrismaService();
   const store = new PlatformStore();
   const repository = new PrismaPlatformRepository(prisma);
@@ -95,6 +97,7 @@ const createStack = (): {
   const brain = new DondieBrainService(platform, freeBrain, llmBrain);
   const wallet = new DondieWalletService(store, dondieRepository);
   const memory = new DondieMemoryService(store, dondieRepository);
+  const weekendEarn = new DondieWeekendEarnService(wallet);
   const dondie = new DondieService(
     store,
     platform,
@@ -102,9 +105,10 @@ const createStack = (): {
     brain,
     new DondieScheduler(),
     wallet,
-    memory
+    memory,
+    weekendEarn
   );
-  return { dondie, platform, store, wallet, memory, brain, llmBrain };
+  return { dondie, platform, store, wallet, memory, brain, llmBrain, weekendEarn };
 };
 
 const installCombinedFetchMock = (llmDecision: Record<string, unknown>): void => {

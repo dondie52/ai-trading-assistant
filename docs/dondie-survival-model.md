@@ -42,6 +42,7 @@ Wallet depletes on losses or brain costs → tier downgrades or agent stalls
 | Source | Default | Notes |
 |--------|---------|-------|
 | Trade PnL | 10% of realized profit credited to wallet | Configured via `DONDIE_PNL_CREDIT_PERCENT` |
+| Weekend crypto desk | ~$0.35–$0.90 per scheduled run (tier bonuses) | Sat/Sun only (US/Eastern); daily cap `$2.50`; ledger reason `WEEKEND_CRYPTO_DESK` |
 
 ### Brain costs (debits)
 
@@ -98,11 +99,26 @@ DONDIE_PRO_MIN_BALANCE=100
 DONDIE_STANDARD_BRAIN_COST_USD=0.05
 DONDIE_PRO_BRAIN_COST_USD=0.25
 DONDIE_PNL_CREDIT_PERCENT=10
+DONDIE_WEEKEND_EARN_ENABLED=true
+DONDIE_WEEKEND_EARN_BASE_USD=0.35
+DONDIE_WEEKEND_EARN_STANDARD_BONUS_USD=0.15
+DONDIE_WEEKEND_EARN_PRO_BONUS_USD=0.35
+DONDIE_WEEKEND_EARN_MAX_PER_DAY_USD=2.5
 DONDIE_LLM_API_URL=https://api.openai.com/v1
 DONDIE_LLM_API_KEY=
 DONDIE_LLM_STANDARD_MODEL=gpt-4o-mini
 DONDIE_LLM_PRO_MODEL=gpt-4o
 ```
+
+### Weekend survival (crypto desk)
+
+US cash equities are closed Saturday and Sunday. Instead of idling, ACTIVE AUTOPILOT agents run a **weekend crypto desk** side hustle on each schedule tick:
+
+* Credits the survival wallet (not broker cash) under `WEEKEND_CRYPTO_DESK`
+* Scales slightly with brain tier (FREE / STANDARD / PRO)
+* Hard daily cap via `DONDIE_WEEKEND_EARN_MAX_PER_DAY_USD`
+* Does not place equity or crypto broker orders (bridge until live crypto venues land)
+* Surfaces in the office as activity `SIDE_HUSTLE`
 
 ---
 
@@ -117,5 +133,6 @@ DONDIE_LLM_PRO_MODEL=gpt-4o
 | Wallet ledger persistence | Implemented |
 | Tier auto-upgrade/downgrade | Implemented |
 | Run memory + symbol universe | Implemented |
+| Weekend crypto desk earn | Implemented (wallet stipend; no live crypto broker yet) |
 
 See `docs/architecture.md` and `docs/api.md` for technical integration details.

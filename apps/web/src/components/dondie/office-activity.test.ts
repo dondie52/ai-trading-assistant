@@ -23,6 +23,12 @@ describe("office activity presentation", () => {
       working: true,
       monitorsActive: true
     });
+    expect(resolveOfficePresentation("SIDE_HUSTLE")).toMatchObject({
+      pose: "desk",
+      bubble: "chart",
+      working: true,
+      monitorsActive: true
+    });
     expect(resolveOfficePresentation("EXECUTING").bubble).toBe("execute");
     expect(resolveOfficePresentation("CELEBRATING").celebrating).toBe(true);
   });

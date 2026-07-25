@@ -20,6 +20,8 @@ export interface DondieLifestyleInput {
   readonly riskLocked: boolean;
   readonly automationPaused: boolean;
   readonly marketOpen: boolean;
+  /** Weekend crypto-desk side hustle while US equities are closed. */
+  readonly weekendSideHustle?: boolean;
   readonly recentSignalSymbol?: string;
   readonly awaitingConfirmation?: boolean;
   readonly isExecuting?: boolean;
@@ -54,6 +56,7 @@ const activityLabels: Record<DondieActivityState, string> = {
   BLOCKED_BY_RISK: "Blocked by risk rules",
   BROKER_DISCONNECTED: "Broker disconnected",
   MARKET_CLOSED: "Market closed — waiting",
+  SIDE_HUSTLE: "Weekend crypto desk — earning",
   ERROR_RETRYING: "Error — retrying"
 };
 
@@ -196,6 +199,7 @@ export const resolveDondieActivity = (input: {
   readonly brokerConnected: boolean;
   readonly marketOpen: boolean;
   readonly automationPaused: boolean;
+  readonly weekendSideHustle?: boolean;
   readonly awaitingConfirmation?: boolean;
   readonly isExecuting?: boolean;
   readonly hasOpenPositions?: boolean;
@@ -235,6 +239,13 @@ export const resolveDondieActivity = (input: {
       activity: "ERROR_RETRYING",
       mood: "cautious",
       currentTask: "Suspended — needs operator attention"
+    };
+  }
+  if (input.weekendSideHustle) {
+    return {
+      activity: "SIDE_HUSTLE",
+      mood: "optimistic",
+      currentTask: "Weekend crypto desk — earning for the survival wallet"
     };
   }
   if (!input.marketOpen) {
@@ -317,6 +328,7 @@ export const buildDondieLifestyleWorld = (input: DondieLifestyleInput): DondieLi
     brokerConnected: input.brokerConnected,
     marketOpen: input.marketOpen,
     automationPaused: input.automationPaused,
+    ...(input.weekendSideHustle !== undefined ? { weekendSideHustle: input.weekendSideHustle } : {}),
     ...(input.awaitingConfirmation !== undefined
       ? { awaitingConfirmation: input.awaitingConfirmation }
       : {}),

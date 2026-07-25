@@ -74,6 +74,19 @@ describe("dondie lifestyle progression", () => {
     ).toBe("BROKER_DISCONNECTED");
   });
 
+  it("shows weekend crypto desk hustle when equities are closed", () => {
+    const activity = resolveDondieActivity({
+      agent,
+      riskLocked: false,
+      brokerConnected: true,
+      marketOpen: false,
+      automationPaused: false,
+      weekendSideHustle: true
+    });
+    expect(activity.activity).toBe("SIDE_HUSTLE");
+    expect(activity.currentTask.toLowerCase()).toContain("crypto");
+  });
+
   it("builds a world snapshot with achievements and room tiers", () => {
     const world = buildDondieLifestyleWorld({
       agent: { ...agent, walletBalance: 120, tier: "STANDARD" },

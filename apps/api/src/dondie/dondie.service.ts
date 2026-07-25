@@ -16,7 +16,7 @@ import type {
   MarketTimeframe,
   UUID
 } from "@trading/types";
-import { buildDondieLifestyleWorld } from "@trading/shared";
+import { buildDondieLifestyleWorld, isUsEquityMarketOpen, isUsEquityWeekend } from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
 import { DEFAULT_AUTONOMOUS_UNIVERSE } from "./agent-strategy-catalog.js";
@@ -26,6 +26,7 @@ import { DondieMemoryService } from "./dondie-memory.service.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
 import { DondieWalletService } from "./dondie-wallet.service.js";
+import { DondieWeekendEarnService } from "./dondie-weekend-earn.service.js";
 
 const isoNow = (): string => new Date().toISOString();
 
@@ -81,7 +82,8 @@ export class DondieService implements OnModuleInit {
     @Inject(DondieBrainService) private readonly brain: DondieBrainService,
     @Inject(DondieScheduler) private readonly scheduler: DondieScheduler,
     @Inject(DondieWalletService) private readonly wallet: DondieWalletService,
-    @Inject(DondieMemoryService) private readonly memory: DondieMemoryService
+    @Inject(DondieMemoryService) private readonly memory: DondieMemoryService,
+    @Inject(DondieWeekendEarnService) private readonly weekendEarn: DondieWeekendEarnService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -168,6 +170,15 @@ export class DondieService implements OnModuleInit {
       ? this.memory.listMemories(agent.id).length
       : 0;
     const paperMode = !brokers.some((account) => account.environment === "LIVE" && account.hasCredentials);
+    const recentWeekendGig = agent
+      ? this.memory
+          .listMemories(agent.id)
+          .some(
+            (memory) =>
+              memory.evaluation.weekendGig === true &&
+              Date.now() - Date.parse(memory.createdAt) < 2 * 60 * 60 * 1000
+          )
+      : false;
 
     return buildDondieLifestyleWorld({
       agent,
@@ -177,8 +188,11 @@ export class DondieService implements OnModuleInit {
       brokerConnected,
       riskLocked: risk.stopTrading || automation.emergencyStop || automation.runtimeState === "RISK_LOCK",
       automationPaused: agent?.status === "PAUSED" || automation.mode === "MANUAL" || automation.runtimeState === "PAUSED",
-      marketOpen: automation.runtimeState !== "WAITING_FOR_MARKET",
-      ...(latestSignal?.symbol ? { recentSignalSymbol: latestSignal.symbol } : {}),
+      marketOpen: isUsEquityMarketOpen() && automation.runtimeState !== "WAITING_FOR_MARKET",
+      weekendSideHustle: recentWeekendGig || (isUsEquityWeekend() && agent?.status === "ACTIVE"),
+      ...(latestSignal?.symbol && latestSignal.symbol !== dondieConfig.weekendEarnSymbol
+        ? { recentSignalSymbol: latestSignal.symbol }
+        : {}),
       hasOpenPositions: positions.some((position) => position.quantity !== 0),
       paperMode,
       isExecuting: automation.runtimeState === "RUNNING" && automation.mode === "AUTOPILOT"
@@ -311,6 +325,10 @@ export class DondieService implements OnModuleInit {
       return;
     }
     try {
+      if (this.weekendEarn.isWeekendEarnWindow()) {
+        await this.runWeekendSideHustle(userId, agent);
+        return;
+      }
       await this.runUniverseScan(userId, agent, "1h");
     } catch (error) {
       // Advance lastRunAt + audit so silent schedule failures are visible and not tight-looped.
@@ -378,12 +396,38 @@ export class DondieService implements OnModuleInit {
       .map((agent) => agent.userId);
   }
 
+  private async runWeekendSideHustle(userId: UUID, agent: DondieAgent): Promise<DondieRunResult> {
+    const result = await this.weekendEarn.runWeekendGig(userId, agent);
+    const credited = this.requireAgent(userId);
+    await this.memory.recordRun(credited, result);
+    this.store.appendAudit({
+      userId,
+      actorUserId: userId,
+      action: "DONDIE_RUN",
+      entityType: "DONDIE_AGENT",
+      entityId: agent.id,
+      metadata: {
+        tier: result.tier,
+        symbol: result.symbol,
+        brain: result.brain,
+        automationStatus: result.automation.status,
+        weekendGig: true,
+        walletBalance: result.walletBalance
+      }
+    });
+    return result;
+  }
+
   /** Scan the agent-owned universe; human never needs to pick a ticker. */
   private async runUniverseScan(
     userId: UUID,
     agent: DondieAgent,
     timeframe: MarketTimeframe
   ): Promise<DondieRunResult> {
+    if (this.weekendEarn.isWeekendEarnWindow()) {
+      return this.runWeekendSideHustle(userId, agent);
+    }
+
     const symbols = this.resolveSymbolUniverse(userId, agent);
     const settings = this.platform.getAutomationSettings(userId);
     let tradesRemaining = Math.max(0, settings.maxTradesPerDay - this.countAutoTradesToday(userId));

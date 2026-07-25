@@ -283,6 +283,7 @@ export type DondieActivityState =
   | "BLOCKED_BY_RISK"
   | "BROKER_DISCONNECTED"
   | "MARKET_CLOSED"
+  | "SIDE_HUSTLE"
   | "ERROR_RETRYING";
 
 export type DondieMood =
