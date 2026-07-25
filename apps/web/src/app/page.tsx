@@ -9,6 +9,7 @@ import {
   BriefcaseBusiness,
   CandlestickChart,
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
   DollarSign,
   Download,
@@ -475,6 +476,35 @@ export default function Page(): ReactElement {
       ),
     [brokerAccounts.data]
   );
+  const alpacaConnected = useMemo(
+    () =>
+      (brokerAccounts.data ?? []).some(
+        (account) =>
+          account.status === "CONNECTED" &&
+          account.brokerName === "ALPACA" &&
+          account.hasCredentials
+      ),
+    [brokerAccounts.data]
+  );
+  const openControlRoomTab = (tab: ControlRoomTab): void => {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+  const openBrokerConnection = (): void => {
+    openControlRoomTab("settings");
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.getElementById("broker-connection")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start"
+        });
+      }, 50);
+    }
+  };
+  const brokerSetupNotice =
+    notice.toLowerCase().includes("alpaca") || notice.toLowerCase().includes("broker");
   const currentOrderDraft = useMemo(() => {
     if (!latestSignal) {
       return null;
@@ -1808,14 +1838,24 @@ export default function Page(): ReactElement {
         {notice ? (
           <div
             data-testid="workflow-notice"
-            className="mb-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 font-mono text-xs text-emerald-100"
+            className="mb-2 flex flex-col gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 font-mono text-xs text-emerald-100 sm:flex-row sm:items-center sm:justify-between"
           >
-            {notice}
+            <p>{notice}</p>
+            {brokerSetupNotice && !alpacaConnected ? (
+              <button
+                type="button"
+                data-testid="notice-connect-alpaca"
+                onClick={openBrokerConnection}
+                className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-medium text-slate-950"
+              >
+                Enter Alpaca keys
+              </button>
+            ) : null}
           </div>
         ) : null}
         <section data-testid="home-view" className="flex h-full min-h-0 flex-col gap-1">
           <div className="hidden shrink-0 md:block [&_nav]:mb-0">
-            <DesktopNav activeTab={activeTab} onChange={setActiveTab} tabs={desktopTabs} />
+            <DesktopNav activeTab={activeTab} onChange={openControlRoomTab} tabs={desktopTabs} />
           </div>
           <div className="min-h-0 flex-1">
             <OfficeConsole
@@ -1840,19 +1880,29 @@ export default function Page(): ReactElement {
               onPause={() => pauseDondieMutation.mutate()}
               onResume={() => resumeDondieMutation.mutate()}
               onRun={() => runDondieMutation.mutate()}
-              onOpenTab={(tab) => setActiveTab(tab)}
+              onOpenTab={openControlRoomTab}
               canActivate={Boolean(selectedStrategy)}
               busy={officeBusy}
             />
           </div>
         </section>
-        <BottomNav activeTab={activeTab} onChange={setActiveTab} showAdmin={showAdmin} />
+        <BottomNav activeTab={activeTab} onChange={openControlRoomTab} showAdmin={showAdmin} />
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden px-4 py-5 pb-24 md:px-6 md:pb-5">
+    <main
+      className={`min-h-screen overflow-x-hidden px-4 py-5 md:px-6 md:pb-5 ${
+        activeTab === "market" ||
+        activeTab === "strategies" ||
+        activeTab === "risk" ||
+        activeTab === "lab" ||
+        activeTab === "admin"
+          ? "pb-32"
+          : "pb-24"
+      }`}
+    >
       <header className="mb-5 flex flex-col gap-3 border-b border-line pb-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">Dondie Ops</p>
@@ -1871,12 +1921,25 @@ export default function Page(): ReactElement {
       </header>
 
       {notice ? (
-        <div data-testid="workflow-notice" className="mb-4 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-          {notice}
+        <div
+          data-testid="workflow-notice"
+          className="mb-4 flex flex-col gap-3 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p>{notice}</p>
+          {brokerSetupNotice && !alpacaConnected ? (
+            <button
+              type="button"
+              data-testid="notice-connect-alpaca"
+              onClick={openBrokerConnection}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950"
+            >
+              Enter Alpaca keys
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      <DesktopNav activeTab={activeTab} onChange={setActiveTab} tabs={desktopTabs} />
+      <DesktopNav activeTab={activeTab} onChange={openControlRoomTab} tabs={desktopTabs} />
 
       {activeTab === "signals" ? (
         <section data-testid="signals-view" className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
@@ -2018,7 +2081,11 @@ export default function Page(): ReactElement {
 
       {activeTab === "settings" ? (
         <section data-testid="settings-view" className="space-y-5">
+          {renderBrokerCard()}
           <Panel title="More Control Room Views" icon={<Settings2 className="h-5 w-5 text-slate-300" aria-hidden="true" />} compact>
+            <p className="mb-3 text-sm text-slate-400 md:hidden">
+              Tap a view to open it. On phones these live here under Settings; desktop shows them in the top bar.
+            </p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               {[
                 { id: "market" as const, label: "Market", testId: "tab-market" },
@@ -2031,17 +2098,17 @@ export default function Page(): ReactElement {
                   key={item.id}
                   data-testid={item.testId}
                   type="button"
-                  onClick={() => setActiveTab(item.id)}
-                  className="flex min-h-11 items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-sm text-slate-200"
+                  onClick={() => openControlRoomTab(item.id)}
+                  className="relative z-10 flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm text-slate-200 active:bg-white/10"
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
                 </button>
               ))}
             </div>
           </Panel>
           <section className="grid gap-5 xl:grid-cols-2">
             <div className="space-y-5">
-              {renderBrokerCard()}
               {renderRiskRulesForm()}
             </div>
             <div className="space-y-5">
@@ -2617,7 +2684,7 @@ export default function Page(): ReactElement {
         </section>
       ) : null}
 
-      <BottomNav activeTab={activeTab} onChange={setActiveTab} showAdmin={showAdmin} />
+      <BottomNav activeTab={activeTab} onChange={openControlRoomTab} showAdmin={showAdmin} />
     </main>
   );
 }
