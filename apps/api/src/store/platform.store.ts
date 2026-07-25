@@ -249,7 +249,9 @@ export class PlatformStore {
 
   ensureDefaultAccountState(userId: UUID): void {
     const now = isoNow();
-    const seedPaperCash = process.env.ENABLE_E2E_SEED === "true" ? 100_000 : 0;
+    // E2E-only demo funding/simulator. Production users start empty until they connect a broker.
+    const e2eSeedEnabled = process.env.ENABLE_E2E_SEED === "true";
+    const seedPaperCash = e2eSeedEnabled ? 100_000 : 0;
 
     if (![...this.portfolios.values()].some((portfolio) => portfolio.userId === userId)) {
       const portfolio: Portfolio = {
@@ -280,6 +282,7 @@ export class PlatformStore {
     }
 
     if (
+      e2eSeedEnabled &&
       ![...this.brokerAccounts.values()].some(
         (account) => account.userId === userId && account.brokerName === "PAPER"
       )

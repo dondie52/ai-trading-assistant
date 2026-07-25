@@ -55,11 +55,14 @@ Dondie survival economics (optional — defaults in `dondie.config.ts`):
 - `DONDIE_LLM_API_URL` / `DONDIE_LLM_API_KEY`
 - `DONDIE_LLM_STANDARD_MODEL` / `DONDIE_LLM_PRO_MODEL`
 
-Broker (required for market data unless operator connects Alpaca in console):
+Broker (required for market data and order routing — connect in Settings or set env):
 
 - `ALPACA_API_KEY` / `ALPACA_SECRET_KEY`
 - `ALPACA_ENVIRONMENT` (`PAPER` or `LIVE`, default `PAPER`)
 - `ALLOW_ALPACA_LIVE_TRADING=true` (required before live orders)
+
+Production does **not** auto-seed PAPER broker accounts, demo balances, or sample watchlists.
+`ENABLE_E2E_SEED` is Playwright-only and must stay unset/false in production.
 
 Do not commit real secrets.
 
@@ -82,6 +85,9 @@ $env:SEED_ADMIN_EMAIL="admin@example.com"
 $env:SEED_ADMIN_PASSWORD="<set-locally>"
 npm run seed
 ```
+
+`npm run seed` creates the admin user plus empty portfolio / risk / watchlist rows only — never a connected PAPER broker.
+
 
 ## Run Locally
 

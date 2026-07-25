@@ -31,8 +31,8 @@ function AlpacaConnectForm({
           {compactIntro ? "Connect Alpaca for live market data" : "Alpaca not connected"}
         </p>
         <p className="mt-1 text-amber-100/80">
-          Paste your Alpaca paper API Key ID and Secret Key below. Paper trading can still run on the
-          built-in simulator, but quotes, signals, and broker sync need Alpaca credentials.
+          Paste your Alpaca paper API Key ID and Secret Key below. Market data, signals, and order
+          routing stay disabled until a broker is connected.
         </p>
         <p className="mt-2 flex items-start gap-2 text-xs text-amber-100/70">
           <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -153,7 +153,7 @@ export function BrokerConnectionCard({
                   ? active.environment === "LIVE"
                     ? "Live trading requires explicit operator enablement."
                     : "Alpaca paper account linked — market data and order sync enabled."
-                  : "Built-in paper simulator is active. Connect Alpaca below for live market data."}
+                  : "No Alpaca credentials yet. Connect below to enable market data and order sync."}
               </p>
             </div>
             {onReconnect ? (

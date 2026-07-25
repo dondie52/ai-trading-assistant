@@ -28,7 +28,26 @@ import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
 import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
 
+const ensureTestPaperBroker = (store: PlatformStore, userId: string): void => {
+  const existing = [...store.brokerAccounts.values()].find(
+    (account) => account.userId === userId && account.brokerName === "PAPER"
+  );
+  if (existing) {
+    return;
+  }
+  const id = randomUUID();
+  store.brokerAccounts.set(id, {
+    id,
+    userId,
+    brokerName: "PAPER",
+    accountId: `paper-${userId.slice(0, 8)}`,
+    status: "CONNECTED",
+    createdAt: new Date().toISOString()
+  });
+};
+
 const fundPaperPortfolio = (store: PlatformStore, userId: string, amount: number): void => {
+  ensureTestPaperBroker(store, userId);
   const portfolio = [...store.portfolios.values()].find((candidate) => candidate.userId === userId);
   if (!portfolio) {
     return;
