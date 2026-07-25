@@ -26,7 +26,14 @@ export default defineConfig({
     env: {
       NODE_ENV: "test",
       API_PORT: "3001",
+      // Force local legacy auth. next.config.js otherwise falls back to production
+      // Supabase URL/anon key, which makes login skip the seeded E2E admin.
+      AUTH_PROVIDER: "legacy",
+      MFA_REQUIRED: "false",
+      DATABASE_URL: "",
       NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001/api/v1",
+      NEXT_PUBLIC_SUPABASE_URL: "",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
       ENABLE_E2E_SEED: "true",
       E2E_ADMIN_EMAIL: process.env.E2E_ADMIN_EMAIL,
       E2E_ADMIN_PASSWORD: generatedAdminPassword

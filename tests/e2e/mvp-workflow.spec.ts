@@ -174,8 +174,10 @@ test.describe.serial("Dondie survival agent platform", () => {
     await test.step("Strategy editing and activation controls", async () => {
       await openSecondaryTab(page, "tab-strategies");
       await expect(page.getByTestId("strategies-view")).toBeVisible();
-      await page.getByLabel("Strategy name").fill("E2E Momentum Guard v2");
-      await page.getByLabel("Confidence threshold").fill("65");
+      const editForm = page.getByTestId("strategy-edit-form");
+      await expect(editForm).toBeVisible();
+      await editForm.getByLabel("Strategy name").fill("E2E Momentum Guard v2");
+      await editForm.getByLabel("Confidence threshold").fill("65");
       await page.getByTestId("save-strategy").click();
       await expect(page.getByTestId("workflow-notice")).toContainText("updated");
     });
