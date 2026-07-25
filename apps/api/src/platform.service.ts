@@ -2204,27 +2204,9 @@ export class PlatformService implements OnModuleInit {
       riskDecision = {
         ...riskDecision,
         approved: false,
-        reasons: [...riskDecision.reasons, "Missing quantity — calculated position size was zero."]
-      };
-    }
-    // Tiny Alpaca paper balances (e.g. $10) size SPY to 0.003 → UI shows 0.00 and nothing fills.
-    if (riskDecision.approved && quantity > 0 && quantity < 0.01 && side === "BUY") {
-      riskDecision = {
-        ...riskDecision,
-        approved: false,
         reasons: [
           ...riskDecision.reasons,
-          `Position size ${quantity.toFixed(4)} is below 0.01 shares — fund Alpaca paper (cash $${portfolio.cashBalance.toFixed(2)} is too low for ${symbol}).`
-        ],
-        rejections: [
-          ...(riskDecision.rejections ?? []),
-          {
-            code: "INSUFFICIENT_CASH" as const,
-            title: "Cash too low for a visible share",
-            message: `Fund Alpaca paper capital before buying ${symbol}. Weekend paper BTC does not need equity cash.`,
-            currentValue: portfolio.cashBalance,
-            fixHint: "Reset/fund Alpaca paper to at least a few thousand dollars, or wait for weekend BTC desk."
-          }
+          "Missing quantity — calculated position size was zero. Micro stakes need fractional shares and enough cash for ~$1 notional."
         ]
       };
     }

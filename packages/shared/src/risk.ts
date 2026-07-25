@@ -231,12 +231,32 @@ export const validateTradeRisk = (
     );
   }
 
-  const calculatedQuantity = calculatePositionSize(
+  // Real $10-style stakes need fractional shares and wider % room than institutional defaults.
+  const microStake = context.equity > 0 && context.equity <= 50;
+  const effectiveRiskPercent = microStake
+    ? Math.max(rules.maxRiskPerTradePercent, 20)
+    : rules.maxRiskPerTradePercent;
+  const effectivePositionPercent = microStake
+    ? Math.max(rules.maxPositionSizePercent, 95)
+    : rules.maxPositionSizePercent;
+
+  let calculatedQuantity = calculatePositionSize(
     context.equity,
-    rules.maxRiskPerTradePercent,
+    effectiveRiskPercent,
     intent.price,
     intent.stopLoss
   );
+  if (microStake && intent.side === "BUY" && intent.price > 0) {
+    // Cash is the hard ceiling on a real $10 stake — never size above buying power.
+    const microNotional = Math.min(
+      context.cashBalance * 0.85,
+      context.equity * ((effectivePositionPercent - 1) / 100)
+    );
+    const microQty = round(microNotional / intent.price, 4);
+    if (microQty > 0) {
+      calculatedQuantity = calculatedQuantity > 0 ? Math.min(calculatedQuantity, microQty) : microQty;
+    }
+  }
   const quantity = intent.requestedQuantity ?? calculatedQuantity;
   const existingQuantity = context.existingPositionQuantity ?? 0;
   const signedQuantity = intent.side === "BUY" ? quantity : -quantity;
@@ -252,20 +272,25 @@ export const validateTradeRisk = (
         "ZERO_POSITION_SIZE",
         "Position size is zero",
         "Calculated position size must be greater than zero.",
-        { currentValue: quantity, fixHint: "Widen stop distance or increase equity before sizing." }
+        {
+          currentValue: quantity,
+          fixHint: microStake
+            ? "Micro stakes use fractional shares — confirm Alpaca fractional trading is enabled."
+            : "Widen stop distance or increase equity before sizing."
+        }
       )
     );
   }
 
   const proposedRiskAmount = round(Math.abs(intent.price - intent.stopLoss) * quantity, 2);
-  const maxRiskAmount = round(context.equity * (rules.maxRiskPerTradePercent / 100), 2);
+  const maxRiskAmount = round(context.equity * (effectiveRiskPercent / 100), 2);
   if (!reducesExposure && quantity > 0 && proposedRiskAmount > maxRiskAmount) {
     const suggested = suggestSafeQuantity(rules, context, intent, calculatedQuantity);
     rejections.push(
       rejection(
         "MAX_RISK_PER_TRADE_EXCEEDED",
         "Trade risk is too high",
-        `This order risks $${proposedRiskAmount.toFixed(2)}, which exceeds your $${maxRiskAmount.toFixed(2)} per-trade allowance (${rules.maxRiskPerTradePercent}% of equity).`,
+        `This order risks $${proposedRiskAmount.toFixed(2)}, which exceeds your $${maxRiskAmount.toFixed(2)} per-trade allowance (${effectiveRiskPercent}% of equity${microStake ? ", micro-stake mode" : ""}).`,
         {
           currentValue: proposedRiskAmount,
           limit: maxRiskAmount,
@@ -279,7 +304,7 @@ export const validateTradeRisk = (
   }
 
   const proposedPositionValue = round(intent.price * quantity, 2);
-  const maxPositionValue = round(context.equity * (rules.maxPositionSizePercent / 100), 2);
+  const maxPositionValue = round(context.equity * (effectivePositionPercent / 100), 2);
   const projectedPositionValue =
     context.existingPositionQuantity === undefined
       ? proposedPositionValue + context.existingPositionValue
@@ -292,10 +317,10 @@ export const validateTradeRisk = (
       rejection(
         "MAX_POSITION_SIZE_EXCEEDED",
         "Position is too large",
-        `This order would use ${positionPercent}% of the portfolio. Your maximum is ${rules.maxPositionSizePercent}%.`,
+        `This order would use ${positionPercent}% of the portfolio. Your maximum is ${effectivePositionPercent}%.`,
         {
           currentValue: positionPercent,
-          limit: rules.maxPositionSizePercent,
+          limit: effectivePositionPercent,
           suggestedQuantity: suggested,
           fixHint: suggested
             ? `Use a suggested quantity of ${suggested} to stay within the position-size limit.`

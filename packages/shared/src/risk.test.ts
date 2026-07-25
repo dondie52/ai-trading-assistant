@@ -18,6 +18,31 @@ describe("risk engine", () => {
     expect(calculatePositionSize(10_000, 1, 100, 95)).toBe(20);
   });
 
+  it("sizes fractional SPY lots for a real $10 micro stake", () => {
+    const decision = validateTradeRisk(
+      rules,
+      {
+        equity: 10,
+        cashBalance: 10,
+        dailyRealizedPnl: 0,
+        currentDrawdownPercent: 0,
+        existingPositionValue: 0
+      },
+      {
+        symbol: "SPY",
+        side: "BUY",
+        price: 738.63,
+        stopLoss: 720,
+        takeProfit: 760
+      }
+    );
+
+    expect(decision.approved).toBe(true);
+    expect(decision.calculatedQuantity).toBeGreaterThan(0);
+    expect(decision.calculatedQuantity).toBeLessThan(0.02);
+    expect(decision.proposedPositionValue).toBeLessThanOrEqual(10);
+  });
+
   it("approves a trade that stays inside every risk rule", () => {
     const decision = validateTradeRisk(
       rules,
