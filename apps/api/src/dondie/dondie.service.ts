@@ -294,16 +294,22 @@ export class DondieService implements OnModuleInit {
     let tradesRemaining = Math.max(0, settings.maxTradesPerDay - this.countAutoTradesToday(userId));
     let lastResult: DondieRunResult | null = null;
     let workingAgent = agent;
+    const failures: string[] = [];
 
     for (const symbol of symbols) {
       if (tradesRemaining <= 0) {
         break;
       }
-      const result = await this.runForSymbol(userId, workingAgent, symbol, timeframe);
-      lastResult = result;
-      workingAgent = this.requireAgent(userId);
-      if (result.automation.status === "EXECUTED") {
-        tradesRemaining -= 1;
+      try {
+        const result = await this.runForSymbol(userId, workingAgent, symbol, timeframe);
+        lastResult = result;
+        workingAgent = this.requireAgent(userId);
+        if (result.automation.status === "EXECUTED") {
+          tradesRemaining -= 1;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown error";
+        failures.push(`${symbol}: ${message}`);
       }
     }
 
@@ -311,8 +317,14 @@ export class DondieService implements OnModuleInit {
       return lastResult;
     }
 
-    const fallbackSymbol = symbols[0] ?? "SPY";
-    return this.runForSymbol(userId, agent, fallbackSymbol, timeframe);
+    const reason =
+      failures.length > 0
+        ? `Universe scan found no usable market data (${failures.slice(0, 3).join("; ")}).`
+        : "Universe scan completed with no actionable setups.";
+    throw new BadRequestException({
+      code: "DONDIE_UNIVERSE_UNAVAILABLE",
+      message: reason
+    });
   }
 
   private async runForSymbol(
