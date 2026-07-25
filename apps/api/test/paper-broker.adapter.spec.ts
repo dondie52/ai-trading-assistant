@@ -38,6 +38,11 @@ describe("paper broker execution semantics", () => {
     });
   });
 
+  it("throws instead of silently accepting a zero-quantity order", async () => {
+    const invalid = { ...order("MARKET", "BUY", 190), quantity: 0 };
+    await expect(broker.submitOrder(invalid, 200)).rejects.toThrow(/quantity/i);
+  });
+
   it("keeps limit and stop orders submitted until their trigger is reached", async () => {
     await expect(broker.submitOrder(order("LIMIT", "BUY", 195), 200)).resolves.toMatchObject({
       status: "SUBMITTED",
