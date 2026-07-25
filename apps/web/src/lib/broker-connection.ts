@@ -9,8 +9,8 @@ export function resolveBrokerConnectionState(accounts: readonly BrokerAccountVie
   const alpaca = accounts.find((account) => account.brokerName === "ALPACA" && account.hasCredentials);
   const paper = accounts.find((account) => account.brokerName === "PAPER");
   return {
-    alpaca,
-    paper,
+    ...(alpaca ? { alpaca } : {}),
+    ...(paper ? { paper } : {}),
     alpacaConnected: Boolean(alpaca),
     paperConnected: Boolean(paper)
   };
