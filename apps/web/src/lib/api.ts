@@ -19,6 +19,23 @@ export class ApiError extends Error {
   }
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  /** When false, skips the one-shot auth refresh/retry. Defaults to true. */
+  readonly authRetry?: boolean;
+}
+
+export interface ApiAuthHandlers {
+  readonly refreshAccessToken: () => Promise<string | null>;
+  readonly onAuthFailure: () => void;
+  readonly isRecoverableAuthError: (error: unknown) => boolean;
+}
+
+let apiAuthHandlers: ApiAuthHandlers | null = null;
+
+export const registerApiAuthHandlers = (handlers: ApiAuthHandlers | null): void => {
+  apiAuthHandlers = handlers;
+};
+
 const isApiFailure = (value: unknown): value is ApiFailure => {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -31,19 +48,20 @@ const isApiFailure = (value: unknown): value is ApiFailure => {
   return typeof error.code === "string" && typeof error.message === "string";
 };
 
-export async function apiFetch<T>(
+const executeFetch = async <T>(
   path: string,
-  options: RequestInit = {},
+  options: ApiFetchOptions,
   token?: string
-): Promise<T> {
-  const headers = new Headers(options.headers);
+): Promise<T> => {
+  const { authRetry: _authRetry, ...requestInit } = options;
+  const headers = new Headers(requestInit.headers);
   headers.set("Content-Type", "application/json");
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
+    ...requestInit,
     headers,
     cache: "no-store"
   });
@@ -57,11 +75,42 @@ export async function apiFetch<T>(
   }
 
   return payload.data;
+};
+
+export async function apiFetch<T>(
+  path: string,
+  options: ApiFetchOptions = {},
+  token?: string
+): Promise<T> {
+  try {
+    return await executeFetch<T>(path, options, token);
+  } catch (error) {
+    const allowRetry = options.authRetry !== false;
+    const handlers = apiAuthHandlers;
+    if (!allowRetry || !handlers || !token || !handlers.isRecoverableAuthError(error)) {
+      throw error;
+    }
+
+    const nextToken = await handlers.refreshAccessToken();
+    if (!nextToken) {
+      handlers.onAuthFailure();
+      throw error;
+    }
+
+    try {
+      return await executeFetch<T>(path, { ...options, authRetry: false }, nextToken);
+    } catch (retryError) {
+      if (handlers.isRecoverableAuthError(retryError)) {
+        handlers.onAuthFailure();
+      }
+      throw retryError;
+    }
+  }
 }
 
 export async function apiFetchPage<T>(
   path: string,
-  options: RequestInit = {},
+  options: ApiFetchOptions = {},
   token?: string
 ): Promise<readonly T[]> {
   const separator = path.includes("?") ? "&" : "?";
