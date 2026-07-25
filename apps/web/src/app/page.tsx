@@ -44,7 +44,6 @@ import type {
   DondieLifestyleWorld,
   DondieMemory,
   DondieRunResult,
-  DondieWalletLedgerEntry,
   IndicatorSnapshot,
   JsonObject,
   MarketCandle,
@@ -70,14 +69,13 @@ import type {
   WalkForwardResult
 } from "@trading/types";
 import { AITradeCopilot } from "../components/control-room/ai-trade-copilot";
-import { SurvivalAgentCard } from "../components/control-room/agent-card";
 import { AutomationModesPanel } from "../components/control-room/automation-modes";
 import { BrokerConnectionCard } from "../components/control-room/broker-card";
 import { RiskResultBanner } from "../components/control-room/risk-result";
-import { DondieRoomPanel } from "../components/dondie/dondie-room";
 import { LandingPage } from "../components/landing-page";
 import { BottomNav, DesktopNav, type ControlRoomTab } from "../components/nav/control-room-nav";
-import { EmptyLine, MetricCard, Panel, RiskRow, SmallStat, StatusPill } from "../components/ui/primitives";
+import { OfficeConsole } from "../components/office/office-console";
+import { EmptyLine, MetricCard, Panel, SmallStat, StatusPill } from "../components/ui/primitives";
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
 import { signInWithSupabase, signOutSupabase } from "../lib/auth";
 import { consumeAuthFailureMessage } from "../lib/auth-session";
@@ -433,16 +431,6 @@ export default function Page(): ReactElement {
     enabled: authenticated,
     queryFn: () => apiFetch<DondieAgent | null>("/dondie", {}, token)
   });
-  const dondieWallet = useQuery({
-    queryKey: ["dondie-wallet", accessToken],
-    enabled: authenticated && Boolean(dondieAgent.data),
-    queryFn: () =>
-      apiFetch<{
-        readonly balance: number;
-        readonly tier: DondieAgent["tier"];
-        readonly ledger: readonly DondieWalletLedgerEntry[];
-      }>("/dondie/wallet", {}, token)
-  });
   const dondieMemories = useQuery({
     queryKey: ["dondie-memories", accessToken],
     enabled: authenticated && Boolean(dondieAgent.data),
@@ -478,7 +466,6 @@ export default function Page(): ReactElement {
     () => (trades.data ?? []).filter((trade) => Boolean(trade.closedAt)).length,
     [trades.data]
   );
-  const todaysPnl = (primaryPortfolio?.realizedPnl ?? 0) + (primaryPortfolio?.unrealizedPnl ?? 0);
   const brokerConnected = useMemo(
     () =>
       (brokerAccounts.data ?? []).some(
@@ -552,21 +539,35 @@ export default function Page(): ReactElement {
           ]);
           break;
         case "signal.updated":
-          void queryClient.invalidateQueries({ queryKey: ["signals"] });
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["signals"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie-memories"] })
+          ]);
           break;
         case "order.updated":
-          void queryClient.invalidateQueries({ queryKey: ["orders"] });
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["orders"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] }),
+            queryClient.invalidateQueries({ queryKey: ["automation-settings"] })
+          ]);
           break;
         case "trade.executed":
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: ["trades"] }),
             queryClient.invalidateQueries({ queryKey: ["positions"] }),
             queryClient.invalidateQueries({ queryKey: ["portfolios"] }),
-            queryClient.invalidateQueries({ queryKey: ["analytics"] })
+            queryClient.invalidateQueries({ queryKey: ["analytics"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie-wallet"] })
           ]);
           break;
         case "notification.created":
-          void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+            queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] })
+          ]);
           break;
       }
     };
@@ -1379,7 +1380,7 @@ export default function Page(): ReactElement {
     readonly testId: string;
     readonly icon: ReactElement;
   }[] = [
-    { id: "home", label: "Home", testId: "tab-home", icon: <Home className="h-4 w-4" aria-hidden="true" /> },
+    { id: "home", label: "Office", testId: "tab-home", icon: <Home className="h-4 w-4" aria-hidden="true" /> },
     { id: "signals", label: "Signals", testId: "tab-signals", icon: <Sparkles className="h-4 w-4" aria-hidden="true" /> },
     { id: "trade", label: "Trade", testId: "tab-trade", icon: <CandlestickChart className="h-4 w-4" aria-hidden="true" /> },
     { id: "portfolio", label: "Portfolio", testId: "tab-portfolio", icon: <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" /> },
@@ -1792,33 +1793,81 @@ export default function Page(): ReactElement {
     );
   }
 
+  const officeBusy =
+    activateDondieMutation.isPending ||
+    pauseDondieMutation.isPending ||
+    resumeDondieMutation.isPending ||
+    runDondieMutation.isPending;
+
+  if (activeTab === "home") {
+    return (
+      <main className="h-dvh overflow-hidden px-2 pt-2 pb-20 md:px-3 md:pb-2">
+        <h1 data-testid="dashboard-title" className="sr-only">
+          Dondie Agent Office
+        </h1>
+        {notice ? (
+          <div
+            data-testid="workflow-notice"
+            className="mb-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 font-mono text-xs text-emerald-100"
+          >
+            {notice}
+          </div>
+        ) : null}
+        <section data-testid="home-view" className="flex h-full min-h-0 flex-col gap-1">
+          <div className="hidden shrink-0 md:block [&_nav]:mb-0">
+            <DesktopNav activeTab={activeTab} onChange={setActiveTab} tabs={desktopTabs} />
+          </div>
+          <div className="min-h-0 flex-1">
+            <OfficeConsole
+              agent={dondieAgent.data ?? null}
+              lifestyle={dondieLifestyle.data ?? null}
+              automation={automationSettings.data ?? null}
+              lastAutomationRun={automationRunResult}
+              signals={signals.data ?? []}
+              orders={orders.data ?? []}
+              trades={trades.data ?? []}
+              positions={positions.data ?? []}
+              portfolio={primaryPortfolio ?? null}
+              risk={risk.data ?? null}
+              brokers={brokerAccounts.data ?? []}
+              memories={dondieMemories.data ?? []}
+              realtimeConnected={realtimeConnected}
+              loading={dondieLifestyle.isLoading || dondieAgent.isLoading}
+              fetchError={dondieLifestyle.isError && dondieAgent.isError}
+              userEmail={user?.email ?? ""}
+              onLogout={() => logoutMutation.mutate()}
+              onActivate={() => activateDondieMutation.mutate()}
+              onPause={() => pauseDondieMutation.mutate()}
+              onResume={() => resumeDondieMutation.mutate()}
+              onRun={() => runDondieMutation.mutate()}
+              onOpenTab={(tab) => setActiveTab(tab)}
+              canActivate={Boolean(selectedStrategy)}
+              busy={officeBusy}
+            />
+          </div>
+        </section>
+        <BottomNav activeTab={activeTab} onChange={setActiveTab} showAdmin={showAdmin} />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen overflow-x-hidden px-4 py-5 pb-24 md:px-6 md:pb-5">
-      <header className="mb-5 flex flex-col gap-4 border-b border-line pb-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10">
-            <LineChart className="h-5 w-5 text-emerald-300" aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-slate-400 sm:tracking-[0.2em]">Dondie Operator Console</p>
-            <h1 data-testid="dashboard-title" className="truncate text-2xl font-semibold text-white">
-              Dondie Control Room
-            </h1>
-          </div>
+      <header className="mb-5 flex flex-col gap-3 border-b border-line pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">Dondie Ops</p>
+          <h1 data-testid="dashboard-title" className="truncate text-lg font-semibold text-white">
+            Control Room
+          </h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md border border-line bg-white/5 px-3 py-2 text-sm text-slate-200">
-            {user?.email}
-          </span>
-          <button
-            type="button"
-            onClick={() => logoutMutation.mutate()}
-            className="flex min-h-11 items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-slate-200"
-          >
-            <LogOut className="h-4 w-4" aria-hidden="true" />
-            Logout
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => logoutMutation.mutate()}
+          className="flex min-h-11 items-center gap-2 self-start rounded-md border border-line bg-surface px-3 py-2 font-mono text-xs uppercase tracking-wide text-slate-300"
+        >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
+          Logout
+        </button>
       </header>
 
       {notice ? (
@@ -1828,189 +1877,6 @@ export default function Page(): ReactElement {
       ) : null}
 
       <DesktopNav activeTab={activeTab} onChange={setActiveTab} tabs={desktopTabs} />
-
-      {activeTab === "home" ? (
-        <section data-testid="home-view" className="space-y-5">
-          <DondieRoomPanel
-            world={dondieLifestyle.data ?? null}
-            loading={dondieLifestyle.isLoading}
-            error={dondieLifestyle.isError}
-            onOpenTimeline={() => {
-              const timeline = document.querySelector("[data-testid='home-view']");
-              timeline?.scrollIntoView({ behavior: "smooth", block: "end" });
-            }}
-          />
-          <SurvivalAgentCard
-            agent={dondieAgent.data}
-            ledger={dondieWallet.data?.ledger ?? []}
-            memories={dondieMemories.data ?? []}
-            portfolioPnlToday={todaysPnl}
-            onActivate={() => activateDondieMutation.mutate()}
-            onPause={() => pauseDondieMutation.mutate()}
-            onResume={() => resumeDondieMutation.mutate()}
-            onRun={() => runDondieMutation.mutate()}
-            canActivate={Boolean(selectedStrategy)}
-            busy={
-              activateDondieMutation.isPending ||
-              pauseDondieMutation.isPending ||
-              resumeDondieMutation.isPending ||
-              runDondieMutation.isPending
-            }
-          />
-
-          <div className="grid gap-3 xl:grid-cols-[0.8fr_1.2fr]">
-            <Panel title="Broker and Runtime" icon={<WalletCards className="h-5 w-5 text-cyan-300" aria-hidden="true" />} compact>
-              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
-                <StatusPill
-                  label={
-                    brokerAccounts.isLoading
-                      ? "Broker loading"
-                      : brokerAccounts.isError
-                        ? "Broker unavailable"
-                        : brokerConnected
-                          ? "Broker connected"
-                          : "Broker disconnected"
-                  }
-                  tone={
-                    brokerAccounts.isLoading
-                      ? "cyan"
-                      : brokerConnected
-                        ? "emerald"
-                        : "amber"
-                  }
-                />
-                <StatusPill
-                  label={
-                    automationSettings.isError
-                      ? "Unavailable"
-                      : (automationSettings.data?.runtimeState?.replaceAll("_", " ") ?? "Loading")
-                  }
-                  tone={risk.data?.stopTrading ? "rose" : "cyan"}
-                />
-                <span className="rounded-md border border-line bg-surface px-3 py-2">
-                  Mode: <span className="font-mono text-white">{automationSettings.data?.mode ?? "ASSISTED"}</span>
-                </span>
-                <span className="rounded-md border border-line bg-surface px-3 py-2">
-                  Quote:{" "}
-                  <span className="font-mono text-white">
-                    {marketQuote.isError
-                      ? "unavailable"
-                      : (marketQuote.data?.source ?? (marketQuote.isLoading ? "loading" : "unavailable"))}
-                  </span>
-                </span>
-              </div>
-            </Panel>
-            <AutomationModesPanel
-              settings={automationSettings.data ?? null}
-              runResult={automationRunResult}
-              running={automatedRunMutation.isPending}
-              onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
-              onEmergencyPause={() => emergencyPauseMutation.mutate()}
-              onRun={() => automatedRunMutation.mutate()}
-              onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
-            />
-          </div>
-
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <MetricCard icon={<DollarSign />} label="Portfolio Value" value={formatCurrency(primaryPortfolio?.portfolioValue)} tone="emerald" hint="Paper account equity" />
-            <MetricCard icon={<LineChart />} label="Today's P&L" value={formatCurrency(todaysPnl)} tone={todaysPnl >= 0 ? "cyan" : "rose"} hint="Realized + unrealized" />
-            <MetricCard
-              icon={<Shield />}
-              label="Risk usage"
-              value={risk.data?.stopTrading ? "Stopped" : formatPercent(risk.data?.maxRiskPerTradePercent)}
-              tone={risk.data?.stopTrading ? "rose" : "amber"}
-              hint={`Max position ${formatPercent(risk.data?.maxPositionSizePercent)}`}
-            />
-            <MetricCard
-              icon={<Sparkles />}
-              label="Best AI opportunity"
-              value={latestSignal ? `${latestSignal.signalType} ${latestSignal.symbol}` : "No signal"}
-              tone="violet"
-              hint={latestSignal ? `${latestSignal.confidenceScore}% confidence` : "Generate a signal"}
-            />
-            <MetricCard icon={<Activity />} label="Open positions" value={String(positions.data?.length ?? 0)} tone="cyan" hint="Paper positions" />
-          </section>
-
-          <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-            <div className="space-y-5">
-              <Panel title="Strategy Quick Create" icon={<Bot className="h-5 w-5" aria-hidden="true" />}>
-                <div className="grid gap-3 md:grid-cols-[1fr_190px_auto_auto]">
-                  <input
-                    data-testid="strategy-name"
-                    aria-label="New strategy name"
-                    className="min-h-11 rounded-md border border-line bg-surface px-3 py-3 text-sm text-white outline-none focus:border-emerald-400"
-                    value={strategyName}
-                    onChange={(event) => setStrategyName(event.target.value)}
-                  />
-                  <select
-                    aria-label="Strategy template"
-                    className="min-h-11 rounded-md border border-line bg-surface px-3 py-3 text-sm text-white"
-                    value={strategyTemplateName}
-                    onChange={(event) => setStrategyTemplateName(event.target.value)}
-                  >
-                    {strategyTemplates.map((template) => (
-                      <option key={template.name} value={template.name}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    data-testid="create-strategy"
-                    type="button"
-                    onClick={() => createStrategyMutation.mutate()}
-                    className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950"
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    Create Strategy
-                  </button>
-                  <span data-testid="strategy-status" className="rounded-md border border-line bg-white/5 px-4 py-3 text-sm text-slate-200">
-                    {strategies.data?.length ?? 0} configured
-                  </span>
-                </div>
-                <p className="mt-3 text-xs text-slate-400">
-                  {selectedTemplate.description} Timeframe: {selectedTemplate.timeframe}. Risk: {selectedTemplate.riskProfile}.
-                </p>
-              </Panel>
-
-              <Panel title="Event Timeline" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
-                <div className="space-y-2">
-                  {(notifications.data ?? []).slice(-6).reverse().map((notification) => (
-                    <div key={notification.id} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-medium text-slate-200">{notification.title}</span>
-                        <span className="font-mono text-[10px] text-slate-500">{notification.notificationType}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-400">{notification.message}</p>
-                      <p className="mt-1 font-mono text-[10px] text-slate-500">{new Date(notification.createdAt).toLocaleString()}</p>
-                    </div>
-                  ))}
-                  {(notifications.data ?? []).length === 0 ? <EmptyLine text="No events yet" /> : null}
-                </div>
-              </Panel>
-            </div>
-
-            <div className="space-y-5">
-              <Panel title="Risk Matrix" icon={<Shield className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
-                <div className="grid gap-2 text-sm text-slate-200">
-                  <RiskRow label="Risk per trade" value={formatPercent(risk.data?.maxRiskPerTradePercent)} />
-                  <RiskRow label="Max position size" value={formatPercent(risk.data?.maxPositionSizePercent)} />
-                  <RiskRow label="Daily loss limit" value={formatPercent(risk.data?.maxDailyLossPercent)} />
-                  <RiskRow label="Max drawdown" value={formatPercent(risk.data?.maxDrawdownPercent)} />
-                  <RiskRow label="Trading lock" value={risk.data?.stopTrading ? "ON" : "OFF"} />
-                </div>
-              </Panel>
-
-              <Panel title="Decision Context" icon={<Gauge className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
-                <div className="grid gap-3">
-                  <SmallStat label="Closed trade analytics" value={insufficientHistoryLabel(closedTradeCount) || "Ready"} empty={closedTradeCount < 5} />
-                  <SmallStat label="Latest quote" value={marketQuote.data?.price ? formatCurrency(marketQuote.data.price) : "Unavailable"} empty={!marketQuote.data?.price} />
-                  <SmallStat label="Selected strategy" value={selectedStrategy?.name ?? "Create a strategy"} empty={!selectedStrategy} />
-                </div>
-              </Panel>
-            </div>
-          </section>
-        </section>
-      ) : null}
 
       {activeTab === "signals" ? (
         <section data-testid="signals-view" className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
@@ -2333,6 +2199,46 @@ export default function Page(): ReactElement {
 
       {activeTab === "strategies" ? (
         <section data-testid="strategies-view" className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="space-y-5">
+            <Panel title="Create Strategy" icon={<Plus className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
+              <div className="grid gap-3 md:grid-cols-[1fr_190px_auto]">
+                <input
+                  data-testid="strategy-name"
+                  aria-label="New strategy name"
+                  className="min-h-11 rounded-md border border-line bg-surface px-3 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                  value={strategyName}
+                  onChange={(event) => setStrategyName(event.target.value)}
+                />
+                <select
+                  aria-label="Strategy template"
+                  className="min-h-11 rounded-md border border-line bg-surface px-3 py-3 text-sm text-white"
+                  value={strategyTemplateName}
+                  onChange={(event) => setStrategyTemplateName(event.target.value as typeof strategyTemplateName)}
+                >
+                  {strategyTemplates.map((template) => (
+                    <option key={template.name} value={template.name}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  data-testid="create-strategy"
+                  type="button"
+                  onClick={() => createStrategyMutation.mutate()}
+                  className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 py-3 text-sm font-medium text-slate-950"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Create
+                </button>
+              </div>
+              <p className="mt-3 text-xs text-slate-400">
+                {selectedTemplate.description} Timeframe: {selectedTemplate.timeframe}. Risk: {selectedTemplate.riskProfile}.
+              </p>
+              <p data-testid="strategy-status" className="mt-2 font-mono text-xs text-slate-400">
+                {strategies.data?.length ?? 0} configured
+              </p>
+            </Panel>
+
           <Panel title="Strategy Registry" icon={<Bot className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
             <div className="space-y-2">
               {(strategies.data ?? []).map((strategy) => (
@@ -2355,9 +2261,10 @@ export default function Page(): ReactElement {
                   <p className="mt-1 text-xs text-slate-400">v{strategy.version}</p>
                 </button>
               ))}
-              {(strategies.data ?? []).length === 0 ? <EmptyLine text="Create a strategy from the Home tab" /> : null}
+              {(strategies.data ?? []).length === 0 ? <EmptyLine text="Create a strategy above to get started" /> : null}
             </div>
           </Panel>
+          </div>
 
           <Panel title="Strategy Configuration" icon={<Settings2 className="h-5 w-5 text-violet-300" aria-hidden="true" />}>
             {selectedStrategy ? (
@@ -2412,7 +2319,7 @@ export default function Page(): ReactElement {
                 </button>
               </form>
             ) : (
-              <EmptyLine text="Create a strategy on the Home tab to link the agent" />
+              <EmptyLine text="Create a strategy on the Strategies tab to link the agent" />
             )}
           </Panel>
         </section>

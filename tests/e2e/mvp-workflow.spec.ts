@@ -77,26 +77,27 @@ test.describe.serial("Dondie survival agent platform", () => {
       await page.getByTestId("login-email").fill(adminEmail ?? "");
       await page.getByTestId("login-password").fill(adminPassword ?? "");
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Agent Office");
       await openSecondaryTab(page, "tab-admin");
       await expect(page.getByTestId("admin-view")).toBeVisible();
       await page.getByTestId("admin-create-email").fill(traderEmail);
       await page.getByTestId("admin-create-password").fill(traderPassword);
       await page.getByTestId("admin-create-submit").click();
       await expect(page.getByTestId("workflow-notice")).toContainText("created");
-      await page.getByRole("button", { name: "Logout" }).click();
+      await page.getByRole("button", { name: /Logout|out/i }).click();
     });
 
     await test.step("Login", async () => {
       await page.getByTestId("login-email").fill(traderEmail);
       await page.getByTestId("login-password").fill(traderPassword);
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Agent Office");
     });
 
     await test.step("Dashboard loads", async () => {
-      await expect(page.getByText("Portfolio Value")).toBeVisible();
-      await expect(page.getByText("Risk Matrix")).toBeVisible();
+      await expect(page.getByTestId("office-console")).toBeVisible();
+      await expect(page.getByTestId("office-scene")).toBeVisible();
+      await expect(page.getByTestId("office-agent-coordinator")).toBeVisible();
       const bottomNav = page.getByTestId("bottom-nav");
       const desktopMarketTab = page.getByRole("navigation", { name: "Terminal views" }).getByTestId("tab-market");
       const hasDesktopNav = await desktopMarketTab.isVisible().catch(() => false);
@@ -111,6 +112,7 @@ test.describe.serial("Dondie survival agent platform", () => {
     });
 
     await test.step("Strategy creation", async () => {
+      await openSecondaryTab(page, "tab-strategies");
       await page.getByTestId("strategy-name").fill("E2E Momentum Guard");
       await page.getByTestId("create-strategy").click();
       await expect(page.getByTestId("workflow-notice")).toContainText("Strategy E2E Momentum Guard created");
@@ -212,22 +214,22 @@ test.describe.serial("Dondie survival agent platform", () => {
       expect(horizontalOverflow).toBeLessThanOrEqual(1);
       await page.screenshot({ path: testInfo.outputPath("mfa.png"), fullPage: true });
 
-      await page.getByRole("button", { name: "Logout" }).click();
+      await page.getByRole("button", { name: /Logout|out/i }).click();
       await page.getByTestId("login-email").fill(traderEmail);
       await page.getByTestId("login-password").fill(traderPassword);
       await page.getByTestId("login-submit").click();
       await expect(page.getByTestId("login-mfa-code")).toBeVisible();
       await page.getByTestId("login-mfa-code").fill(totpCode(secret));
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Agent Office");
     });
 
     await test.step("Admin audit log is visible", async () => {
-      await page.getByRole("button", { name: "Logout" }).click();
+      await page.getByRole("button", { name: /Logout|out/i }).click();
       await page.getByTestId("login-email").fill(adminEmail ?? "");
       await page.getByTestId("login-password").fill(adminPassword ?? "");
       await page.getByTestId("login-submit").click();
-      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Control Room");
+      await expect(page.getByTestId("dashboard-title")).toContainText("Dondie Agent Office");
       await openSecondaryTab(page, "tab-admin");
       await expect(page.getByTestId("admin-view")).toBeVisible();
       await expect(page.getByTestId("admin-users")).toContainText(adminEmail ?? "");
