@@ -380,7 +380,31 @@ export class PlatformService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.platformRepository.hydrate(this.store);
+    this.repairMissingUserBootstrap();
     await this.seedE2EAdminUser();
+  }
+
+  /**
+   * Hydrated users can miss portfolio/risk/broker/watchlist rows after older
+   * provision paths or failed persists. Rebuild defaults in-memory and persist.
+   */
+  private repairMissingUserBootstrap(): void {
+    for (const user of this.store.users.values()) {
+      const hadRisk = [...this.store.riskRules.values()].some((rules) => rules.userId === user.id);
+      const hadPortfolio = [...this.store.portfolios.values()].some(
+        (portfolio) => portfolio.userId === user.id
+      );
+      const hadPaperBroker = [...this.store.brokerAccounts.values()].some(
+        (account) => account.userId === user.id && account.brokerName === "PAPER"
+      );
+      const hadWatchlist = [...this.store.watchlists.values()].some(
+        (watchlist) => watchlist.userId === user.id
+      );
+      this.store.ensureDefaultAccountState(user.id);
+      if (!hadRisk || !hadPortfolio || !hadPaperBroker || !hadWatchlist) {
+        this.persistUserBootstrap(user.id);
+      }
+    }
   }
 
   private persist(task: Promise<unknown>): void {
@@ -2349,7 +2373,14 @@ export class PlatformService implements OnModuleInit {
   }
 
   getRiskRules(userId: UUID): RiskRules {
-    const rules = [...this.store.riskRules.values()].find((candidate) => candidate.userId === userId);
+    let rules = [...this.store.riskRules.values()].find((candidate) => candidate.userId === userId);
+    if (!rules) {
+      this.store.ensureDefaultAccountState(userId);
+      rules = [...this.store.riskRules.values()].find((candidate) => candidate.userId === userId);
+      if (rules) {
+        this.persistUserBootstrap(userId);
+      }
+    }
     if (!rules) {
       throw new NotFoundException({ code: "NOT_FOUND", message: "Risk rules not found." });
     }

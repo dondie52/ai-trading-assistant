@@ -137,4 +137,35 @@ describe("Dondie survival loop", () => {
     expect(walletView.tier).toBe("STANDARD");
     expect(walletView.ledger).toHaveLength(1);
   });
+
+  it("builds lifestyle world even when risk rules were missing from memory", async () => {
+    const { dondie, platform, store } = createDondie();
+    const user = store.createUser({
+      email: `dondie-lifestyle-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Dondie",
+      lastName: "Trader",
+      role: "TRADER"
+    });
+    const strategy = platform.createStrategy(user.id, {
+      name: "Lifestyle Strategy",
+      description: "Lifestyle test",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { confidenceThreshold: 50, stopLossPercent: 5, takeProfitPercent: 8 }
+    });
+    await dondie.activate(user.id, { strategyId: strategy.id });
+
+    for (const [id, rules] of [...store.riskRules.entries()]) {
+      if (rules.userId === user.id) {
+        store.riskRules.delete(id);
+      }
+    }
+
+    const world = dondie.getLifestyle(user.id);
+    expect(world.lifestyleLevel).toBe(1);
+    expect(world.activity).toBeTruthy();
+    expect(world.currentTask.length).toBeGreaterThan(0);
+    expect([...store.riskRules.values()].some((rules) => rules.userId === user.id)).toBe(true);
+  });
 });
