@@ -25,10 +25,12 @@ const moodTone: Record<
 export function DondieRoomPanel({
   world,
   loading,
+  error,
   onOpenTimeline
 }: {
   readonly world?: DondieLifestyleWorld | null;
   readonly loading?: boolean;
+  readonly error?: boolean;
   readonly onOpenTimeline?: () => void;
 }): ReactElement {
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -38,6 +40,16 @@ export function DondieRoomPanel({
     return (
       <Panel title="Dondie Room" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />} compact>
         <div data-testid="dondie-room-loading" className="h-40 animate-pulse rounded-xl bg-white/5" />
+      </Panel>
+    );
+  }
+
+  if (error && !world) {
+    return (
+      <Panel title="Dondie Room" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />} compact>
+        <p data-testid="dondie-room-error" className="text-sm text-slate-400">
+          Unable to load Dondie Room right now. Refresh or sign in again if your session expired.
+        </p>
       </Panel>
     );
   }

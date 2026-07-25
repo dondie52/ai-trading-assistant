@@ -79,7 +79,8 @@ import { LandingPage } from "../components/landing-page";
 import { BottomNav, DesktopNav, type ControlRoomTab } from "../components/nav/control-room-nav";
 import { EmptyLine, MetricCard, Panel, RiskRow, SmallStat, StatusPill } from "../components/ui/primitives";
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
-import { refreshSupabaseSession, signInWithSupabase, signOutSupabase } from "../lib/auth";
+import { signInWithSupabase, signOutSupabase } from "../lib/auth";
+import { consumeAuthFailureMessage } from "../lib/auth-session";
 import { formatCurrency, formatPercent, insufficientHistoryLabel } from "../lib/format";
 import { type OrderDraft, buildOrderDraftFromSignal } from "../lib/order-draft";
 import {
@@ -300,17 +301,14 @@ export default function Page(): ReactElement {
   const showDevDiagnostics = process.env.NODE_ENV !== "production";
 
   useEffect(() => {
-    if (!supabaseAuthEnabled || authenticated) {
+    if (authenticated) {
       return;
     }
-    void refreshSupabaseSession()
-      .then((session) => {
-        if (session) {
-          setSession(session);
-        }
-      })
-      .catch(() => undefined);
-  }, [authenticated, setSession, supabaseAuthEnabled]);
+    const failureNotice = consumeAuthFailureMessage();
+    if (failureNotice) {
+      setNotice(failureNotice);
+    }
+  }, [authenticated]);
 
   const portfolios = useQuery({
     queryKey: ["portfolios", accessToken],
@@ -1836,6 +1834,7 @@ export default function Page(): ReactElement {
           <DondieRoomPanel
             world={dondieLifestyle.data ?? null}
             loading={dondieLifestyle.isLoading}
+            error={dondieLifestyle.isError}
             onOpenTimeline={() => {
               const timeline = document.querySelector("[data-testid='home-view']");
               timeline?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1862,13 +1861,42 @@ export default function Page(): ReactElement {
           <div className="grid gap-3 xl:grid-cols-[0.8fr_1.2fr]">
             <Panel title="Broker and Runtime" icon={<WalletCards className="h-5 w-5 text-cyan-300" aria-hidden="true" />} compact>
               <div className="flex flex-wrap items-center gap-2 text-sm text-slate-300">
-                <StatusPill label={brokerConnected ? "Broker connected" : "Broker disconnected"} tone={brokerConnected ? "emerald" : "amber"} />
-                <StatusPill label={automationSettings.data?.runtimeState?.replaceAll("_", " ") ?? "Loading"} tone={risk.data?.stopTrading ? "rose" : "cyan"} />
+                <StatusPill
+                  label={
+                    brokerAccounts.isLoading
+                      ? "Broker loading"
+                      : brokerAccounts.isError
+                        ? "Broker unavailable"
+                        : brokerConnected
+                          ? "Broker connected"
+                          : "Broker disconnected"
+                  }
+                  tone={
+                    brokerAccounts.isLoading
+                      ? "cyan"
+                      : brokerConnected
+                        ? "emerald"
+                        : "amber"
+                  }
+                />
+                <StatusPill
+                  label={
+                    automationSettings.isError
+                      ? "Unavailable"
+                      : (automationSettings.data?.runtimeState?.replaceAll("_", " ") ?? "Loading")
+                  }
+                  tone={risk.data?.stopTrading ? "rose" : "cyan"}
+                />
                 <span className="rounded-md border border-line bg-surface px-3 py-2">
                   Mode: <span className="font-mono text-white">{automationSettings.data?.mode ?? "ASSISTED"}</span>
                 </span>
                 <span className="rounded-md border border-line bg-surface px-3 py-2">
-                  Quote: <span className="font-mono text-white">{marketQuote.data?.source ?? "loading"}</span>
+                  Quote:{" "}
+                  <span className="font-mono text-white">
+                    {marketQuote.isError
+                      ? "unavailable"
+                      : (marketQuote.data?.source ?? (marketQuote.isLoading ? "loading" : "unavailable"))}
+                  </span>
                 </span>
               </div>
             </Panel>
