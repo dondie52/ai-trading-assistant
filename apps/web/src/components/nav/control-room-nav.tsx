@@ -27,7 +27,7 @@ const primaryTabs: readonly {
   readonly icon: typeof Home;
   readonly testId: string;
 }[] = [
-  { id: "home", label: "Home", icon: Home, testId: "tab-home" },
+  { id: "home", label: "Office", icon: Home, testId: "tab-home" },
   { id: "signals", label: "Signals", icon: Sparkles, testId: "tab-signals" },
   { id: "trade", label: "Trade", icon: CandlestickChart, testId: "tab-trade" },
   { id: "portfolio", label: "Portfolio", icon: BriefcaseBusiness, testId: "tab-portfolio" },
