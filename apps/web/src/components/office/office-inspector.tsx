@@ -42,7 +42,7 @@ function RoleControls({
             disabled={!actions.canActivate || actions.busy}
             onClick={actions.onActivate}
           >
-            Activate Dondie
+            Start hands-off
           </button>
         ) : null}
         {status === "ACTIVE" ? (

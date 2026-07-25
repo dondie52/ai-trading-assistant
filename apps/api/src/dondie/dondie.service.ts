@@ -18,6 +18,7 @@ import type {
 import { buildDondieLifestyleWorld } from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
+import { DEFAULT_AUTONOMOUS_UNIVERSE } from "./agent-strategy-catalog.js";
 import { DondieBrainService } from "./dondie-brain.service.js";
 import { dondieConfig } from "./dondie.config.js";
 import { DondieMemoryService } from "./dondie-memory.service.js";
@@ -62,6 +63,25 @@ export class DondieService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.repository.hydrate(this.store);
+    // Re-hydrate in-memory AUTOPILOT for persisted hands-off agents after restarts.
+    for (const agent of this.store.dondieAgents.values()) {
+      if (agent.status !== "ACTIVE" || !agent.strategyId) {
+        continue;
+      }
+      const strategy = this.store.strategies.get(agent.strategyId);
+      if (!strategy || strategy.configuration.agentManaged !== true) {
+        continue;
+      }
+      this.platform.updateAutomationSettings(agent.userId, {
+        mode: "AUTOPILOT",
+        emergencyStop: false,
+        watchlist:
+          agent.symbolUniverse.length > 0
+            ? [...agent.symbolUniverse]
+            : [...DEFAULT_AUTONOMOUS_UNIVERSE],
+        requireConfirmationAboveValue: 1_000_000_000
+      });
+    }
     this.scheduler.start(
       (scheduledUserId) => this.runScheduled(scheduledUserId),
       () => this.listScheduledUserIds()
@@ -179,6 +199,39 @@ export class DondieService implements OnModuleInit {
     return agent;
   }
 
+  /** Activate or resume Dondie and keep strategy linked for hands-off mode. */
+  async ensureActiveWithStrategy(userId: UUID, strategyId: UUID): Promise<DondieAgent> {
+    const strategy = this.store.strategies.get(strategyId);
+    if (!strategy || strategy.userId !== userId) {
+      throw new BadRequestException({ code: "STRATEGY_NOT_FOUND", message: "Strategy was not found." });
+    }
+
+    const existing = this.getAgent(userId);
+    if (!existing) {
+      return this.activate(userId, { strategyId });
+    }
+
+    let updated: DondieAgent = existing;
+    if (existing.strategyId !== strategyId) {
+      updated = { ...existing, strategyId, updatedAt: isoNow() };
+      this.store.dondieAgents.set(updated.id, updated);
+      await this.repository.persistAgent(updated);
+      this.store.appendAudit({
+        userId,
+        actorUserId: userId,
+        action: "DONDIE_STRATEGY_LINKED",
+        entityType: "DONDIE_AGENT",
+        entityId: updated.id,
+        metadata: { strategyId }
+      });
+    }
+
+    if (updated.status !== "ACTIVE") {
+      return this.resume(userId);
+    }
+    return updated;
+  }
+
   async pause(userId: UUID): Promise<DondieAgent> {
     return this.updateStatus(userId, "PAUSED");
   }
@@ -205,8 +258,73 @@ export class DondieService implements OnModuleInit {
     }
 
     const body = asRecord(bodyValue);
-    const symbol = (readString(body, "symbol") || this.pickSymbol(userId, agent)).toUpperCase();
     const timeframe = (readString(body, "timeframe") || "1h") as MarketTimeframe;
+    const requestedSymbol = readString(body, "symbol");
+
+    // No symbol from the human → agent scans its own universe.
+    if (!requestedSymbol) {
+      return this.runUniverseScan(userId, agent, timeframe);
+    }
+
+    return this.runForSymbol(userId, agent, requestedSymbol.toUpperCase(), timeframe);
+  }
+
+  async runScheduled(userId: UUID): Promise<void> {
+    const agent = this.getAgent(userId);
+    if (!agent || agent.status !== "ACTIVE") {
+      return;
+    }
+    await this.runUniverseScan(userId, agent, "1h");
+  }
+
+  listScheduledUserIds(): readonly UUID[] {
+    return [...this.store.dondieAgents.values()]
+      .filter((agent) => agent.status === "ACTIVE")
+      .map((agent) => agent.userId);
+  }
+
+  /** Scan the agent-owned universe; human never needs to pick a ticker. */
+  private async runUniverseScan(
+    userId: UUID,
+    agent: DondieAgent,
+    timeframe: MarketTimeframe
+  ): Promise<DondieRunResult> {
+    const symbols = this.resolveSymbolUniverse(userId, agent);
+    const settings = this.platform.getAutomationSettings(userId);
+    let tradesRemaining = Math.max(0, settings.maxTradesPerDay - this.countAutoTradesToday(userId));
+    let lastResult: DondieRunResult | null = null;
+    let workingAgent = agent;
+
+    for (const symbol of symbols) {
+      if (tradesRemaining <= 0) {
+        break;
+      }
+      const result = await this.runForSymbol(userId, workingAgent, symbol, timeframe);
+      lastResult = result;
+      workingAgent = this.requireAgent(userId);
+      if (result.automation.status === "EXECUTED") {
+        tradesRemaining -= 1;
+      }
+    }
+
+    if (lastResult) {
+      return lastResult;
+    }
+
+    const fallbackSymbol = symbols[0] ?? "SPY";
+    return this.runForSymbol(userId, agent, fallbackSymbol, timeframe);
+  }
+
+  private async runForSymbol(
+    userId: UUID,
+    agent: DondieAgent,
+    symbol: string,
+    timeframe: MarketTimeframe
+  ): Promise<DondieRunResult> {
+    if (!agent.strategyId) {
+      throw new BadRequestException({ code: "DONDIE_STRATEGY_REQUIRED", message: "Link a strategy to Dondie." });
+    }
+
     let activeAgent = agent;
     let brainRun = await this.brain.plan(userId, activeAgent, agent.strategyId, symbol, timeframe);
     if (brainRun.brain !== "free") {
@@ -281,29 +399,27 @@ export class DondieService implements OnModuleInit {
     return result;
   }
 
-  async runScheduled(userId: UUID): Promise<void> {
-    const agent = this.getAgent(userId);
-    if (!agent || agent.status !== "ACTIVE") {
-      return;
-    }
-    await this.run(userId, {});
-  }
-
-  listScheduledUserIds(): readonly UUID[] {
-    return [...this.store.dondieAgents.values()]
-      .filter((agent) => agent.status === "ACTIVE")
-      .map((agent) => agent.userId);
-  }
-
-  private pickSymbol(userId: UUID, agent: DondieAgent): string {
+  private resolveSymbolUniverse(userId: UUID, agent: DondieAgent): readonly string[] {
     if (agent.symbolUniverse.length > 0) {
-      const index = Math.floor(Date.now() / 3_600_000) % agent.symbolUniverse.length;
-      return agent.symbolUniverse[index] ?? "AAPL";
+      return agent.symbolUniverse;
     }
     const watchlist = [...this.store.watchlists.values()].find((entry) => entry.userId === userId);
     if (watchlist && watchlist.symbols.length > 0) {
-      return watchlist.symbols[0]!;
+      return watchlist.symbols;
     }
-    return "AAPL";
+    return DEFAULT_AUTONOMOUS_UNIVERSE;
+  }
+
+  private countAutoTradesToday(userId: UUID): number {
+    const day = new Date().toISOString().slice(0, 10);
+    return this.platform
+      .listOrders(userId)
+      .filter(
+        (order) =>
+          order.mode === "AUTO" &&
+          order.submittedAt.startsWith(day) &&
+          order.status !== "REJECTED" &&
+          order.status !== "CANCELLED"
+      ).length;
   }
 }

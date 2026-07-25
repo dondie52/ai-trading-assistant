@@ -435,7 +435,7 @@ export function AgentOfficeScene({
           ) : null}
           {!world.loading && !world.error && !world.agentActive ? (
             <div className="office-empty" data-testid="office-inactive">
-              Activate Dondie to staff the office. Select COORD for controls.
+              Start hands-off from COORD — agent picks strategy. Fund in Alpaca.
             </div>
           ) : null}
         </div>

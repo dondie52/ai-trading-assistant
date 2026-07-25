@@ -140,6 +140,8 @@ export interface BrokerAccountView {
   readonly environment?: "PAPER" | "LIVE";
   readonly lastSyncedAt?: string;
   readonly createdAt: string;
+  /** Present after Alpaca connect when hands-off bootstrap ran. */
+  readonly autonomy?: AutonomousBootstrapResult;
 }
 
 export interface Portfolio {
@@ -362,6 +364,29 @@ export interface DondieAgent {
   readonly lastEvaluationScore?: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/** Result of hands-off bootstrap after broker connect (or explicit go-autonomous). */
+export interface AutonomousBootstrapResult {
+  readonly strategyId: UUID;
+  readonly strategyName: string;
+  readonly strategyTemplate: string;
+  readonly agentId: UUID;
+  readonly agentStatus: DondieAgentStatus;
+  readonly automationMode: AutomationMode;
+  readonly watchlist: readonly string[];
+  readonly risk: {
+    readonly maxRiskPerTradePercent: number;
+    readonly maxDailyLossPercent: number;
+    readonly maxDrawdownPercent: number;
+    readonly maxPositionSizePercent: number;
+  };
+  readonly capitalGuidance: {
+    readonly deposit: string;
+    readonly withdraw: string;
+    readonly alpacaDashboardUrl: string;
+  };
+  readonly alreadyBootstrapped: boolean;
 }
 
 export interface DondieWalletLedgerEntry {

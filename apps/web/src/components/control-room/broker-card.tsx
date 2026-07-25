@@ -40,7 +40,7 @@ function AlpacaConnectForm({
         <p className="mt-1 text-amber-100/80">
           {updating
             ? "Paste your new Alpaca paper API Key ID and Secret Key. Existing keys are replaced after a successful connection."
-            : "Paste your Alpaca paper API Key ID and Secret Key below. Market data, signals, and order routing stay disabled until a broker is connected."}
+            : "Paste your Alpaca paper API Key ID and Secret Key. After connect, Dondie starts hands-off AUTOPILOT — fund and withdraw only in Alpaca."}
         </p>
         <p className="mt-2 flex items-start gap-2 text-xs text-amber-100/70">
           <Shield className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -160,8 +160,8 @@ export function BrokerConnectionCard({
                 {alpacaConnected
                   ? active.environment === "LIVE"
                     ? "Live trading requires explicit operator enablement."
-                    : "Alpaca paper account linked — market data and order sync enabled."
-                  : "No Alpaca credentials yet. Connect below to enable market data and order sync."}
+                    : "Alpaca linked — if hands-off is not running yet, tap Reconnect / refresh or open Trade and start hands-off. Deposit or withdraw in Alpaca."
+                  : "No Alpaca credentials yet. Connect to fund trading and let the agent run hands-off."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

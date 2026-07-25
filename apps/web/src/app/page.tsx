@@ -31,11 +31,12 @@ import {
   WalletCards
 } from "lucide-react";
 import type { FormEvent, ReactElement } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import type {
   AuditLog,
   AutomationMode,
+  AutonomousBootstrapResult,
   AutomationRunResult,
   AutomationSettings,
   AuthTokens,
@@ -72,6 +73,7 @@ import type {
 import { AITradeCopilot } from "../components/control-room/ai-trade-copilot";
 import { AutomationModesPanel } from "../components/control-room/automation-modes";
 import { BrokerConnectionCard } from "../components/control-room/broker-card";
+import { HandsOffCapitalPanel } from "../components/control-room/hands-off-panel";
 import { RiskResultBanner } from "../components/control-room/risk-result";
 import { LandingPage } from "../components/landing-page";
 import { BottomNav, DesktopNav, type ControlRoomTab } from "../components/nav/control-room-nav";
@@ -288,7 +290,9 @@ export default function Page(): ReactElement {
   const [riskPassed, setRiskPassed] = useState(false);
   const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
   const [automationRunResult, setAutomationRunResult] = useState<AutomationRunResult | null>(null);
+  const [lastAutonomy, setLastAutonomy] = useState<AutonomousBootstrapResult | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const autoHandsOffAttempted = useRef(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserFirstName, setNewUserFirstName] = useState("");
@@ -530,10 +534,20 @@ export default function Page(): ReactElement {
   }, [auditFilter, auditLogs.data]);
 
   useEffect(() => {
-    if (!selectedStrategyId && activeStrategy?.id) {
+    if (selectedStrategyId) {
+      return;
+    }
+    const managed = strategies.data?.find(
+      (strategy) => strategy.configuration.agentManaged === true && strategy.status === "ACTIVE"
+    );
+    if (managed) {
+      setSelectedStrategyId(managed.id);
+      return;
+    }
+    if (activeStrategy?.id) {
       setSelectedStrategyId(activeStrategy.id);
     }
-  }, [activeStrategy?.id, selectedStrategyId]);
+  }, [activeStrategy?.id, selectedStrategyId, strategies.data]);
 
   useEffect(() => {
     setOrderDraft(null);
@@ -894,23 +908,15 @@ export default function Page(): ReactElement {
   });
 
   const activateDondieMutation = useMutation({
-    mutationFn: () => {
-      if (!selectedStrategy) {
-        throw new Error("Create a strategy first.");
-      }
-      return apiFetch<DondieAgent>(
-        "/dondie/activate",
-        {
-          method: "POST",
-          body: JSON.stringify({ strategyId: selectedStrategy.id })
-        },
-        token
+    mutationFn: () =>
+      apiFetch<AutonomousBootstrapResult>("/dondie/go-autonomous", { method: "POST", body: "{}" }, token),
+    onSuccess: async (autonomy) => {
+      setLastAutonomy(autonomy);
+      setSelectedStrategyId(autonomy.strategyId);
+      setNotice(
+        `${autonomy.strategyName} active on AUTOPILOT. Fund and withdraw in Alpaca — the agent handles the rest.`
       );
-    },
-    onSuccess: async (agent) => {
-      setNotice(`${agent.name} activated on ${agent.tier} tier.`);
-      await queryClient.invalidateQueries({ queryKey: ["dondie"] });
-      await queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] });
+      await invalidateTradingData();
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Dondie activation failed.");
@@ -938,21 +944,24 @@ export default function Page(): ReactElement {
   });
 
   const runDondieMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<DondieRunResult>(
+    mutationFn: () => {
+      // Hands-off: omit symbol so the agent scans its own universe.
+      const handsOff = automationSettings.data?.mode === "AUTOPILOT";
+      return apiFetch<DondieRunResult>(
         "/dondie/run",
         {
           method: "POST",
-          body: JSON.stringify({ symbol, timeframe })
+          body: JSON.stringify(handsOff ? { timeframe } : { symbol, timeframe })
         },
         token
-      ),
+      );
+    },
     onSuccess: async (result) => {
       setAutomationRunResult(result.automation);
       setNotice(
         result.automation.status === "EXECUTED"
           ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
-          : `Dondie skipped ${result.symbol}: ${result.reasoning}`
+          : `Dondie scanned and skipped ${result.symbol}: ${result.reasoning}`
       );
       await invalidateTradingData();
     },
@@ -1191,16 +1200,71 @@ export default function Page(): ReactElement {
         },
         token
       ),
-    onSuccess: async () => {
+    onSuccess: async (account) => {
       setAlpacaApiKey("");
       setAlpacaSecret("");
-      setNotice("Alpaca paper account connected. Balances and market data will load from your broker.");
+      if (account.autonomy) {
+        setLastAutonomy(account.autonomy);
+        setSelectedStrategyId(account.autonomy.strategyId);
+        setNotice(
+          `Alpaca connected. Hands-off mode on — Dondie chose ${account.autonomy.strategyName}. Fund or withdraw in Alpaca; the agent trades on AUTOPILOT.`
+        );
+      } else {
+        setNotice("Alpaca paper account connected. Balances and market data will load from your broker.");
+      }
       await invalidateTradingData();
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Broker connection failed.");
     }
   });
+
+  const goAutonomousMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<AutonomousBootstrapResult>("/dondie/go-autonomous", { method: "POST", body: "{}" }, token),
+    onSuccess: async (autonomy) => {
+      setLastAutonomy(autonomy);
+      setSelectedStrategyId(autonomy.strategyId);
+      setNotice(
+        `Hands-off mode active — ${autonomy.strategyName} on AUTOPILOT. Deposit and withdraw only in Alpaca.`
+      );
+      await invalidateTradingData();
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Could not start hands-off mode.");
+    }
+  });
+
+  // Alpaca already connected (no reconnect needed): start hands-off once on load.
+  useEffect(() => {
+    if (!authenticated || !alpacaConnected || autoHandsOffAttempted.current) {
+      return;
+    }
+    if (brokerAccounts.isLoading || automationSettings.isLoading || dondieAgent.isLoading) {
+      return;
+    }
+    if (automationSettings.data?.emergencyStop) {
+      return;
+    }
+    const alreadyHandsOff =
+      automationSettings.data?.mode === "AUTOPILOT" && dondieAgent.data?.status === "ACTIVE";
+    if (alreadyHandsOff) {
+      autoHandsOffAttempted.current = true;
+      return;
+    }
+    autoHandsOffAttempted.current = true;
+    goAutonomousMutation.mutate();
+  }, [
+    authenticated,
+    alpacaConnected,
+    brokerAccounts.isLoading,
+    automationSettings.isLoading,
+    automationSettings.data?.emergencyStop,
+    automationSettings.data?.mode,
+    dondieAgent.isLoading,
+    dondieAgent.data?.status,
+    goAutonomousMutation
+  ]);
 
   const markNotificationsReadMutation = useMutation({
     mutationFn: () =>
@@ -1441,7 +1505,12 @@ export default function Page(): ReactElement {
       onSecretChange={setAlpacaSecret}
       onConnect={() => connectBrokerMutation.mutate()}
       connecting={connectBrokerMutation.isPending}
-      onReconnect={() => void invalidateTradingData()}
+      onReconnect={() => {
+        void invalidateTradingData();
+        if (alpacaConnected) {
+          goAutonomousMutation.mutate();
+        }
+      }}
     />
   );
 
@@ -1881,8 +1950,8 @@ export default function Page(): ReactElement {
               onResume={() => resumeDondieMutation.mutate()}
               onRun={() => runDondieMutation.mutate()}
               onOpenTab={openControlRoomTab}
-              canActivate={Boolean(selectedStrategy)}
-              busy={officeBusy}
+              canActivate
+              busy={officeBusy || goAutonomousMutation.isPending}
             />
           </div>
         </section>
@@ -2041,20 +2110,61 @@ export default function Page(): ReactElement {
               onApplySuggestedQuantity={applySuggestedQuantity}
               draftOverride={orderDraft}
               onDraftChange={(draft) => setOrderDraft(normalizeDraftCalculations(draft))}
+              agent={dondieAgent.data ?? null}
+              memories={dondieMemories.data ?? []}
+              onRunAgent={() => runDondieMutation.mutate()}
+              agentBusy={runDondieMutation.isPending || goAutonomousMutation.isPending}
             />
-            {renderManualOrderForm()}
+            {automationSettings.data?.mode !== "AUTOPILOT" ? (
+              <div
+                className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-4 py-3 text-sm text-cyan-50"
+                data-testid="trade-hands-off-cta"
+              >
+                <p className="font-medium">Do not want to pick symbols?</p>
+                <p className="mt-1 text-cyan-100/80">
+                  Start hands-off mode — Dondie chooses tickers and strategy, then trades on AUTOPILOT.
+                </p>
+                <button
+                  type="button"
+                  data-testid="trade-start-hands-off"
+                  disabled={goAutonomousMutation.isPending}
+                  onClick={() => goAutonomousMutation.mutate()}
+                  className="mt-3 flex min-h-11 items-center justify-center rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 disabled:opacity-40"
+                >
+                  Start hands-off (no symbols needed)
+                </button>
+              </div>
+            ) : null}
+            {automationSettings.data?.mode === "AUTOPILOT" ? null : renderManualOrderForm()}
           </div>
           <div className="space-y-5">
-            <AutomationModesPanel
-              settings={automationSettings.data ?? null}
-              runResult={automationRunResult}
-              running={automatedRunMutation.isPending}
-              onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
-              onEmergencyPause={() => emergencyPauseMutation.mutate()}
-              onRun={() => automatedRunMutation.mutate()}
-              onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
-            />
-            {renderPaperDiagnostics()}
+            {automationSettings.data?.mode === "AUTOPILOT" ? (
+              <Panel title="Hands-off controls" icon={<Shield className="h-5 w-5 text-rose-300" aria-hidden="true" />} compact>
+                <p className="mb-3 text-sm text-slate-400">
+                  Mode stays on AUTOPILOT. Use emergency stop only if you need the agent to halt.
+                </p>
+                <button
+                  type="button"
+                  data-testid="trade-emergency-stop"
+                  onClick={() => emergencyPauseMutation.mutate()}
+                  disabled={emergencyPauseMutation.isPending}
+                  className="flex min-h-11 w-full items-center justify-center rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100 disabled:opacity-40"
+                >
+                  Emergency stop
+                </button>
+              </Panel>
+            ) : (
+              <AutomationModesPanel
+                settings={automationSettings.data ?? null}
+                runResult={automationRunResult}
+                running={automatedRunMutation.isPending}
+                onModeChange={(mode: AutomationMode) => updateAutomationSettingsMutation.mutate({ mode, emergencyStop: false })}
+                onEmergencyPause={() => emergencyPauseMutation.mutate()}
+                onRun={() => automatedRunMutation.mutate()}
+                onSettingsPatch={(patch) => updateAutomationSettingsMutation.mutate(patch)}
+              />
+            )}
+            {automationSettings.data?.mode === "AUTOPILOT" ? null : renderPaperDiagnostics()}
           </div>
         </section>
       ) : null}
@@ -2081,6 +2191,21 @@ export default function Page(): ReactElement {
 
       {activeTab === "settings" ? (
         <section data-testid="settings-view" className="space-y-5">
+          <HandsOffCapitalPanel
+            alpacaConnected={alpacaConnected}
+            agent={dondieAgent.data ?? null}
+            automation={automationSettings.data ?? null}
+            portfolio={primaryPortfolio ?? null}
+            autonomy={lastAutonomy}
+            onConnectBroker={openBrokerConnection}
+            onGoAutonomous={() => goAutonomousMutation.mutate()}
+            onEmergencyStop={() => emergencyPauseMutation.mutate()}
+            busy={
+              connectBrokerMutation.isPending ||
+              goAutonomousMutation.isPending ||
+              emergencyPauseMutation.isPending
+            }
+          />
           {renderBrokerCard()}
           <Panel title="More Control Room Views" icon={<Settings2 className="h-5 w-5 text-slate-300" aria-hidden="true" />} compact>
             <p className="mb-3 text-sm text-slate-400 md:hidden">

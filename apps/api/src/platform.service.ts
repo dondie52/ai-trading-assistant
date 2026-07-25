@@ -62,6 +62,7 @@ import {
   validatePassword,
   validateTradeRisk
 } from "@trading/shared";
+import { isAgentManagedStrategy } from "./dondie/agent-strategy-catalog.js";
 import { PaperBrokerAdapter } from "./brokers/paper-broker.adapter.js";
 import { AlpacaBrokerAdapter } from "./brokers/alpaca-broker.adapter.js";
 import { BrokerCredentialService } from "./brokers/broker-credential.service.js";
@@ -1850,11 +1851,13 @@ export class PlatformService implements OnModuleInit {
     }
     const watchlist = this.listWatchlists(userId)[0]?.symbols ?? [];
     const risk = this.getRiskRules(userId);
+    // Hands-off agents survive API restarts: restore AUTOPILOT from persisted agent+strategy.
+    const handsOff = this.hasHandsOffAgent(userId) && !risk.stopTrading;
     const defaults: import("@trading/types").AutomationSettings = {
-      mode: "ASSISTED",
+      mode: handsOff ? "AUTOPILOT" : "ASSISTED",
       watchlist: [...watchlist],
       marketHoursOnly: true,
-      minimumConfidence: 60,
+      minimumConfidence: handsOff ? 65 : 60,
       maxTradesPerDay: 5,
       riskPerTradePercent: risk.maxRiskPerTradePercent,
       maxPositionSizePercent: risk.maxPositionSizePercent,
@@ -1862,13 +1865,25 @@ export class PlatformService implements OnModuleInit {
       maxDrawdownPercent: risk.maxDrawdownPercent,
       allowedAssetTypes: ["stock"],
       cooldownSeconds: 60,
-      requireConfirmationAboveValue: 2_500,
+      requireConfirmationAboveValue: handsOff ? 1_000_000_000 : 2_500,
       emergencyStop: risk.stopTrading,
-      runtimeState: risk.stopTrading ? "RISK_LOCK" : "IDLE",
+      runtimeState: risk.stopTrading ? "RISK_LOCK" : handsOff ? "RUNNING" : "IDLE",
       updatedAt: isoNow()
     };
     this.store.automationSettings.set(userId, defaults);
     return defaults;
+  }
+
+  /** True when an ACTIVE Dondie agent is linked to an agent-managed strategy. */
+  hasHandsOffAgent(userId: UUID): boolean {
+    const agent = [...this.store.dondieAgents.values()].find(
+      (candidate) => candidate.userId === userId && candidate.status === "ACTIVE"
+    );
+    if (!agent?.strategyId) {
+      return false;
+    }
+    const strategy = this.store.strategies.get(agent.strategyId);
+    return Boolean(strategy && isAgentManagedStrategy(strategy.configuration));
   }
 
   updateAutomationSettings(userId: UUID, bodyValue: unknown): import("@trading/types").AutomationSettings {
