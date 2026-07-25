@@ -46,4 +46,25 @@ describe("Supabase infrastructure boundaries", () => {
       status: "error"
     });
   });
+
+  it("marks the database unreachable when the probe exceeds the timeout", async () => {
+    process.env.DATABASE_URL = "postgresql://configured";
+    const queryRaw = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve([{ "?column?": 1 }]), 200);
+        })
+    );
+    const database = new DatabaseHealthService({
+      client: () => ({ $queryRaw: queryRaw })
+    } as unknown as PrismaService);
+
+    await expect(database.check(20)).resolves.toMatchObject({
+      mode: "supabase",
+      configured: true,
+      reachable: false,
+      status: "error"
+    });
+  });
 });
+

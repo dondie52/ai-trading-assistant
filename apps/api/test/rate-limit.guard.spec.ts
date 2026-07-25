@@ -70,4 +70,22 @@ describe("RateLimitGuard", () => {
     expect(guard.canActivate(context)).toBe(true);
     expect(guard.canActivate(context)).toBe(true);
   });
+
+  it("never rate-limits Render health probes", () => {
+    delete process.env.RATE_LIMIT_DISABLED;
+    process.env.RATE_LIMIT_MAX = "1";
+    const guard = new RateLimitGuard();
+    const context = contextFor({
+      method: "GET",
+      url: "/api/v1/health",
+      route: { path: "/api/v1/health" },
+      ip: "127.0.0.1",
+      headers: {},
+      socket: {}
+    });
+
+    expect(guard.canActivate(context)).toBe(true);
+    expect(guard.canActivate(context)).toBe(true);
+    expect(guard.canActivate(context)).toBe(true);
+  });
 });
