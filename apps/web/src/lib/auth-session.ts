@@ -1,7 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
 import type { AuthTokens, PublicUser } from "@trading/types";
 import { useSessionStore } from "../store/session";
-import { ApiError, apiFetch, registerApiAuthHandlers } from "./api";
+import { ApiError, apiFetch, registerApiAuthHandlers, wakeTradingApi } from "./api";
 import { createSupabaseBrowserClient, isSupabaseAuthEnabled } from "./supabase/client";
 
 const RECOVERABLE_AUTH_CODES = new Set(["INVALID_TOKEN", "INVALID_SESSION"]);
@@ -47,6 +47,7 @@ export const applySupabaseSession = async (session: Session | null): Promise<voi
     return;
   }
 
+  await wakeTradingApi();
   const platformUser = await apiFetch<PublicUser>("/users/me", { authRetry: false }, session.access_token);
   store.setSession(toAuthTokens(session, platformUser));
 };
