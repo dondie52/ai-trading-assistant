@@ -2,11 +2,15 @@ import { Body, Controller, Get, Inject, Post } from "@nestjs/common";
 import { CurrentUser } from "../auth/decorators.js";
 import { ok } from "../common/api-response.js";
 import type { AuthenticatedPrincipal } from "../common/request.js";
+import { AutonomousBootstrapService } from "./autonomous-bootstrap.service.js";
 import { DondieService } from "./dondie.service.js";
 
 @Controller("dondie")
 export class DondieController {
-  constructor(@Inject(DondieService) private readonly dondie: DondieService) {}
+  constructor(
+    @Inject(DondieService) private readonly dondie: DondieService,
+    @Inject(AutonomousBootstrapService) private readonly bootstrap: AutonomousBootstrapService
+  ) {}
 
   @Get()
   status(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
@@ -39,6 +43,12 @@ export class DondieController {
   @Post("activate")
   async activate(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: unknown): Promise<ReturnType<typeof ok>> {
     return ok(await this.dondie.activate(user.sub, body));
+  }
+
+  /** Hands-off: agent picks strategy/risk/AUTOPILOT. Capital stays in Alpaca. */
+  @Post("go-autonomous")
+  async goAutonomous(@CurrentUser() user: AuthenticatedPrincipal): Promise<ReturnType<typeof ok>> {
+    return ok(await this.bootstrap.ensureAutonomousMode(user.sub));
   }
 
   @Post("pause")

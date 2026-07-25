@@ -36,6 +36,7 @@ import { io } from "socket.io-client";
 import type {
   AuditLog,
   AutomationMode,
+  AutonomousBootstrapResult,
   AutomationRunResult,
   AutomationSettings,
   AuthTokens,
@@ -72,6 +73,7 @@ import type {
 import { AITradeCopilot } from "../components/control-room/ai-trade-copilot";
 import { AutomationModesPanel } from "../components/control-room/automation-modes";
 import { BrokerConnectionCard } from "../components/control-room/broker-card";
+import { HandsOffCapitalPanel } from "../components/control-room/hands-off-panel";
 import { RiskResultBanner } from "../components/control-room/risk-result";
 import { LandingPage } from "../components/landing-page";
 import { BottomNav, DesktopNav, type ControlRoomTab } from "../components/nav/control-room-nav";
@@ -288,6 +290,7 @@ export default function Page(): ReactElement {
   const [riskPassed, setRiskPassed] = useState(false);
   const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null);
   const [automationRunResult, setAutomationRunResult] = useState<AutomationRunResult | null>(null);
+  const [lastAutonomy, setLastAutonomy] = useState<AutonomousBootstrapResult | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -894,23 +897,15 @@ export default function Page(): ReactElement {
   });
 
   const activateDondieMutation = useMutation({
-    mutationFn: () => {
-      if (!selectedStrategy) {
-        throw new Error("Create a strategy first.");
-      }
-      return apiFetch<DondieAgent>(
-        "/dondie/activate",
-        {
-          method: "POST",
-          body: JSON.stringify({ strategyId: selectedStrategy.id })
-        },
-        token
+    mutationFn: () =>
+      apiFetch<AutonomousBootstrapResult>("/dondie/go-autonomous", { method: "POST", body: "{}" }, token),
+    onSuccess: async (autonomy) => {
+      setLastAutonomy(autonomy);
+      setSelectedStrategyId(autonomy.strategyId);
+      setNotice(
+        `${autonomy.strategyName} active on AUTOPILOT. Fund and withdraw in Alpaca — the agent handles the rest.`
       );
-    },
-    onSuccess: async (agent) => {
-      setNotice(`${agent.name} activated on ${agent.tier} tier.`);
-      await queryClient.invalidateQueries({ queryKey: ["dondie"] });
-      await queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] });
+      await invalidateTradingData();
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Dondie activation failed.");
@@ -1191,14 +1186,38 @@ export default function Page(): ReactElement {
         },
         token
       ),
-    onSuccess: async () => {
+    onSuccess: async (account) => {
       setAlpacaApiKey("");
       setAlpacaSecret("");
-      setNotice("Alpaca paper account connected. Balances and market data will load from your broker.");
+      if (account.autonomy) {
+        setLastAutonomy(account.autonomy);
+        setSelectedStrategyId(account.autonomy.strategyId);
+        setNotice(
+          `Alpaca connected. Hands-off mode on — Dondie chose ${account.autonomy.strategyName}. Fund or withdraw in Alpaca; the agent trades on AUTOPILOT.`
+        );
+      } else {
+        setNotice("Alpaca paper account connected. Balances and market data will load from your broker.");
+      }
       await invalidateTradingData();
     },
     onError: (error) => {
       setNotice(error instanceof Error ? error.message : "Broker connection failed.");
+    }
+  });
+
+  const goAutonomousMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<AutonomousBootstrapResult>("/dondie/go-autonomous", { method: "POST", body: "{}" }, token),
+    onSuccess: async (autonomy) => {
+      setLastAutonomy(autonomy);
+      setSelectedStrategyId(autonomy.strategyId);
+      setNotice(
+        `Hands-off mode active — ${autonomy.strategyName} on AUTOPILOT. Deposit and withdraw only in Alpaca.`
+      );
+      await invalidateTradingData();
+    },
+    onError: (error) => {
+      setNotice(error instanceof Error ? error.message : "Could not start hands-off mode.");
     }
   });
 
@@ -1881,8 +1900,8 @@ export default function Page(): ReactElement {
               onResume={() => resumeDondieMutation.mutate()}
               onRun={() => runDondieMutation.mutate()}
               onOpenTab={openControlRoomTab}
-              canActivate={Boolean(selectedStrategy)}
-              busy={officeBusy}
+              canActivate
+              busy={officeBusy || goAutonomousMutation.isPending}
             />
           </div>
         </section>
@@ -2081,6 +2100,21 @@ export default function Page(): ReactElement {
 
       {activeTab === "settings" ? (
         <section data-testid="settings-view" className="space-y-5">
+          <HandsOffCapitalPanel
+            alpacaConnected={alpacaConnected}
+            agent={dondieAgent.data ?? null}
+            automation={automationSettings.data ?? null}
+            portfolio={primaryPortfolio ?? null}
+            autonomy={lastAutonomy}
+            onConnectBroker={openBrokerConnection}
+            onGoAutonomous={() => goAutonomousMutation.mutate()}
+            onEmergencyStop={() => emergencyPauseMutation.mutate()}
+            busy={
+              connectBrokerMutation.isPending ||
+              goAutonomousMutation.isPending ||
+              emergencyPauseMutation.isPending
+            }
+          />
           {renderBrokerCard()}
           <Panel title="More Control Room Views" icon={<Settings2 className="h-5 w-5 text-slate-300" aria-hidden="true" />} compact>
             <p className="mb-3 text-sm text-slate-400 md:hidden">

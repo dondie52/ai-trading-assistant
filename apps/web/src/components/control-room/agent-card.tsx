@@ -53,7 +53,7 @@ export function SurvivalAgentCard({
         {!agent ? (
           <div className="space-y-3">
             <p className="text-sm text-slate-400">
-              Activate Dondie on the FREE tier after linking a strategy. Wallet balance funds cognition — it is not trading equity.
+              Prefer hands-off? Connect Alpaca in Settings — Dondie picks the strategy and starts AUTOPILOT. Manual activate still works if you already linked a strategy. Cognition wallet is not trading equity.
             </p>
             <button
               data-testid="dondie-activate"
@@ -63,7 +63,7 @@ export function SurvivalAgentCard({
               className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-violetSignal px-4 py-3 text-sm text-white disabled:opacity-40"
             >
               <Sparkles className="h-4 w-4" aria-hidden="true" />
-              Activate Dondie
+              Start hands-off
             </button>
           </div>
         ) : (

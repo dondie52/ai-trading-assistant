@@ -176,7 +176,7 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
 
   if (!agent) {
     coordinator = buildAgent("coordinator", "offline", "Not activated", nowIso, [
-      "Activate Dondie with a linked strategy to start the survival loop."
+      "Start hands-off mode — Dondie picks strategy and AUTOPILOT. Fund and withdraw in Alpaca."
     ]);
   } else if (agent.status === "SUSPENDED" || activity === "ERROR_RETRYING") {
     coordinator = buildAgent("coordinator", "error", "Needs operator attention", agent.updatedAt, [

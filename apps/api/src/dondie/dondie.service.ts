@@ -179,6 +179,39 @@ export class DondieService implements OnModuleInit {
     return agent;
   }
 
+  /** Activate or resume Dondie and keep strategy linked for hands-off mode. */
+  async ensureActiveWithStrategy(userId: UUID, strategyId: UUID): Promise<DondieAgent> {
+    const strategy = this.store.strategies.get(strategyId);
+    if (!strategy || strategy.userId !== userId) {
+      throw new BadRequestException({ code: "STRATEGY_NOT_FOUND", message: "Strategy was not found." });
+    }
+
+    const existing = this.getAgent(userId);
+    if (!existing) {
+      return this.activate(userId, { strategyId });
+    }
+
+    let updated: DondieAgent = existing;
+    if (existing.strategyId !== strategyId) {
+      updated = { ...existing, strategyId, updatedAt: isoNow() };
+      this.store.dondieAgents.set(updated.id, updated);
+      await this.repository.persistAgent(updated);
+      this.store.appendAudit({
+        userId,
+        actorUserId: userId,
+        action: "DONDIE_STRATEGY_LINKED",
+        entityType: "DONDIE_AGENT",
+        entityId: updated.id,
+        metadata: { strategyId }
+      });
+    }
+
+    if (updated.status !== "ACTIVE") {
+      return this.resume(userId);
+    }
+    return updated;
+  }
+
   async pause(userId: UUID): Promise<DondieAgent> {
     return this.updateStatus(userId, "PAUSED");
   }
