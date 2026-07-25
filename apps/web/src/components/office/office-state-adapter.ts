@@ -215,9 +215,10 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
     coordinator = buildAgent(
       "coordinator",
       "working",
-      lifestyle?.activityLabel ?? "Weekend crypto desk",
+      lifestyle?.currentTask ?? "Weekend crypto desk — scanning for earn gigs",
       lifestyle?.updatedAt ?? nowIso,
-      [lifestyle?.currentTask ?? "Earning for the survival wallet while equities sleep."]
+      [lifestyle?.activityLabel ?? "SIDE_HUSTLE", lifestyle?.lastEventSummary ?? "Equities closed — crypto desk active."]
+        .filter(Boolean)
     );
   } else if (activity === "MARKET_CLOSED" || runtime === "WAITING_FOR_MARKET") {
     coordinator = buildAgent(
@@ -246,19 +247,24 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
   } else if (
     stepRunning(run, ["market", "strategy", "rank"]) ||
     activity === "ANALYSING" ||
+    activity === "SIDE_HUSTLE" ||
     (latestSignal && isRecent(latestSignal.generatedAt, now))
   ) {
     signalAgent = buildAgent(
       "signal",
       "working",
-      latestSignal
-        ? `Scanning ${latestSignal.symbol} · ${latestSignal.signalType} ${latestSignal.confidenceScore}%`
-        : "Scanning market / ranking setups",
+      activity === "SIDE_HUSTLE"
+        ? "Scanning weekend crypto tape for desk notes"
+        : latestSignal
+          ? `Scanning ${latestSignal.symbol} · ${latestSignal.signalType} ${latestSignal.confidenceScore}%`
+          : "Scanning market / ranking setups",
       latestSignal?.generatedAt ?? lifestyle?.updatedAt ?? nowIso,
-      latestSignal
-        ? [`Model ${latestSignal.modelVersion}`, `Strategy ${latestSignal.strategyId.slice(0, 8)}…`]
-        : [],
-      latestSignal ? { type: "signal", id: latestSignal.id } : undefined
+      activity === "SIDE_HUSTLE"
+        ? ["Weekend crypto desk", "No equity orders while cash session is closed"]
+        : latestSignal
+          ? [`Model ${latestSignal.modelVersion}`, `Strategy ${latestSignal.strategyId.slice(0, 8)}…`]
+          : [],
+      latestSignal && activity !== "SIDE_HUSTLE" ? { type: "signal", id: latestSignal.id } : undefined
     );
   } else if (latestSignal) {
     signalAgent = buildAgent(
@@ -281,13 +287,22 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
   );
   if (!agent) {
     brainAgent = buildAgent("brain", "offline", "Awaiting agent activation", nowIso, []);
-  } else if (activity === "THINKING" || Boolean(latestMemory && isRecent(latestMemory.createdAt, now))) {
+  } else if (
+    activity === "THINKING" ||
+    activity === "SIDE_HUSTLE" ||
+    Boolean(latestMemory && isRecent(latestMemory.createdAt, now))
+  ) {
     brainAgent = buildAgent(
       "brain",
       "working",
-      latestMemory?.summary ?? "Evaluating strategy decision",
+      activity === "SIDE_HUSTLE"
+        ? "Evaluating weekend crypto desk research brief"
+        : latestMemory?.summary ?? "Evaluating strategy decision",
       latestMemory?.createdAt ?? lifestyle?.updatedAt ?? nowIso,
-      [`Tier ${agent.tier}`, latestMemory ? "Latest run memory attached" : ""].filter(Boolean),
+      [
+        `Tier ${agent.tier}`,
+        activity === "SIDE_HUSTLE" ? "Side hustle cognition" : latestMemory ? "Latest run memory attached" : ""
+      ].filter(Boolean),
       latestMemory?.runId ? { type: "run", id: latestMemory.runId } : undefined
     );
   } else if (activity === "AWAITING_CONFIRMATION") {

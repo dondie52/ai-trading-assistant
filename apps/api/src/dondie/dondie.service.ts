@@ -75,6 +75,8 @@ const errorMessage = (error: unknown): string => {
 
 @Injectable()
 export class DondieService implements OnModuleInit {
+  private readonly weekendHustleInFlight = new Set<UUID>();
+
   constructor(
     @Inject(PlatformStore) private readonly store: PlatformStore,
     @Inject(PlatformService) private readonly platform: PlatformService,
@@ -153,7 +155,10 @@ export class DondieService implements OnModuleInit {
     };
   }
 
-  getLifestyle(userId: UUID): DondieLifestyleWorld {
+  async getLifestyle(userId: UUID): Promise<DondieLifestyleWorld> {
+    // Opening the office on a weekend should not wait an hour for the first gig.
+    await this.maybeEarnWeekendIfDue(userId);
+
     const agent = this.getAgent(userId) ?? null;
     const trades = this.platform.listTrades(userId);
     const orders = this.platform.listOrders(userId);
@@ -394,6 +399,34 @@ export class DondieService implements OnModuleInit {
         return nowMs - last >= scheduleMs;
       })
       .map((agent) => agent.userId);
+  }
+
+  private async maybeEarnWeekendIfDue(userId: UUID): Promise<void> {
+    if (!this.weekendEarn.isWeekendEarnWindow()) {
+      return;
+    }
+    const agent = this.getAgent(userId);
+    if (!agent || agent.status !== "ACTIVE") {
+      return;
+    }
+    const settings = this.platform.getAutomationSettings(userId);
+    if (settings.mode !== "AUTOPILOT" || settings.emergencyStop) {
+      return;
+    }
+    if (!this.listDueScheduledUserIds().includes(userId)) {
+      return;
+    }
+    if (this.weekendHustleInFlight.has(userId)) {
+      return;
+    }
+    this.weekendHustleInFlight.add(userId);
+    try {
+      await this.runWeekendSideHustle(userId, agent);
+    } catch {
+      // Lifestyle should still render if a hustle attempt fails.
+    } finally {
+      this.weekendHustleInFlight.delete(userId);
+    }
   }
 
   private async runWeekendSideHustle(userId: UUID, agent: DondieAgent): Promise<DondieRunResult> {

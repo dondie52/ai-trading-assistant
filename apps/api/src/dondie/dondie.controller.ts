@@ -23,8 +23,8 @@ export class DondieController {
   }
 
   @Get("lifestyle")
-  lifestyle(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
-    return ok(this.dondie.getLifestyle(user.sub));
+  async lifestyle(@CurrentUser() user: AuthenticatedPrincipal): Promise<ReturnType<typeof ok>> {
+    return ok(await this.dondie.getLifestyle(user.sub));
   }
 
   @Get("memories")

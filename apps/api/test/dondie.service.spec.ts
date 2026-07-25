@@ -234,7 +234,7 @@ describe("Dondie survival loop", () => {
       }
     }
 
-    const world = dondie.getLifestyle(user.id);
+    const world = await dondie.getLifestyle(user.id);
     expect(world.lifestyleLevel).toBe(1);
     expect(world.activity).toBeTruthy();
     expect(world.currentTask.length).toBeGreaterThan(0);
