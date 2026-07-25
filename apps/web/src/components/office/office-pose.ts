@@ -31,7 +31,12 @@ export const resolvePose = (agent: OfficeAgentState, isCoordinatorAway = false):
     if (agent.role === "broker" || /execut|submit|fill/i.test(agent.activity)) {
       return "execute";
     }
-    if (agent.role === "brain" || agent.role === "signal" || /think|evaluat|scan|analys/i.test(agent.activity)) {
+    if (
+      agent.role === "brain" ||
+      agent.role === "signal" ||
+      agent.role === "coordinator" ||
+      /think|evaluat|scan|analys|crypto|hustle|earn|weekend|desk/i.test(agent.activity)
+    ) {
       return "think";
     }
     return "sit";
@@ -45,6 +50,9 @@ export const resolvePose = (agent: OfficeAgentState, isCoordinatorAway = false):
 export const statusBubbleText = (status: OfficeAgentStatus, activity: string): string => {
   switch (status) {
     case "working":
+      if (/crypto|hustle|weekend|earn/i.test(activity)) {
+        return "GIG";
+      }
       if (/scan|signal|market/i.test(activity)) {
         return "SCAN";
       }
