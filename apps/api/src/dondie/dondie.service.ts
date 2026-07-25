@@ -6,7 +6,16 @@ import {
   OnModuleInit
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import type { DondieAgent, DondieMemory, DondieRunResult, JsonObject, MarketTimeframe, UUID } from "@trading/types";
+import type {
+  DondieAgent,
+  DondieLifestyleWorld,
+  DondieMemory,
+  DondieRunResult,
+  JsonObject,
+  MarketTimeframe,
+  UUID
+} from "@trading/types";
+import { buildDondieLifestyleWorld } from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
 import { DondieBrainService } from "./dondie-brain.service.js";
@@ -88,6 +97,40 @@ export class DondieService implements OnModuleInit {
       tier: agent.tier,
       ledger: this.wallet.listLedger(agent.id)
     };
+  }
+
+  getLifestyle(userId: UUID): DondieLifestyleWorld {
+    const agent = this.getAgent(userId) ?? null;
+    const trades = this.platform.listTrades(userId);
+    const orders = this.platform.listOrders(userId);
+    const risk = this.platform.getRiskRules(userId);
+    const automation = this.platform.getAutomationSettings(userId);
+    const brokers = this.platform.listBrokerAccounts(userId);
+    const brokerConnected = brokers.some(
+      (account) => account.status === "CONNECTED" && (account.hasCredentials || account.brokerName === "PAPER")
+    );
+    const signals = this.platform.listSignals(userId);
+    const latestSignal = signals[signals.length - 1];
+    const positions = this.platform.listPositions(userId);
+    const completedRuns = agent
+      ? this.memory.listMemories(agent.id).length
+      : 0;
+    const paperMode = !brokers.some((account) => account.environment === "LIVE" && account.hasCredentials);
+
+    return buildDondieLifestyleWorld({
+      agent,
+      trades,
+      orders,
+      completedRuns,
+      brokerConnected,
+      riskLocked: risk.stopTrading || automation.emergencyStop || automation.runtimeState === "RISK_LOCK",
+      automationPaused: agent?.status === "PAUSED" || automation.mode === "MANUAL" || automation.runtimeState === "PAUSED",
+      marketOpen: automation.runtimeState !== "WAITING_FOR_MARKET",
+      ...(latestSignal?.symbol ? { recentSignalSymbol: latestSignal.symbol } : {}),
+      hasOpenPositions: positions.some((position) => position.quantity !== 0),
+      paperMode,
+      isExecuting: automation.runtimeState === "RUNNING" && automation.mode === "AUTOPILOT"
+    });
   }
 
   requireAgent(userId: UUID): DondieAgent {

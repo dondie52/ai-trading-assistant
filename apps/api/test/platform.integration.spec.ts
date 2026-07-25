@@ -670,7 +670,9 @@ describe("platform integration", () => {
       status: "REJECTED",
       riskDecision: {
         approved: false,
-        reasons: expect.arrayContaining(["Trade exceeds maximum position size."])
+        reasons: expect.arrayContaining([
+          expect.stringMatching(/would use .* of the portfolio|exceeds maximum position size/i)
+        ])
       }
     });
     expect(platform.listTrades(userId)).toHaveLength(0);

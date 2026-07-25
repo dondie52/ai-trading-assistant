@@ -39,9 +39,10 @@ describe("risk engine", () => {
 
     expect(decision.approved).toBe(true);
     expect(decision.calculatedQuantity).toBe(20);
+    expect(decision.rejections).toEqual([]);
   });
 
-  it("rejects a trade that exceeds max risk per trade", () => {
+  it("rejects a trade that exceeds max risk per trade with structured details", () => {
     const decision = validateTradeRisk(
       rules,
       {
@@ -62,7 +63,10 @@ describe("risk engine", () => {
     );
 
     expect(decision.approved).toBe(false);
-    expect(decision.reasons).toContain("Trade exceeds maximum risk per trade.");
+    expect(decision.rejections?.[0]?.code).toBe("MAX_RISK_PER_TRADE_EXCEEDED");
+    expect(decision.rejections?.[0]?.title).toBe("Trade risk is too high");
+    expect(decision.suggestedQuantity).toBeGreaterThan(0);
+    expect(decision.suggestedQuantity).toBeLessThan(50);
   });
 
   it("blocks invalid stop-loss placement before execution", () => {
@@ -85,7 +89,8 @@ describe("risk engine", () => {
     );
 
     expect(decision.approved).toBe(false);
-    expect(decision.reasons).toContain("Buy stop-loss must be below entry price.");
+    expect(decision.rejections?.[0]?.code).toBe("STOP_LOSS_GEOMETRY");
+    expect(decision.reasons[0]).toContain("stop loss must be below");
   });
 
   it("allows an exit that reduces exposure even after entry limits are reached", () => {
@@ -140,14 +145,14 @@ describe("risk engine", () => {
     );
 
     expect(decision.approved).toBe(false);
-    expect(decision.reasons).toEqual(
+    expect(decision.rejections?.map((item) => item.code)).toEqual(
       expect.arrayContaining([
-        "Trading is stopped by risk controls.",
-        "Portfolio equity must be positive.",
-        "Entry price must be positive.",
-        "Every trade must include a positive stop-loss.",
-        "Every trade must include a positive take-profit.",
-        "Calculated position size must be greater than zero."
+        "TRADING_STOPPED",
+        "INVALID_EQUITY",
+        "INVALID_ENTRY_PRICE",
+        "INVALID_STOP_LOSS",
+        "INVALID_TAKE_PROFIT",
+        "ZERO_POSITION_SIZE"
       ])
     );
   });
@@ -171,11 +176,8 @@ describe("risk engine", () => {
         requestedQuantity: 1
       }
     );
-    expect(sell.reasons).toEqual(
-      expect.arrayContaining([
-        "Sell stop-loss must be above entry price.",
-        "Sell take-profit must be below entry price."
-      ])
+    expect(sell.rejections?.map((item) => item.code)).toEqual(
+      expect.arrayContaining(["STOP_LOSS_GEOMETRY", "TAKE_PROFIT_GEOMETRY"])
     );
 
     const constrained = validateTradeRisk(
@@ -196,13 +198,46 @@ describe("risk engine", () => {
         requestedQuantity: 20
       }
     );
-    expect(constrained.reasons).toEqual(
+    expect(constrained.rejections?.map((item) => item.code)).toEqual(
       expect.arrayContaining([
-        "Trade exceeds maximum position size.",
-        "Daily loss limit has been reached.",
-        "Maximum drawdown limit has been reached.",
-        "Cash balance is insufficient for the proposed buy order."
+        "MAX_POSITION_SIZE_EXCEEDED",
+        "DAILY_LOSS_LIMIT_REACHED",
+        "MAX_DRAWDOWN_REACHED",
+        "INSUFFICIENT_CASH"
       ])
     );
+    expect(constrained.suggestedQuantity).toBeGreaterThan(0);
+  });
+
+  it("suggests a safe quantity when position size percent is exceeded", () => {
+    const decision = validateTradeRisk(
+      { ...rules, maxPositionSizePercent: 10 },
+      {
+        equity: 10_000,
+        cashBalance: 10_000,
+        dailyRealizedPnl: 0,
+        currentDrawdownPercent: 0,
+        existingPositionValue: 0
+      },
+      {
+        symbol: "AAPL",
+        side: "BUY",
+        price: 100,
+        stopLoss: 98,
+        takeProfit: 110,
+        requestedQuantity: 18
+      }
+    );
+
+    expect(decision.approved).toBe(false);
+    const positionRejection = decision.rejections?.find((item) => item.code === "MAX_POSITION_SIZE_EXCEEDED");
+    expect(positionRejection?.currentValue).toBe(18);
+    expect(positionRejection?.limit).toBe(10);
+    const suggestedQuantity = positionRejection?.suggestedQuantity;
+    expect(suggestedQuantity).toBeDefined();
+    if (suggestedQuantity === undefined) {
+      throw new Error("Expected suggested quantity for position-size rejection.");
+    }
+    expect(suggestedQuantity).toBeLessThanOrEqual(10);
   });
 });

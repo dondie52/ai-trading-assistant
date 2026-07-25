@@ -18,6 +18,11 @@ export class DondieController {
     return ok(this.dondie.getWallet(user.sub));
   }
 
+  @Get("lifestyle")
+  lifestyle(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
+    return ok(this.dondie.getLifestyle(user.sub));
+  }
+
   @Get("memories")
   memories(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
     return ok(this.dondie.listMemories(user.sub));

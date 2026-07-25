@@ -20,8 +20,32 @@ export type OrderStatus =
   | "CANCELLED"
   | "REJECTED";
 export type TradingMode = "MANUAL" | "SEMI_AUTO" | "AUTO";
+/** Operator-facing automation posture. Maps to TradingMode for order submission. */
+export type AutomationMode = "MANUAL" | "ASSISTED" | "AUTOPILOT";
+export type AutomationRuntimeState =
+  | "RUNNING"
+  | "PAUSED"
+  | "WAITING_FOR_MARKET"
+  | "BROKER_DISCONNECTED"
+  | "RISK_LOCK"
+  | "DAILY_LIMIT_REACHED"
+  | "IDLE";
 export type NotificationType = "TRADE" | "SIGNAL" | "RISK" | "SYSTEM";
 export type MarketTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+export type RiskRejectionCode =
+  | "TRADING_STOPPED"
+  | "INVALID_EQUITY"
+  | "INVALID_ENTRY_PRICE"
+  | "INVALID_STOP_LOSS"
+  | "INVALID_TAKE_PROFIT"
+  | "STOP_LOSS_GEOMETRY"
+  | "TAKE_PROFIT_GEOMETRY"
+  | "ZERO_POSITION_SIZE"
+  | "MAX_RISK_PER_TRADE_EXCEEDED"
+  | "MAX_POSITION_SIZE_EXCEEDED"
+  | "DAILY_LOSS_LIMIT_REACHED"
+  | "MAX_DRAWDOWN_REACHED"
+  | "INSUFFICIENT_CASH";
 
 export interface PaginatedResult<T> {
   readonly data: readonly T[];
@@ -113,6 +137,8 @@ export interface BrokerAccountView {
   readonly accountId: string;
   readonly status: "CONNECTED" | "DISCONNECTED";
   readonly hasCredentials: boolean;
+  readonly environment?: "PAPER" | "LIVE";
+  readonly lastSyncedAt?: string;
   readonly createdAt: string;
 }
 
@@ -187,6 +213,22 @@ export interface OrderExecutionPayload {
   readonly riskDecision: RiskDecision;
 }
 
+export interface AutomationRunStep {
+  readonly id: string;
+  readonly label: string;
+  readonly status: "pending" | "running" | "done" | "skipped" | "failed";
+  readonly detail?: string;
+}
+
+export interface AutomationRunSummary {
+  readonly symbolsScanned: number;
+  readonly opportunitiesFound: number;
+  readonly qualifiedSignals: number;
+  readonly tradesCreated: number;
+  readonly signalsRejected: number;
+  readonly highestRejectionReason?: string;
+}
+
 export interface AutomationRunResult {
   readonly status: "EXECUTED" | "SKIPPED";
   readonly mode: "AUTO";
@@ -195,6 +237,27 @@ export interface AutomationRunResult {
   readonly signal: Signal;
   readonly reason?: string;
   readonly execution?: OrderExecutionPayload;
+  readonly idempotencyKey?: string;
+  readonly steps?: readonly AutomationRunStep[];
+  readonly summary?: AutomationRunSummary;
+}
+
+export interface AutomationSettings {
+  readonly mode: AutomationMode;
+  readonly watchlist: readonly string[];
+  readonly marketHoursOnly: boolean;
+  readonly minimumConfidence: number;
+  readonly maxTradesPerDay: number;
+  readonly riskPerTradePercent: number;
+  readonly maxPositionSizePercent: number;
+  readonly dailyLossLimitPercent: number;
+  readonly maxDrawdownPercent: number;
+  readonly allowedAssetTypes: readonly string[];
+  readonly cooldownSeconds: number;
+  readonly requireConfirmationAboveValue: number;
+  readonly emergencyStop: boolean;
+  readonly runtimeState: AutomationRuntimeState;
+  readonly updatedAt: string;
 }
 
 export type DondieTier = "FREE" | "STANDARD" | "PRO";
@@ -202,6 +265,88 @@ export type DondieAgentStatus = "ACTIVE" | "PAUSED" | "SUSPENDED";
 export type DondieSubscriptionPlan = "FREE" | "PRO";
 export type DondieSubscriptionStatus = "ACTIVE" | "CANCELLED" | "PAST_DUE";
 export type DondieLedgerEntryType = "CREDIT" | "DEBIT";
+
+export type DondieLifestyleLevel = 1 | 2 | 3 | 4 | 5;
+export type DondieActivityState =
+  | "IDLE"
+  | "SLEEPING"
+  | "RESTING"
+  | "THINKING"
+  | "ANALYSING"
+  | "PREPARING_ORDER"
+  | "AWAITING_CONFIRMATION"
+  | "EXECUTING"
+  | "MONITORING"
+  | "CELEBRATING"
+  | "BLOCKED_BY_RISK"
+  | "BROKER_DISCONNECTED"
+  | "MARKET_CLOSED"
+  | "ERROR_RETRYING";
+
+export type DondieMood =
+  | "focused"
+  | "calm"
+  | "tired"
+  | "optimistic"
+  | "cautious"
+  | "blocked"
+  | "celebrating"
+  | "waiting";
+
+export interface DondieRoomTiers {
+  readonly room: DondieLifestyleLevel;
+  readonly desk: DondieLifestyleLevel;
+  readonly chair: DondieLifestyleLevel;
+  readonly monitor: DondieLifestyleLevel;
+  readonly bed: DondieLifestyleLevel;
+  readonly decor: DondieLifestyleLevel;
+  readonly lighting: DondieLifestyleLevel;
+}
+
+export interface DondieAchievement {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly unlocked: boolean;
+  readonly unlockedAt?: string;
+}
+
+export interface DondieLifestyleWorld {
+  readonly agentId?: UUID;
+  readonly lifestyleLevel: DondieLifestyleLevel;
+  readonly lifestyleLabel: string;
+  readonly walletBalance: number;
+  readonly paperTradingLabel: "PAPER" | "LIVE";
+  readonly brainTier: DondieTier;
+  readonly mood: DondieMood;
+  readonly activity: DondieActivityState;
+  readonly activityLabel: string;
+  readonly currentTask: string;
+  readonly lastEventSummary: string;
+  readonly lastTradeResult?: {
+    readonly symbol: string;
+    readonly pnl: number;
+    readonly side: OrderSide;
+    readonly closedAt?: string;
+  };
+  readonly room: DondieRoomTiers;
+  readonly nextUnlock: {
+    readonly level: DondieLifestyleLevel | null;
+    readonly label: string;
+    readonly walletRequired: number;
+    readonly progressPercent: number;
+  };
+  readonly achievements: readonly DondieAchievement[];
+  readonly stats: {
+    readonly completedRuns: number;
+    readonly closedTrades: number;
+    readonly profitableTrades: number;
+    readonly consecutiveProfitableTrades: number;
+    readonly cumulativePaperProfit: number;
+  };
+  readonly disclaimer: string;
+  readonly updatedAt: string;
+}
 
 export interface DondieAgent {
   readonly id: UUID;
@@ -306,6 +451,16 @@ export interface RiskRules {
   readonly updatedAt: string;
 }
 
+export interface RiskRejection {
+  readonly code: RiskRejectionCode;
+  readonly title: string;
+  readonly message: string;
+  readonly currentValue?: number;
+  readonly limit?: number;
+  readonly suggestedQuantity?: number;
+  readonly fixHint?: string;
+}
+
 export interface RiskDecision {
   readonly approved: boolean;
   readonly reasons: readonly string[];
@@ -313,6 +468,9 @@ export interface RiskDecision {
   readonly proposedRiskAmount: number;
   readonly proposedPositionValue: number;
   readonly calculatedQuantity: number;
+  /** Structured rejection details for UI. First entry is the primary failure. */
+  readonly rejections?: readonly RiskRejection[];
+  readonly suggestedQuantity?: number;
 }
 
 export interface Notification {

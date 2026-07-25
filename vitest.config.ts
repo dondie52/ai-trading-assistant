@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic"
+  },
   test: {
     environment: "node",
     globals: true,
@@ -9,12 +12,14 @@ export default defineConfig({
       "packages/**/*.test.ts",
       "apps/api/**/*.spec.ts",
       "apps/api/test/**/*.spec.ts",
+      "apps/web/src/**/*.test.ts",
+      "apps/web/src/**/*.test.tsx",
       "tests/infrastructure/**/*.spec.ts"
     ],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      exclude: ["**/test/**", "**/*.spec.ts", "**/*.test.ts"],
+      exclude: ["**/test/**", "**/*.spec.ts", "**/*.test.ts", "**/*.test.tsx"],
       thresholds: {
         statements: 80,
         branches: 60,
