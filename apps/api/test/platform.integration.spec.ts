@@ -43,7 +43,26 @@ const createPlatform = (): { readonly platform: PlatformService; readonly store:
   return { platform, store };
 };
 
+const ensureTestPaperBroker = (store: PlatformStore, userId: string): void => {
+  const existing = [...store.brokerAccounts.values()].find(
+    (account) => account.userId === userId && account.brokerName === "PAPER"
+  );
+  if (existing) {
+    return;
+  }
+  const account = {
+    id: randomUUID(),
+    userId,
+    brokerName: "PAPER" as const,
+    accountId: `paper-${userId.slice(0, 8)}`,
+    status: "CONNECTED" as const,
+    createdAt: new Date().toISOString()
+  };
+  store.brokerAccounts.set(account.id, account);
+};
+
 const fundPaperPortfolio = (store: PlatformStore, userId: string, amount: number): void => {
+  ensureTestPaperBroker(store, userId);
   const portfolio = [...store.portfolios.values()].find((candidate) => candidate.userId === userId);
   if (!portfolio) {
     return;
@@ -161,6 +180,25 @@ describe("platform integration", () => {
       user: { email }
     });
     expect(portfolios[0]?.cashBalance).toBe(0);
+    expect(platform.listBrokerAccounts(login.user.id)).toEqual([]);
+  });
+
+  it("does not auto-seed a PAPER broker outside ENABLE_E2E_SEED", async () => {
+    const store = new PlatformStore();
+    const user = store.createUser({
+      email: `noseed-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "No",
+      lastName: "Seed",
+      role: "TRADER"
+    });
+
+    expect(
+      [...store.brokerAccounts.values()].filter((account) => account.userId === user.id)
+    ).toEqual([]);
+    expect([...store.portfolios.values()].some((portfolio) => portfolio.userId === user.id)).toBe(
+      true
+    );
   });
 
   it("resets passwords with hashed tokens and revokes active sessions", async () => {

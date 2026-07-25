@@ -379,14 +379,28 @@ export class PlatformService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
+    this.assertProductionConfiguration();
     await this.platformRepository.hydrate(this.store);
     this.repairMissingUserBootstrap();
     await this.seedE2EAdminUser();
   }
 
+  private assertProductionConfiguration(): void {
+    if (process.env.NODE_ENV !== "production") {
+      return;
+    }
+    if (process.env.ENABLE_E2E_SEED === "true") {
+      throw new Error("ENABLE_E2E_SEED must not be enabled when NODE_ENV=production.");
+    }
+    if (!process.env.DATABASE_URL?.trim()) {
+      throw new Error("DATABASE_URL is required when NODE_ENV=production.");
+    }
+  }
+
   /**
-   * Hydrated users can miss portfolio/risk/broker/watchlist rows after older
-   * provision paths or failed persists. Rebuild defaults in-memory and persist.
+   * Hydrated users can miss portfolio/risk/watchlist rows after older
+   * provision paths or failed persists. Rebuild empty operational defaults
+   * (never auto-create a PAPER broker in production).
    */
   private repairMissingUserBootstrap(): void {
     for (const user of this.store.users.values()) {
@@ -394,14 +408,18 @@ export class PlatformService implements OnModuleInit {
       const hadPortfolio = [...this.store.portfolios.values()].some(
         (portfolio) => portfolio.userId === user.id
       );
-      const hadPaperBroker = [...this.store.brokerAccounts.values()].some(
-        (account) => account.userId === user.id && account.brokerName === "PAPER"
-      );
       const hadWatchlist = [...this.store.watchlists.values()].some(
         (watchlist) => watchlist.userId === user.id
       );
+      const brokerCountBefore = [...this.store.brokerAccounts.values()].filter(
+        (account) => account.userId === user.id
+      ).length;
       this.store.ensureDefaultAccountState(user.id);
-      if (!hadRisk || !hadPortfolio || !hadPaperBroker || !hadWatchlist) {
+      const brokerCountAfter = [...this.store.brokerAccounts.values()].filter(
+        (account) => account.userId === user.id
+      ).length;
+      // Persist when operational defaults were missing, or when E2E seed added a paper broker.
+      if (!hadRisk || !hadPortfolio || !hadWatchlist || brokerCountAfter !== brokerCountBefore) {
         this.persistUserBootstrap(user.id);
       }
     }
@@ -1830,7 +1848,7 @@ export class PlatformService implements OnModuleInit {
     if (existing) {
       return existing;
     }
-    const watchlist = this.listWatchlists(userId)[0]?.symbols ?? ["AAPL", "MSFT", "TSLA"];
+    const watchlist = this.listWatchlists(userId)[0]?.symbols ?? [];
     const risk = this.getRiskRules(userId);
     const defaults: import("@trading/types").AutomationSettings = {
       mode: "ASSISTED",
@@ -2604,11 +2622,27 @@ export class PlatformService implements OnModuleInit {
       });
     }
 
+    const connectedBrokers = [
+      ...new Set(
+        [...this.store.brokerAccounts.values()]
+          .filter((account) => account.status === "CONNECTED")
+          .map((account) => account.brokerName.toLowerCase())
+      )
+    ];
+    const envAlpacaConfigured = Boolean(
+      process.env.ALPACA_API_KEY?.trim() && process.env.ALPACA_SECRET_KEY?.trim()
+    );
+
     return {
       api: "ok",
       persistenceMode: process.env.DATABASE_URL ? "supabase-prisma" : "in-memory-test",
       supabase: database as unknown as JsonObject,
-      broker: "paper",
+      broker:
+        connectedBrokers.length > 0
+          ? connectedBrokers.join("+")
+          : envAlpacaConfigured
+            ? "alpaca-env"
+            : "none",
       aiService: process.env.AI_SERVICE_URL ? "configured" : "fallback-local-model",
       uptimeSeconds: Math.round(process.uptime())
     };
@@ -2756,9 +2790,18 @@ export class PlatformService implements OnModuleInit {
         }
       };
     }
+    const paperAccount = [...this.store.brokerAccounts.values()].find(
+      (candidate) => candidate.userId === userId && candidate.brokerName === "PAPER"
+    );
+    if (!paperAccount) {
+      throw new NotFoundException({
+        code: "BROKER_NOT_CONNECTED",
+        message: "Connect Alpaca before placing orders."
+      });
+    }
     return {
       adapter: this.paperBroker,
-      account: this.requirePaperBrokerAccount(userId)
+      account: paperAccount
     };
   }
 
@@ -2874,16 +2917,6 @@ export class PlatformService implements OnModuleInit {
       portfolio,
       riskDecision: executedOrder.riskDecision
     };
-  }
-
-  private requirePaperBrokerAccount(userId: UUID): BrokerAccount {
-    const account = [...this.store.brokerAccounts.values()].find(
-      (candidate) => candidate.userId === userId && candidate.brokerName === "PAPER"
-    );
-    if (!account) {
-      throw new NotFoundException({ code: "NOT_FOUND", message: "Paper broker account not found." });
-    }
-    return account;
   }
 
   private listBrokerAccountRecords(userId: UUID): readonly BrokerAccount[] {

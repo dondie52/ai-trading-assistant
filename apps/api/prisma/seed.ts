@@ -28,10 +28,11 @@ const main = async (): Promise<void> => {
     }
   });
 
-  const [portfolio, riskRules, brokerAccount, watchlist] = await Promise.all([
+  // Ops bootstrap only: empty portfolio/risk/watchlist. Never seed a PAPER broker —
+  // production operators connect Alpaca (or another broker) explicitly.
+  const [portfolio, riskRules, watchlist] = await Promise.all([
     prisma.portfolio.findFirst({ where: { userId: user.id } }),
     prisma.riskRule.findUnique({ where: { userId: user.id } }),
-    prisma.brokerAccount.findFirst({ where: { userId: user.id, brokerName: "PAPER" } }),
     prisma.watchlist.findFirst({ where: { userId: user.id } })
   ]);
 
@@ -54,17 +55,6 @@ const main = async (): Promise<void> => {
         maxDailyLossPercent: 3,
         maxDrawdownPercent: 12,
         maxPositionSizePercent: 25
-      }
-    });
-  }
-
-  if (!brokerAccount) {
-    await prisma.brokerAccount.create({
-      data: {
-        userId: user.id,
-        brokerName: "PAPER",
-        accountId: `paper-${user.id.slice(0, 8)}`,
-        status: "CONNECTED"
       }
     });
   }

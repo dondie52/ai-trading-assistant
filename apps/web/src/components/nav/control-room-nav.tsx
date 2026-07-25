@@ -3,6 +3,7 @@
 import {
   BriefcaseBusiness,
   CandlestickChart,
+  ChevronLeft,
   Home,
   Settings2,
   Sparkles
@@ -34,6 +35,14 @@ const primaryTabs: readonly {
   { id: "settings", label: "Settings", icon: Settings2, testId: "tab-settings" }
 ];
 
+const secondaryTabLabels: Partial<Record<ControlRoomTab, string>> = {
+  market: "Market",
+  strategies: "Strategies",
+  risk: "Risk",
+  lab: "Lab",
+  admin: "Admin"
+};
+
 export function BottomNav({
   activeTab,
   onChange,
@@ -43,14 +52,14 @@ export function BottomNav({
   readonly onChange: (tab: ControlRoomTab) => void;
   readonly showAdmin?: boolean;
 }): ReactElement {
-  const mappedActive =
+  const isSecondaryTab =
     activeTab === "market" ||
     activeTab === "strategies" ||
     activeTab === "risk" ||
     activeTab === "lab" ||
-    activeTab === "admin"
-      ? "settings"
-      : activeTab;
+    activeTab === "admin";
+  const mappedActive = isSecondaryTab ? "settings" : activeTab;
+  const secondaryLabel = secondaryTabLabels[activeTab];
 
   return (
     <nav
@@ -59,6 +68,23 @@ export function BottomNav({
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-obsidian-deepest/95 backdrop-blur-xl md:hidden"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
+      {isSecondaryTab && secondaryLabel ? (
+        <div
+          data-testid="mobile-secondary-context"
+          className="flex items-center justify-between gap-2 border-b border-line px-3 py-2"
+        >
+          <button
+            type="button"
+            data-testid="mobile-secondary-back"
+            onClick={() => onChange("settings")}
+            className="inline-flex min-h-9 items-center gap-1 rounded-md px-2 text-xs text-slate-300"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            Settings
+          </button>
+          <span className="text-xs font-medium text-emerald-300">{secondaryLabel}</span>
+        </div>
+      ) : null}
       <ul className="mx-auto grid max-w-lg grid-cols-5 gap-0 px-1 pt-1">
         {primaryTabs.map((tab) => {
           const Icon = tab.icon;
