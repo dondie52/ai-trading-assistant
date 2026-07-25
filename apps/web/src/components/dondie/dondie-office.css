@@ -1,0 +1,616 @@
+/* Pixel office scene for Dondie Room — isometric survival office */
+
+.dondie-office {
+  --office-sky-day: #6b8cae;
+  --office-sky-night: #1a2238;
+  --office-wall: #2a3348;
+  --office-wall-edge: #1e2638;
+  --office-floor-a: #3d4a3a;
+  --office-floor-b: #334032;
+  --office-wood: #8b6914;
+  --office-wood-dark: #5c4510;
+  --office-accent: #5ec8c8;
+  --office-glow: rgba(94, 200, 200, 0.28);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.dondie-office[data-level="1"] {
+  --office-accent: #7a8494;
+  --office-glow: rgba(122, 132, 148, 0.22);
+  --office-wood: #6b5a3e;
+  --office-wood-dark: #4a3d28;
+}
+
+.dondie-office[data-level="2"] {
+  --office-accent: #4aa8c8;
+  --office-glow: rgba(74, 168, 200, 0.26);
+}
+
+.dondie-office[data-level="3"] {
+  --office-accent: #3db88a;
+  --office-glow: rgba(61, 184, 138, 0.26);
+  --office-floor-a: #3a4a42;
+  --office-floor-b: #304038;
+}
+
+.dondie-office[data-level="4"] {
+  --office-accent: #c4a35a;
+  --office-glow: rgba(196, 163, 90, 0.28);
+  --office-wall: #2e2a3a;
+  --office-wall-edge: #221e2c;
+}
+
+.dondie-office[data-level="5"] {
+  --office-accent: #d4b45a;
+  --office-glow: rgba(212, 180, 90, 0.32);
+  --office-wall: #2a3040;
+  --office-wall-edge: #1c2230;
+  --office-floor-a: #3a4238;
+  --office-floor-b: #303828;
+}
+
+.dondie-office[data-night="true"] {
+  --office-sky-day: var(--office-sky-night);
+  --office-wall: #1a2030;
+  --office-wall-edge: #121820;
+  --office-floor-a: #243028;
+  --office-floor-b: #1c2820;
+  --office-glow: rgba(80, 120, 180, 0.18);
+}
+
+.dondie-office__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    var(--office-sky-day) 0%,
+    var(--office-sky-day) 28%,
+    var(--office-wall) 28%,
+    var(--office-wall) 52%,
+    var(--office-floor-a) 52%,
+    var(--office-floor-b) 100%
+  );
+}
+
+@media (min-width: 640px) {
+  .dondie-office__stage {
+    aspect-ratio: 2 / 1;
+  }
+}
+
+.dondie-office__pixel-grid {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image:
+    linear-gradient(to right, #fff 1px, transparent 1px),
+    linear-gradient(to bottom, #fff 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+.dondie-office__iso-floor {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 72%;
+  height: 46%;
+  transform: translateX(-50%) rotateX(58deg) rotateZ(-45deg);
+  transform-style: preserve-3d;
+  background:
+    linear-gradient(45deg, var(--office-floor-a) 25%, transparent 25%) -8px 0 / 16px 16px,
+    linear-gradient(-45deg, var(--office-floor-a) 25%, transparent 25%) -8px 0 / 16px 16px,
+    linear-gradient(45deg, transparent 75%, var(--office-floor-a) 75%) -8px 0 / 16px 16px,
+    linear-gradient(-45deg, transparent 75%, var(--office-floor-a) 75%) -8px 0 / 16px 16px,
+    var(--office-floor-b);
+  box-shadow: 0 0 0 2px var(--office-wall-edge);
+  opacity: 0.55;
+}
+
+.dondie-office__ambient {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 70% 20%, var(--office-glow), transparent 55%);
+  animation: dondie-office-ambient 6s ease-in-out infinite alternate;
+}
+
+@keyframes dondie-office-ambient {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.dondie-office__hotspot {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dondie-office__hotspot:focus-visible {
+  outline: 2px solid var(--office-accent);
+  outline-offset: 2px;
+}
+
+.dondie-office__window {
+  top: 8%;
+  right: 8%;
+  width: 14%;
+  min-width: 48px;
+  height: 22%;
+  min-height: 52px;
+  border: 3px solid var(--office-wall-edge);
+  background: linear-gradient(180deg, #8eb4d4 0%, #4a6a8a 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+.dondie-office[data-night="true"] .dondie-office__window {
+  background: linear-gradient(180deg, #1a2848 0%, #0c1428 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.08),
+    0 0 12px rgba(100, 140, 200, 0.25);
+}
+
+.dondie-office__window-pane {
+  position: absolute;
+  inset: 3px;
+  border: 2px solid rgba(20, 30, 45, 0.35);
+  background:
+    linear-gradient(90deg, transparent 48%, rgba(20, 30, 45, 0.35) 48%, rgba(20, 30, 45, 0.35) 52%, transparent 52%),
+    linear-gradient(0deg, transparent 48%, rgba(20, 30, 45, 0.35) 48%, rgba(20, 30, 45, 0.35) 52%, transparent 52%);
+}
+
+.dondie-office__window-glow {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 8%;
+  height: 3px;
+  background: var(--office-accent);
+  opacity: 0.55;
+  box-shadow: 0 0 6px var(--office-accent);
+}
+
+.dondie-office__bed {
+  bottom: 14%;
+  left: 6%;
+  width: 26%;
+  min-width: 96px;
+}
+
+.dondie-office__bed-frame {
+  border: 3px solid var(--office-wall-edge);
+  background: var(--office-wood-dark);
+  padding: 4px;
+}
+
+.dondie-office__pillow {
+  width: 28%;
+  height: 10px;
+  margin-bottom: 4px;
+  background: #d8d0c0;
+  border: 2px solid #a89e8c;
+}
+
+.dondie-office__mattress {
+  height: 18px;
+  background: #5a6a7a;
+  border: 2px solid #3a4a5a;
+}
+
+.dondie-office[data-level="3"] .dondie-office__mattress,
+.dondie-office[data-level="4"] .dondie-office__mattress,
+.dondie-office[data-level="5"] .dondie-office__mattress {
+  background: #4a6a8a;
+}
+
+.dondie-office[data-level="4"] .dondie-office__mattress,
+.dondie-office[data-level="5"] .dondie-office__mattress {
+  background: #5a4a7a;
+  border-color: #3a2a5a;
+}
+
+.dondie-office__label {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(200, 210, 230, 0.65);
+}
+
+.dondie-office__desk {
+  bottom: 12%;
+  right: 6%;
+  width: 40%;
+  min-width: 140px;
+}
+
+.dondie-office__monitors {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+}
+
+.dondie-office__monitor {
+  position: relative;
+  border: 3px solid #1a2030;
+  background: #0a1018;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.dondie-office__monitor--main {
+  width: 42%;
+  height: 44px;
+}
+
+.dondie-office__monitor--side {
+  width: 28%;
+  height: 34px;
+}
+
+.dondie-office__screen {
+  position: absolute;
+  inset: 3px;
+  background: linear-gradient(180deg, rgba(60, 140, 180, 0.45), rgba(10, 20, 30, 0.9));
+  overflow: hidden;
+}
+
+.dondie-office__screen[data-active="true"] {
+  animation: dondie-office-screen 2.4s steps(4) infinite;
+}
+
+.dondie-office__screen[data-tone="celebrate"] {
+  background: linear-gradient(180deg, rgba(60, 180, 120, 0.55), rgba(10, 30, 20, 0.9));
+}
+
+.dondie-office__screen[data-tone="blocked"] {
+  background: linear-gradient(180deg, rgba(180, 60, 80, 0.45), rgba(30, 10, 15, 0.9));
+}
+
+.dondie-office__screen-bars {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 60%;
+}
+
+.dondie-office__screen-bars span {
+  flex: 1;
+  background: var(--office-accent);
+  opacity: 0.75;
+  animation: dondie-office-bars 1.2s ease-in-out infinite alternate;
+}
+
+.dondie-office__screen-bars span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dondie-office__screen-bars span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.dondie-office__screen-bars span:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
+@keyframes dondie-office-screen {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.2);
+  }
+}
+
+@keyframes dondie-office-bars {
+  from {
+    height: 30%;
+  }
+  to {
+    height: 90%;
+  }
+}
+
+.dondie-office__desk-top {
+  margin-top: 3px;
+  height: 12px;
+  border: 3px solid var(--office-wall-edge);
+  background: var(--office-wood);
+  box-shadow: inset 0 -2px 0 var(--office-wood-dark);
+}
+
+.dondie-office__chair {
+  margin: 2px auto 0;
+  width: 28%;
+  height: 14px;
+  border: 2px solid var(--office-wall-edge);
+  background: #3a4558;
+}
+
+.dondie-office[data-level="4"] .dondie-office__chair,
+.dondie-office[data-level="5"] .dondie-office__chair {
+  background: #2a3548;
+  box-shadow: inset 0 0 0 2px rgba(196, 163, 90, 0.35);
+}
+
+.dondie-office__safe {
+  bottom: 40%;
+  left: 38%;
+  border: 3px solid #6a5420;
+  background: #3a3010;
+  padding: 4px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  color: #f0e0a0;
+  box-shadow: 0 0 8px rgba(196, 163, 90, 0.2);
+}
+
+.dondie-office__plant {
+  bottom: 36%;
+  right: 48%;
+  width: 14px;
+  height: 28px;
+}
+
+.dondie-office__plant-pot {
+  position: absolute;
+  bottom: 0;
+  left: 2px;
+  width: 10px;
+  height: 8px;
+  background: #8a4a2a;
+  border: 2px solid #5a2a12;
+}
+
+.dondie-office__plant-leaf {
+  position: absolute;
+  bottom: 6px;
+  left: 3px;
+  width: 8px;
+  height: 16px;
+  border-radius: 50% 50% 40% 40%;
+  background: #3a8a4a;
+  box-shadow: 4px 2px 0 #2a6a3a;
+}
+
+.dondie-office__coffee {
+  bottom: 30%;
+  right: 10%;
+  width: 8px;
+  height: 12px;
+  border: 2px solid #3a2810;
+  background: #6a4018;
+}
+
+.dondie-office__coffee::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 1px;
+  right: 1px;
+  height: 2px;
+  background: rgba(220, 220, 220, 0.35);
+}
+
+.dondie-office__character {
+  position: absolute;
+  z-index: 4;
+  transition:
+    left 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    bottom 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.55s ease;
+  will-change: left, bottom;
+}
+
+.dondie-office__character[data-pose="desk"] {
+  left: 62%;
+  bottom: 26%;
+}
+
+.dondie-office__character[data-pose="bed"] {
+  left: 12%;
+  bottom: 20%;
+  transform: rotate(-12deg);
+}
+
+.dondie-office__character[data-pose="floor"] {
+  left: 42%;
+  bottom: 22%;
+}
+
+.dondie-office__avatar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+}
+
+.dondie-office__head {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  background: #e8d8c0;
+  box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.12);
+}
+
+.dondie-office__head[data-tone="blocked"] {
+  background: #e8a0a0;
+}
+
+.dondie-office__head[data-tone="celebrate"] {
+  background: #f0e0a8;
+}
+
+.dondie-office__body {
+  margin-top: 1px;
+  width: 16px;
+  height: 18px;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  background: var(--office-accent);
+  box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.15);
+}
+
+.dondie-office__legs {
+  display: flex;
+  gap: 2px;
+  margin-top: 1px;
+}
+
+.dondie-office__leg {
+  width: 5px;
+  height: 10px;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  background: #2a3548;
+}
+
+.dondie-office__character[data-pose="bed"] .dondie-office__legs {
+  display: none;
+}
+
+.dondie-office__character[data-working="true"] .dondie-office__body {
+  animation: dondie-office-type 0.45s steps(2) infinite;
+}
+
+@keyframes dondie-office-type {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(1px);
+  }
+}
+
+.dondie-office__bubble {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 18px;
+  height: 14px;
+  padding: 0 4px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 14, 28, 0.88);
+  color: #e8eef8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  white-space: nowrap;
+  animation: dondie-office-bubble 1.4s ease-in-out infinite;
+}
+
+.dondie-office__bubble[data-kind="zzz"] {
+  color: #a8b8d8;
+}
+
+.dondie-office__bubble[data-kind="celebrate"] {
+  color: #f0d878;
+}
+
+.dondie-office__bubble[data-kind="blocked"],
+.dondie-office__bubble[data-kind="error"] {
+  color: #f08090;
+}
+
+@keyframes dondie-office-bubble {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-3px);
+  }
+}
+
+.dondie-office__spark {
+  position: absolute;
+  top: -10px;
+  width: 4px;
+  height: 4px;
+  background: #f0d878;
+  animation: dondie-office-spark 0.9s ease-out infinite;
+}
+
+.dondie-office__spark:nth-child(1) {
+  left: 0;
+}
+
+.dondie-office__spark:nth-child(2) {
+  left: 12px;
+  animation-delay: 0.2s;
+}
+
+.dondie-office__spark:nth-child(3) {
+  left: 22px;
+  animation-delay: 0.4s;
+}
+
+@keyframes dondie-office-spark {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.6);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(1);
+  }
+}
+
+.dondie-office__hud {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dondie-office__chip {
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.45);
+  padding: 3px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(220, 230, 245, 0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dondie-office__ambient,
+  .dondie-office__screen[data-active="true"],
+  .dondie-office__screen-bars span,
+  .dondie-office__character[data-working="true"] .dondie-office__body,
+  .dondie-office__bubble,
+  .dondie-office__spark {
+    animation: none !important;
+  }
+
+  .dondie-office__character {
+    transition: none !important;
+  }
+}
