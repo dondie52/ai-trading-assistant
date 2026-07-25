@@ -1452,7 +1452,19 @@ export class PlatformService implements OnModuleInit {
       this.store.marketData.set(key, simulated);
       return simulated;
     }
-    const candles = await this.alpacaBroker.getBars(normalizedSymbol, timeframe, credentials);
+    let candles: readonly MarketCandle[] = [];
+    try {
+      candles = await this.alpacaBroker.getBars(normalizedSymbol, timeframe, credentials);
+    } catch {
+      candles = [];
+    }
+    // Paper accounts often see empty/denied feeds on weekends or free-tier delays.
+    // Keep the autonomous agent runnable with simulated history in PAPER only.
+    if (candles.length === 0 && (credentials.environment ?? "PAPER") === "PAPER") {
+      candles = generateHistoricalPrices(normalizedSymbol, 220, 185, timeframe);
+      this.store.marketData.set(key, candles);
+      return candles;
+    }
     if (candles.length === 0) {
       throw new NotFoundException({
         code: "MARKET_DATA_UNAVAILABLE",
@@ -1508,20 +1520,44 @@ export class PlatformService implements OnModuleInit {
       };
     }
     const candles = await this.listMarketData(userId, normalizedSymbol, timeframe);
-    const latestQuote = await this.alpacaBroker.getLatestQuote(normalizedSymbol, credentials);
-    const previousClose = candles[candles.length - 2]?.close ?? candles[candles.length - 1]?.close ?? latestQuote.price;
-    return {
-      symbol: normalizedSymbol,
-      price: Number(latestQuote.price.toFixed(2)),
-      bid: Number(latestQuote.bid.toFixed(2)),
-      ask: Number(latestQuote.ask.toFixed(2)),
-      changePercent:
-        previousClose > 0
-          ? Number((((latestQuote.price - previousClose) / previousClose) * 100).toFixed(2))
-          : 0,
-      timestamp: latestQuote.timestamp,
-      source: "ALPACA"
-    };
+    try {
+      const latestQuote = await this.alpacaBroker.getLatestQuote(normalizedSymbol, credentials);
+      const previousClose =
+        candles[candles.length - 2]?.close ?? candles[candles.length - 1]?.close ?? latestQuote.price;
+      return {
+        symbol: normalizedSymbol,
+        price: Number(latestQuote.price.toFixed(2)),
+        bid: Number(latestQuote.bid.toFixed(2)),
+        ask: Number(latestQuote.ask.toFixed(2)),
+        changePercent:
+          previousClose > 0
+            ? Number((((latestQuote.price - previousClose) / previousClose) * 100).toFixed(2))
+            : 0,
+        timestamp: latestQuote.timestamp,
+        source: "ALPACA"
+      };
+    } catch {
+      const latest = candles[candles.length - 1];
+      if (!latest) {
+        throw new NotFoundException({
+          code: "MARKET_DATA_UNAVAILABLE",
+          message: `Market data is unavailable for ${normalizedSymbol}.`
+        });
+      }
+      const previousClose = candles[candles.length - 2]?.close ?? latest.close;
+      return {
+        symbol: normalizedSymbol,
+        price: Number(latest.close.toFixed(2)),
+        bid: Number((latest.close - 0.01).toFixed(2)),
+        ask: Number((latest.close + 0.01).toFixed(2)),
+        changePercent:
+          previousClose > 0
+            ? Number((((latest.close - previousClose) / previousClose) * 100).toFixed(2))
+            : 0,
+        timestamp: latest.timestamp,
+        source: (credentials.environment ?? "PAPER") === "PAPER" ? "SIMULATED" : "ALPACA"
+      };
+    }
   }
 
   listWatchlists(userId: UUID): readonly Watchlist[] {

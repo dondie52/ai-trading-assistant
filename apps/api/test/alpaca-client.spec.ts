@@ -100,6 +100,9 @@ describe("Alpaca HTTP client", () => {
     ]);
     expect(fetchMock.mock.calls[2]?.[0]).toContain("timeframe=4Hour");
     expect(fetchMock.mock.calls[2]?.[0]).toContain("limit=25");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("feed=iex");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("start=");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("end=");
     expect(resolveAlpacaTradingBaseUrl("LIVE")).toBe("https://api.alpaca.markets");
     expect(resolveAlpacaDataBaseUrl("LIVE")).toBe("https://data.alpaca.markets");
   });

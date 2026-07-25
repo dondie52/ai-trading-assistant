@@ -376,7 +376,7 @@ export default function Page(): ReactElement {
   });
   const marketPrices = useQuery({
     queryKey: ["market-prices", symbol, timeframe, accessToken],
-    enabled: authenticated,
+    enabled: authenticated && automationSettings.data?.mode !== "AUTOPILOT",
     queryFn: () =>
       apiFetchPage<MarketCandle>(
         `/market/prices/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
@@ -386,7 +386,8 @@ export default function Page(): ReactElement {
   });
   const marketQuote = useQuery({
     queryKey: ["market-quote", symbol, timeframe, accessToken],
-    enabled: authenticated,
+    // AUTOPILOT picks its own symbols — do not poll a manual ticker (avoids AAPL noise).
+    enabled: authenticated && automationSettings.data?.mode !== "AUTOPILOT",
     refetchInterval: realtimeConnected ? false : 5_000,
     queryFn: () =>
       apiFetch<MarketQuote>(
@@ -397,7 +398,7 @@ export default function Page(): ReactElement {
   });
   const marketIndicators = useQuery({
     queryKey: ["market-indicators", symbol, timeframe, accessToken],
-    enabled: authenticated,
+    enabled: authenticated && automationSettings.data?.mode !== "AUTOPILOT",
     queryFn: () =>
       apiFetch<IndicatorSnapshot>(
         `/market/indicators/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
@@ -1231,6 +1232,7 @@ export default function Page(): ReactElement {
       await invalidateTradingData();
     },
     onError: (error) => {
+      autoHandsOffAttempted.current = false;
       setNotice(error instanceof Error ? error.message : "Could not start hands-off mode.");
     }
   });

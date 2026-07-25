@@ -131,25 +131,25 @@ export const fetchAlpacaPositions = async (
   }));
 };
 
-export const fetchAlpacaBars = async (
-  credentials: BrokerCredentials,
-  symbol: string,
+const lookbackMsFor = (timeframe: MarketTimeframe, limit: number): number => {
+  const unitMs: Record<MarketTimeframe, number> = {
+    "1m": 60_000,
+    "5m": 5 * 60_000,
+    "15m": 15 * 60_000,
+    "1h": 60 * 60_000,
+    "4h": 4 * 60 * 60_000,
+    "1d": 24 * 60 * 60_000
+  };
+  // Extra calendar buffer so weekends/holidays still return enough bars.
+  return unitMs[timeframe] * limit * 3 + 10 * 24 * 60 * 60_000;
+};
+
+const mapAlpacaBars = (
+  normalizedSymbol: string,
   timeframe: MarketTimeframe,
-  limit = 100
-): Promise<readonly MarketCandle[]> => {
-  const normalizedSymbol = symbol.toUpperCase();
-  const query = new URLSearchParams({
-    timeframe: alpacaTimeframe(timeframe),
-    limit: String(limit),
-    adjustment: "raw",
-    feed: "iex"
-  });
-  const payload = await dataFetch<{ readonly bars?: readonly Record<string, unknown>[] }>(
-    credentials,
-    `/v2/stocks/${encodeURIComponent(normalizedSymbol)}/bars?${query.toString()}`
-  );
-  const bars = payload.bars ?? [];
-  return bars.map((bar) => ({
+  bars: readonly Record<string, unknown>[]
+): readonly MarketCandle[] =>
+  bars.map((bar) => ({
     symbol: normalizedSymbol,
     timeframe,
     timestamp: String(bar.t ?? new Date().toISOString()),
@@ -159,6 +159,57 @@ export const fetchAlpacaBars = async (
     close: parseNumber(bar.c),
     volume: parseNumber(bar.v)
   }));
+
+export const fetchAlpacaBars = async (
+  credentials: BrokerCredentials,
+  symbol: string,
+  timeframe: MarketTimeframe,
+  limit = 100
+): Promise<readonly MarketCandle[]> => {
+  const normalizedSymbol = symbol.toUpperCase();
+  // Keep `end` slightly in the past so free-tier SIP fallbacks stay valid.
+  const end = new Date(Date.now() - 20 * 60 * 1000);
+  const start = new Date(end.getTime() - lookbackMsFor(timeframe, limit));
+
+  const fetchWithFeed = async (feed: "iex" | "sip"): Promise<readonly MarketCandle[]> => {
+    const query = new URLSearchParams({
+      timeframe: alpacaTimeframe(timeframe),
+      start: start.toISOString(),
+      end: end.toISOString(),
+      limit: String(limit),
+      adjustment: "raw",
+      feed,
+      sort: "asc"
+    });
+    const payload = await dataFetch<{ readonly bars?: readonly Record<string, unknown>[] | null }>(
+      credentials,
+      `/v2/stocks/${encodeURIComponent(normalizedSymbol)}/bars?${query.toString()}`
+    );
+    return mapAlpacaBars(normalizedSymbol, timeframe, payload.bars ?? []);
+  };
+
+  try {
+    const iexBars = await fetchWithFeed("iex");
+    if (iexBars.length > 0) {
+      return iexBars;
+    }
+  } catch {
+    // Try delayed SIP next.
+  }
+
+  try {
+    const sipBars = await fetchWithFeed("sip");
+    if (sipBars.length > 0) {
+      return sipBars;
+    }
+  } catch {
+    // Fall through to daily bars.
+  }
+
+  if (timeframe !== "1d") {
+    return fetchAlpacaBars(credentials, normalizedSymbol, "1d", Math.min(limit, 100));
+  }
+  return [];
 };
 
 export const fetchAlpacaLatestQuote = async (
