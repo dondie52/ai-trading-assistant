@@ -463,6 +463,17 @@ export default function Page(): ReactElement {
     refetchInterval: authenticated ? 15_000 : false,
     queryFn: () => apiFetch<DondieLifestyleWorld>("/dondie/lifestyle", {}, token)
   });
+  const dondieWallet = useQuery({
+    queryKey: ["dondie-wallet", accessToken],
+    enabled: authenticated && Boolean(dondieAgent.data),
+    refetchInterval: authenticated ? 15_000 : false,
+    queryFn: () =>
+      apiFetch<{
+        readonly balance: number;
+        readonly tier: DondieAgent["tier"];
+        readonly ledger: readonly { readonly reason: string; readonly amount: number; readonly createdAt: string }[];
+      }>("/dondie/wallet", {}, token)
+  });
 
   const primaryPortfolio = portfolios.data?.[0];
   const latestSignal = signals.data?.[signals.data.length - 1];
@@ -2203,11 +2214,27 @@ export default function Page(): ReactElement {
       {activeTab === "portfolio" ? (
         <section data-testid="portfolio-view" className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={<DollarSign />} label="Portfolio Value" value={formatCurrency(primaryPortfolio?.portfolioValue)} tone="emerald" />
-            <MetricCard icon={<Gauge />} label="Cash Balance" value={formatCurrency(primaryPortfolio?.cashBalance)} tone="violet" />
-            <MetricCard icon={<LineChart />} label="Realized P&L" value={formatCurrency(primaryPortfolio?.realizedPnl)} tone="emerald" />
-            <MetricCard icon={<Activity />} label="Unrealized P&L" value={formatCurrency(primaryPortfolio?.unrealizedPnl)} tone="cyan" />
+            <MetricCard icon={<DollarSign />} label="Broker Cash" value={formatCurrency(primaryPortfolio?.cashBalance)} tone="violet" />
+            <MetricCard
+              icon={<WalletCards />}
+              label="Dondie Survival Wallet"
+              value={formatCurrency(dondieWallet.data?.balance ?? dondieAgent.data?.walletBalance ?? 0)}
+              tone="emerald"
+            />
+            <MetricCard icon={<LineChart />} label="Broker Realized P&L" value={formatCurrency(primaryPortfolio?.realizedPnl)} tone="emerald" />
+            <MetricCard
+              icon={<Bot />}
+              label="Brain Tier"
+              value={dondieWallet.data?.tier ?? dondieAgent.data?.tier ?? "—"}
+              tone="cyan"
+            />
           </div>
+          {(primaryPortfolio?.cashBalance ?? 0) > 0 && (primaryPortfolio?.cashBalance ?? 0) <= 50 ? (
+            <p className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+              Micro stake mode: broker cash can stay near $10 while Dondie earns in the{" "}
+              <strong>survival wallet</strong> (weekend paper BTC). Open Office and keep hands-off on overnight.
+            </p>
+          ) : null}
           <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="space-y-5">
               {renderPositions()}

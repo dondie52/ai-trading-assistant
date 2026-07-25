@@ -188,6 +188,31 @@ describe("Dondie weekend paper BTC desk", () => {
     expect(platform.listTrades(user.id).some((trade) => trade.symbol === "BTCUSD")).toBe(true);
   });
 
+  it("includes ASSISTED agents in weekend keepalive due list", async () => {
+    const { dondie, platform, store, weekendEarn } = createStack();
+    const user = store.createUser({
+      email: `due-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Due",
+      lastName: "List",
+      role: "TRADER"
+    });
+    fundMicroStake(store, user.id, 10);
+    const strategy = platform.createStrategy(user.id, {
+      name: "Due list",
+      description: "test",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { agentManaged: true, confidenceThreshold: 65 }
+    });
+    await dondie.activate(user.id, { strategyId: strategy.id });
+    platform.updateAutomationSettings(user.id, { mode: "ASSISTED", emergencyStop: false });
+    vi.spyOn(weekendEarn, "isWeekendEarnWindow").mockReturnValue(true);
+    expect(dondie.listDueScheduledUserIds()).toContain(user.id);
+    await dondie.runScheduled(user.id);
+    expect(platform.listTrades(user.id).some((trade) => trade.symbol === "BTCUSD")).toBe(true);
+  });
+
   it("kicks a weekend paper BTC scalp when the office lifestyle is polled", async () => {
     const { dondie, platform, store, weekendEarn } = createStack();
     const user = store.createUser({

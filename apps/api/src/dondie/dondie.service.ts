@@ -326,12 +326,15 @@ export class DondieService implements OnModuleInit {
       return;
     }
     const settings = this.platform.getAutomationSettings(userId);
-    if (settings.mode !== "AUTOPILOT" || settings.emergencyStop) {
+    if (settings.emergencyStop || settings.runtimeState === "PAUSED" || settings.mode === "MANUAL") {
       return;
     }
     try {
       if (this.weekendEarn.isWeekendEarnWindow()) {
         await this.runWeekendSideHustle(userId, agent);
+        return;
+      }
+      if (settings.mode !== "AUTOPILOT") {
         return;
       }
       await this.runUniverseScan(userId, agent, "1h");
@@ -376,15 +379,27 @@ export class DondieService implements OnModuleInit {
       .map((agent) => agent.userId);
   }
 
-  /** ACTIVE AUTOPILOT agents whose schedule interval has elapsed (or never ran). */
+  /**
+   * Agents due for a scheduled wake.
+   * Weekends: ACTIVE non-MANUAL agents due for paper BTC (ASSISTED included so overnight
+   * keepalive works even if the operator never flipped AUTOPILOT).
+   * Weekdays: ACTIVE AUTOPILOT agents whose schedule interval elapsed.
+   */
   listDueScheduledUserIds(nowMs: number = Date.now()): readonly UUID[] {
+    const weekend = this.weekendEarn.isWeekendEarnWindow(new Date(nowMs));
     return [...this.store.dondieAgents.values()]
       .filter((agent) => {
         if (agent.status !== "ACTIVE") {
           return false;
         }
         const settings = this.platform.getAutomationSettings(agent.userId);
-        if (settings.mode !== "AUTOPILOT" || settings.emergencyStop) {
+        if (settings.emergencyStop || settings.runtimeState === "PAUSED" || settings.mode === "MANUAL") {
+          return false;
+        }
+        if (weekend) {
+          return this.isWeekendHustleDue(agent.userId, agent, nowMs);
+        }
+        if (settings.mode !== "AUTOPILOT") {
           return false;
         }
         const scheduleMinutes = Math.max(1, agent.scheduleMinutes || dondieConfig.defaultScheduleMinutes);

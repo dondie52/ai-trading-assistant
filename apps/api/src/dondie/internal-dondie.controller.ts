@@ -1,6 +1,7 @@
 import {
   Controller,
   Headers,
+  HttpCode,
   Inject,
   Post,
   ServiceUnavailableException,
@@ -20,6 +21,7 @@ export class InternalDondieController {
 
   @Public()
   @Post("tick")
+  @HttpCode(200)
   async tick(
     @Headers("authorization") authorization?: string,
     @Headers("x-cron-secret") cronSecret?: string
