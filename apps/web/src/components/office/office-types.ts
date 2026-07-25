@@ -69,15 +69,28 @@ export const OFFICE_ROLE_LABELS: Record<OfficeRole, string> = {
   portfolio: "Portfolio"
 };
 
-/** Desk anchors as % of the office floor (left/top). */
+/** Desk anchors as % of the office floor (left/top). Pipeline rings a central table. */
 export const OFFICE_DESK_LAYOUT: Record<
   OfficeRole,
   { readonly left: number; readonly top: number }
 > = {
-  signal: { left: 14, top: 26 },
-  brain: { left: 42, top: 20 },
-  risk: { left: 70, top: 26 },
-  broker: { left: 18, top: 58 },
-  portfolio: { left: 46, top: 64 },
-  coordinator: { left: 74, top: 58 }
+  signal: { left: 16, top: 24 },
+  brain: { left: 50, top: 16 },
+  risk: { left: 84, top: 24 },
+  broker: { left: 20, top: 72 },
+  portfolio: { left: 50, top: 80 },
+  coordinator: { left: 84, top: 72 }
 };
+
+export const OFFICE_MEETING = { left: 50, top: 48 } as const;
+
+/** Flow path waypoints for Signal → Brain → Risk → Broker → Portfolio. */
+export const OFFICE_FLOW_PATH: readonly { readonly left: number; readonly top: number }[] = [
+  { left: 16, top: 24 },
+  { left: 50, top: 16 },
+  { left: 84, top: 24 },
+  { left: 84, top: 48 },
+  { left: 50, top: 48 },
+  { left: 20, top: 72 },
+  { left: 50, top: 80 }
+];
