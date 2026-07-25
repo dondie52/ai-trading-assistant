@@ -114,7 +114,7 @@ DONDIE_LLM_PRO_MODEL=gpt-4o
 
 Dondie is built to run on a real small stake, not a fake $100k paper fantasy:
 
-* Equity ≤ $50 → **micro-stake mode**: fractional shares, up to ~90% of cash, ~20% risk room
+* Equity ≤ $50 → **micro-stake mode**: fractional shares, up to ~85% of cash, ~20% risk room
 * Qty displays show 4 decimals so `0.0036` SPY is not rendered as `0.00`
 * Weekend paper BTC sizes to **your cash** (e.g. ~$8.50 notional on a $10 stake)
 
