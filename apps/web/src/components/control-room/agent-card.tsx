@@ -53,7 +53,7 @@ export function SurvivalAgentCard({
         {!agent ? (
           <div className="space-y-3">
             <p className="text-sm text-slate-400">
-              Prefer hands-off? Connect Alpaca in Settings — Dondie picks the strategy and starts AUTOPILOT. Manual activate still works if you already linked a strategy. Cognition wallet is not trading equity.
+              Prefer hands-off? Connect Alpaca in Settings — or tap Start hands-off. Dondie picks the strategy and AUTOPILOT. Cognition wallet is not trading equity.
             </p>
             <button
               data-testid="dondie-activate"
