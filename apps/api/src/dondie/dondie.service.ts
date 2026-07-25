@@ -372,23 +372,21 @@ export class DondieService implements OnModuleInit {
     }
     const plan = brainRun.plan;
 
+    // Reuse the brain's signal — never regenerate, or BUY/SELL history can diverge from the trade path.
     const automation =
       plan.action === "EXECUTE"
         ? await this.platform.runAutomation(userId, {
             strategyId: agent.strategyId,
             symbol,
-            timeframe
+            timeframe,
+            signalId: brainRun.signal.id
           })
         : {
             status: "SKIPPED" as const,
             mode: "AUTO" as const,
             strategyId: agent.strategyId,
             symbol,
-            signal: await this.platform.generateTradingSignal(userId, {
-              strategyId: agent.strategyId,
-              symbol,
-              timeframe
-            }),
+            signal: brainRun.signal,
             reason: plan.reasoning
           };
 

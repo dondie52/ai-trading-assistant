@@ -52,6 +52,7 @@ import type {
 import {
   calculateIndicators,
   generateSignal,
+  isUsEquityMarketOpen,
   normalizeEmail,
   generateHistoricalPrices,
   runHistoricalBacktest,
@@ -80,6 +81,14 @@ import { SupabaseCacheQueueService } from "./infrastructure/supabase-cache-queue
 import { OperationalMetricsService } from "./monitoring/operational-metrics.service.js";
 import { RealtimeEventBus } from "./realtime/realtime-event-bus.js";
 import {
+  logExecutionAttempting,
+  logExecutionRejected,
+  logExecutionSubmitted,
+  logPositionCreated,
+  logSignal,
+  logTradeSkipped
+} from "./trading/execution-log.js";
+import {
   PlatformStore,
   type BrokerAccount,
   type PasswordResetTokenRecord,
@@ -90,6 +99,8 @@ import {
 
 const isoNow = (): string => new Date().toISOString();
 const passwordResetExpiresInMinutes = 30;
+/** Demo buying power for the internal paper broker when Alpaca is not connected. */
+const DEFAULT_PAPER_STARTING_CASH = 100_000;
 const canExposePasswordResetToken = (): boolean =>
   process.env.NODE_ENV !== "production" && process.env.EXPOSE_PASSWORD_RESET_TOKEN_FOR_TESTS === "true";
 const marketTimeframes = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
@@ -1073,10 +1084,8 @@ export class PlatformService implements OnModuleInit {
     const environment = readEnum(body, "environment", ["PAPER", "LIVE"] as const, "PAPER");
 
     if (brokerName === "PAPER") {
-      const existing = this.listBrokerAccountRecords(userId).find((account) => account.brokerName === "PAPER");
-      if (existing) {
-        return this.sanitizeBrokerAccount(existing);
-      }
+      const paper = await this.ensurePaperBrokerAccount(userId, { fundIfEmpty: true });
+      return this.sanitizeBrokerAccount(paper);
     }
 
     let encryptedApiKey: string | undefined;
@@ -1617,6 +1626,11 @@ export class PlatformService implements OnModuleInit {
       signalType: signal.signalType,
       modelVersion: signal.modelVersion
     });
+    logSignal({
+      symbol: signal.symbol,
+      action: signal.signalType,
+      confidence: signal.confidenceScore
+    });
     this.store.signals.set(signal.id, signal);
     this.persist(this.platformRepository.persistSignal(signal));
     this.store.appendAudit({
@@ -1656,6 +1670,7 @@ export class PlatformService implements OnModuleInit {
     const symbol = readString(body, "symbol", { required: true, max: 16 }).toUpperCase();
     const strategyId = readString(body, "strategyId", { required: true });
     const timeframe = normalizeMarketTimeframe(body.timeframe);
+    const signalId = readString(body, "signalId");
     const idempotencyKey =
       readString(body, "idempotencyKey", { max: 128 }) ||
       `${userId}:${strategyId}:${symbol}:${timeframe}:${new Date().toISOString().slice(0, 16)}`;
@@ -1671,17 +1686,26 @@ export class PlatformService implements OnModuleInit {
     }
 
     const settings = this.getAutomationSettings(userId);
+    const resolveSignal = async (): Promise<Signal> => {
+      if (signalId) {
+        return this.requireSignal(userId, signalId);
+      }
+      return this.generateTradingSignal(userId, { strategyId: strategy.id, symbol, timeframe });
+    };
+
     if (settings.emergencyStop || settings.mode === "MANUAL") {
+      const reason =
+        settings.emergencyStop
+          ? "Emergency stop is active."
+          : "Automation mode is Manual — orders are not auto-submitted.";
+      logTradeSkipped(reason);
       const blocked: AutomationRunResult = {
         status: "SKIPPED",
         mode: "AUTO",
         strategyId: strategy.id,
         symbol,
-        signal: await this.generateTradingSignal(userId, { strategyId: strategy.id, symbol, timeframe }),
-        reason:
-          settings.emergencyStop
-            ? "Emergency stop is active."
-            : "Automation mode is Manual — orders are not auto-submitted.",
+        signal: await resolveSignal(),
+        reason,
         idempotencyKey,
         steps: [
           { id: "sync", label: "Syncing account", status: "done" },
@@ -1693,12 +1717,15 @@ export class PlatformService implements OnModuleInit {
           qualifiedSignals: 0,
           tradesCreated: 0,
           signalsRejected: 1,
-          highestRejectionReason: settings.emergencyStop ? "Emergency stop is active." : "Manual mode"
+          highestRejectionReason: reason
         }
       };
       this.store.automationIdempotency.set(idempotencyKey, blocked);
       return blocked;
     }
+
+    // Paper execution needs a broker + buying power before risk can size an order.
+    await this.ensurePaperBrokerAccount(userId, { fundIfEmpty: !this.usesAlpacaExecution(userId) });
 
     const confidenceThreshold = readPercentSetting(body, strategy.configuration, "confidenceThreshold", settings.minimumConfidence);
     const stopLossPercent = readPercentSetting(body, strategy.configuration, "stopLossPercent", 5);
@@ -1726,14 +1753,19 @@ export class PlatformService implements OnModuleInit {
       action: "AUTOMATION_RUN_STARTED",
       entityType: "STRATEGY",
       entityId: strategy.id,
-      metadata: { symbol, timeframe, confidenceThreshold, stopLossPercent, takeProfitPercent, idempotencyKey }
+      metadata: { symbol, timeframe, confidenceThreshold, stopLossPercent, takeProfitPercent, idempotencyKey, signalId: signalId || null }
     });
 
     await this.listMarketData(userId, symbol, timeframe);
     steps[2] = { ...steps[2]!, status: "done" };
     steps[3] = { ...steps[3]!, status: "running" };
 
-    const signal = await this.generateTradingSignal(userId, { strategyId: strategy.id, symbol, timeframe });
+    const signal = await resolveSignal();
+    logSignal({
+      symbol: signal.symbol,
+      action: signal.signalType,
+      confidence: signal.confidenceScore
+    });
     steps[3] = { ...steps[3]!, status: "done" };
     steps[4] = {
       ...steps[4]!,
@@ -1741,11 +1773,8 @@ export class PlatformService implements OnModuleInit {
       detail: `${signal.signalType} @ ${signal.confidenceScore}%`
     };
 
-    if (signal.signalType === "HOLD" || signal.confidenceScore < confidenceThreshold) {
-      const reason =
-        signal.signalType === "HOLD"
-          ? "Signal was HOLD; automated execution skipped."
-          : `Signal confidence ${signal.confidenceScore}% was below threshold ${confidenceThreshold}%.`;
+    const skipAutomation = (reason: string, opportunitiesFound: number): AutomationRunResult => {
+      logTradeSkipped(reason);
       steps[5] = { ...steps[5]!, status: "skipped", detail: reason };
       steps[6] = { ...steps[6]!, status: "skipped" };
       steps[7] = { ...steps[7]!, status: "skipped" };
@@ -1774,7 +1803,7 @@ export class PlatformService implements OnModuleInit {
         steps,
         summary: {
           symbolsScanned: 1,
-          opportunitiesFound: signal.signalType === "HOLD" ? 0 : 1,
+          opportunitiesFound,
           qualifiedSignals: 0,
           tradesCreated: 0,
           signalsRejected: 1,
@@ -1783,10 +1812,62 @@ export class PlatformService implements OnModuleInit {
       };
       this.store.automationIdempotency.set(idempotencyKey, skipped);
       return skipped;
+    };
+
+    if (signal.signalType === "HOLD") {
+      return skipAutomation("Signal was HOLD; automated execution skipped.", 0);
+    }
+    if (signal.confidenceScore < confidenceThreshold) {
+      return skipAutomation(
+        `Signal confidence ${signal.confidenceScore}% was below threshold ${confidenceThreshold}% (minimum confidence).`,
+        1
+      );
+    }
+
+    // Internal paper AUTO fills are available 24/7. Only live Alpaca waits for the cash session.
+    if (settings.marketHoursOnly && this.hasLiveAlpacaCredentials(userId) && !isUsEquityMarketOpen()) {
+      return skipAutomation("Market closed — live Alpaca auto-execution waits for the US equity cash session.", 1);
+    }
+
+    const autoOrdersToday = this.listOrders(userId).filter(
+      (order) =>
+        order.mode === "AUTO" &&
+        order.submittedAt.startsWith(new Date().toISOString().slice(0, 10)) &&
+        order.status !== "REJECTED" &&
+        order.status !== "CANCELLED"
+    );
+    if (autoOrdersToday.length >= settings.maxTradesPerDay) {
+      return skipAutomation(`Max trades per day reached (${settings.maxTradesPerDay}).`, 1);
+    }
+
+    if (settings.cooldownSeconds > 0) {
+      const lastSymbolOrder = [...autoOrdersToday]
+        .filter((order) => order.symbol === symbol)
+        .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt))[0];
+      if (lastSymbolOrder) {
+        const elapsedMs = Date.now() - new Date(lastSymbolOrder.submittedAt).getTime();
+        if (elapsedMs < settings.cooldownSeconds * 1000) {
+          return skipAutomation(
+            `Cooldown active for ${symbol} — wait ${settings.cooldownSeconds}s between auto orders.`,
+            1
+          );
+        }
+      }
+    }
+
+    const existingPosition = this.listPositions(userId).find((position) => position.symbol === symbol);
+    const side = signal.signalType;
+    if (side === "BUY" && existingPosition && existingPosition.quantity > 0) {
+      return skipAutomation(`Duplicate position — already long ${existingPosition.quantity} ${symbol}.`, 1);
+    }
+    if (side === "SELL" && (!existingPosition || existingPosition.quantity <= 0)) {
+      return skipAutomation(`No open long position in ${symbol} to sell.`, 1);
     }
 
     const price = readLatestClose(signal, await this.listMarketData(userId, symbol, timeframe));
-    const side = signal.signalType;
+    if (!(price > 0)) {
+      return skipAutomation("Missing market price — cannot size or submit a paper order.", 1);
+    }
     const stopLoss =
       side === "BUY" ? price * (1 - stopLossPercent / 100) : price * (1 + stopLossPercent / 100);
     const takeProfit =
@@ -1801,6 +1882,8 @@ export class PlatformService implements OnModuleInit {
       entityId: signal.id,
       metadata: { symbol, timeframe, side, price, stopLoss, takeProfit }
     });
+
+    logExecutionAttempting({ symbol, side });
 
     try {
       const execution = await this.createOrder(userId, {
@@ -1854,6 +1937,7 @@ export class PlatformService implements OnModuleInit {
       return executed;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Order rejected";
+      logExecutionRejected(message);
       steps[5] = { ...steps[5]!, status: "failed", detail: message };
       steps[6] = { ...steps[6]!, status: "skipped" };
       steps[7] = { ...steps[7]!, status: "skipped" };
@@ -2050,7 +2134,23 @@ export class PlatformService implements OnModuleInit {
     const orderType = readEnum<OrderType>(body, "orderType", ["MARKET", "LIMIT", "STOP"], "MARKET");
     const mode = readEnum<TradingMode>(body, "mode", ["MANUAL", "SEMI_AUTO", "AUTO"], "MANUAL");
     const requestedPrice = readNumber(body, "price", { required: true, min: 0.01 });
-    await this.syncAlpacaState(userId);
+    // AUTO paper path fills on the internal broker so portfolio/trades update immediately.
+    // Live Alpaca keeps the external order route. Cash-only sync avoids wiping local paper positions.
+    const preferInternalPaper = mode === "AUTO" && !this.hasLiveAlpacaCredentials(userId);
+    if (preferInternalPaper) {
+      await this.ensurePaperBrokerAccount(userId, { fundIfEmpty: !this.usesAlpacaExecution(userId) });
+      // Seed buying power from Alpaca paper once; afterward the local paper ledger owns cash/positions.
+      if (this.usesAlpacaExecution(userId)) {
+        const portfolio = this.getPrimaryPortfolio(userId);
+        const hasLocalBook =
+          this.listTrades(userId).length > 0 || this.listPositions(userId).length > 0;
+        if (!hasLocalBook && portfolio.cashBalance <= 0) {
+          await this.syncAlpacaCashOnly(userId);
+        }
+      }
+    } else {
+      await this.syncAlpacaState(userId);
+    }
     const marketPrice = (await this.getMarketQuote(userId, symbol, "1m")).price;
     const price = orderType === "MARKET" ? marketPrice : requestedPrice;
     const requestedStopLoss = readNumber(body, "stopLoss", { required: true, min: 0.01 });
@@ -2088,7 +2188,7 @@ export class PlatformService implements OnModuleInit {
 
     const portfolio = this.getPrimaryPortfolio(userId);
     const existingPosition = this.listPositions(userId).find((position) => position.symbol === symbol);
-    const riskDecision = this.evaluateOrderRisk({
+    let riskDecision = this.evaluateOrderRisk({
       userId,
       portfolio,
       symbol,
@@ -2100,7 +2200,15 @@ export class PlatformService implements OnModuleInit {
       requestedQuantity
     });
     const quantity = requestedQuantity ?? riskDecision.calculatedQuantity;
-    const executionTarget = this.resolveExecutionBroker(userId);
+    if (!(quantity > 0) && riskDecision.approved) {
+      riskDecision = {
+        ...riskDecision,
+        approved: false,
+        reasons: [...riskDecision.reasons, "Missing quantity — calculated position size was zero."]
+      };
+    }
+    const executionTarget = this.resolveExecutionBroker(userId, { preferPaper: preferInternalPaper });
+    logExecutionAttempting({ symbol, side, quantity });
     const baseOrder = {
       id: randomUUID(),
       userId,
@@ -2133,6 +2241,8 @@ export class PlatformService implements OnModuleInit {
 
     if (!riskDecision.approved) {
       const primary = riskDecision.rejections?.[0];
+      const rejectMessage = primary?.message ?? riskDecision.reasons.join(" ");
+      logExecutionRejected(rejectMessage);
       this.store.appendAudit({
         userId,
         actorUserId: userId,
@@ -2151,18 +2261,18 @@ export class PlatformService implements OnModuleInit {
         userId,
         notificationType: "RISK",
         title: primary?.title ?? "Risk rule blocked trade",
-        message: primary?.message ?? riskDecision.reasons.join(" ")
+        message: rejectMessage
       });
       this.operationalMetrics.recordTrade(performance.now() - startedAt, "rejected");
       throw new UnprocessableEntityException({
         code: "RISK_REJECTED",
-        message: primary?.message ?? riskDecision.reasons.join(" "),
+        message: rejectMessage,
         details: {
           orderId: order.id,
           approved: false,
           code: primary?.code ?? "RISK_REJECTED",
           title: primary?.title ?? "Risk validation failed",
-          message: primary?.message ?? riskDecision.reasons.join(" "),
+          message: rejectMessage,
           currentValue: primary?.currentValue ?? null,
           limit: primary?.limit ?? null,
           suggestedQuantity: riskDecision.suggestedQuantity ?? primary?.suggestedQuantity ?? null,
@@ -2222,7 +2332,14 @@ export class PlatformService implements OnModuleInit {
         executionTarget.adapter.name === "ALPACA"
           ? await this.alpacaBroker.submitOrder(submittedOrder, marketPrice, executionTarget.credentials)
           : await this.paperBroker.submitOrder(submittedOrder, marketPrice);
-    } catch {
+      logExecutionSubmitted({
+        orderId: submittedOrder.id,
+        broker: executionTarget.adapter.name,
+        status: execution.status
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Broker order submission failed.";
+      logExecutionRejected(reason);
       const rejectedOrder: Order = { ...submittedOrder, status: "REJECTED" };
       this.store.orders.set(rejectedOrder.id, rejectedOrder);
       await this.platformRepository.persistOrder(rejectedOrder);
@@ -2233,12 +2350,12 @@ export class PlatformService implements OnModuleInit {
         action: "BROKER_REJECTED_ORDER",
         entityType: "ORDER",
         entityId: order.id,
-        metadata: { broker: executionTarget.adapter.name, reason: "submission_failed" }
+        metadata: { broker: executionTarget.adapter.name, reason: "submission_failed", detail: reason }
       });
       this.operationalMetrics.recordTrade(performance.now() - startedAt, "rejected");
       throw new UnprocessableEntityException({
         code: "BROKER_SUBMISSION_FAILED",
-        message: "Broker order submission failed."
+        message: reason
       });
     }
     const result =
@@ -2821,39 +2938,135 @@ export class PlatformService implements OnModuleInit {
   }
 
   private usesAlpacaExecution(userId: UUID): boolean {
-    return this.getAlpacaBrokerAccount(userId) !== undefined;
+    const account = this.getAlpacaBrokerAccount(userId);
+    return Boolean(account?.encryptedApiKey && account.encryptedSecret);
   }
 
-  private resolveExecutionBroker(userId: UUID): {
+  private hasLiveAlpacaCredentials(userId: UUID): boolean {
+    const account = this.getAlpacaBrokerAccount(userId);
+    return Boolean(
+      account?.encryptedApiKey &&
+        account.encryptedSecret &&
+        account.environment === "LIVE"
+    );
+  }
+
+  /**
+   * Ensure an internal PAPER broker exists. Optionally seed demo cash when Alpaca is absent
+   * so risk sizing and paper fills can run end-to-end.
+   */
+  async ensurePaperBrokerAccount(
+    userId: UUID,
+    options: { readonly fundIfEmpty?: boolean } = {}
+  ): Promise<BrokerAccount> {
+    this.store.ensureDefaultAccountState(userId);
+    let paperAccount = [...this.store.brokerAccounts.values()].find(
+      (candidate) => candidate.userId === userId && candidate.brokerName === "PAPER"
+    );
+    if (!paperAccount) {
+      paperAccount = {
+        id: randomUUID(),
+        userId,
+        brokerName: "PAPER",
+        accountId: `paper-${userId.slice(0, 8)}`,
+        status: "CONNECTED",
+        createdAt: isoNow()
+      };
+      this.store.brokerAccounts.set(paperAccount.id, paperAccount);
+      await this.platformRepository.persistBrokerAccount(paperAccount);
+      this.store.appendAudit({
+        userId,
+        actorUserId: userId,
+        action: "BROKER_CONNECTED",
+        entityType: "BROKER_ACCOUNT",
+        entityId: paperAccount.id,
+        metadata: { brokerName: "PAPER", accountId: paperAccount.accountId, autoProvisioned: true }
+      });
+    }
+
+    if (options.fundIfEmpty) {
+      const portfolio = this.getPrimaryPortfolio(userId);
+      if (portfolio.cashBalance <= 0 && portfolio.portfolioValue <= 0) {
+        const funded: Portfolio = {
+          ...portfolio,
+          portfolioName: "Paper Account",
+          cashBalance: DEFAULT_PAPER_STARTING_CASH,
+          portfolioValue: DEFAULT_PAPER_STARTING_CASH,
+          realizedPnl: 0,
+          unrealizedPnl: 0
+        };
+        this.store.portfolios.set(funded.id, funded);
+        await this.platformRepository.persistPortfolio(funded);
+      }
+    }
+
+    return paperAccount;
+  }
+
+  private resolveExecutionBroker(
+    userId: UUID,
+    options: { readonly preferPaper?: boolean } = {}
+  ): {
     readonly adapter: BrokerAdapter;
     readonly account: BrokerAccount;
     readonly credentials?: BrokerCredentials;
   } {
     const alpacaAccount = this.getAlpacaBrokerAccount(userId);
-    if (alpacaAccount?.encryptedApiKey && alpacaAccount.encryptedSecret) {
+    const canUseAlpaca = Boolean(alpacaAccount?.encryptedApiKey && alpacaAccount.encryptedSecret);
+    if (canUseAlpaca && alpacaAccount && !options.preferPaper) {
       return {
         adapter: this.alpacaBroker,
         account: alpacaAccount,
         credentials: {
-          apiKey: this.brokerCredentials.decrypt(alpacaAccount.encryptedApiKey),
-          secret: this.brokerCredentials.decrypt(alpacaAccount.encryptedSecret),
+          apiKey: this.brokerCredentials.decrypt(alpacaAccount.encryptedApiKey!),
+          secret: this.brokerCredentials.decrypt(alpacaAccount.encryptedSecret!),
           environment: alpacaAccount.environment ?? "PAPER"
         }
       };
     }
+
+    // Synchronous lookup — caller should have awaited ensurePaperBrokerAccount for AUTO paths.
     const paperAccount = [...this.store.brokerAccounts.values()].find(
       (candidate) => candidate.userId === userId && candidate.brokerName === "PAPER"
     );
     if (!paperAccount) {
       throw new NotFoundException({
         code: "BROKER_NOT_CONNECTED",
-        message: "Connect Alpaca before placing orders."
+        message: "Connect a paper or Alpaca broker before placing orders."
       });
     }
     return {
       adapter: this.paperBroker,
       account: paperAccount
     };
+  }
+
+  /** Sync Alpaca equity/cash into the local portfolio without replacing local paper positions. */
+  async syncAlpacaCashOnly(userId: UUID): Promise<void> {
+    const account = this.getAlpacaBrokerAccount(userId);
+    if (!account?.encryptedApiKey || !account.encryptedSecret) {
+      return;
+    }
+    const credentials: BrokerCredentials = {
+      apiKey: this.brokerCredentials.decrypt(account.encryptedApiKey),
+      secret: this.brokerCredentials.decrypt(account.encryptedSecret),
+      environment: account.environment ?? "PAPER"
+    };
+    const alpacaAccount = await this.alpacaBroker.getAccount(credentials);
+    const portfolio = this.getPrimaryPortfolio(userId);
+    const localUnrealized = this.listPositions(userId).reduce(
+      (sum, position) => sum + position.unrealizedPnl,
+      0
+    );
+    const updatedPortfolio: Portfolio = {
+      ...portfolio,
+      portfolioName: credentials.environment === "LIVE" ? "Alpaca Live Account" : "Alpaca Paper Account",
+      portfolioValue: Number(alpacaAccount.equity.toFixed(2)),
+      cashBalance: Number(alpacaAccount.cash.toFixed(2)),
+      unrealizedPnl: Number(localUnrealized.toFixed(2))
+    };
+    this.store.portfolios.set(updatedPortfolio.id, updatedPortfolio);
+    await this.platformRepository.persistPortfolio(updatedPortfolio);
   }
 
   async syncAlpacaState(userId: UUID): Promise<void> {
@@ -2912,6 +3125,9 @@ export class PlatformService implements OnModuleInit {
     execution: BrokerExecutionResult,
     brokerName: string
   ): Promise<OrderExecutionPayload> {
+    const existingPosition = this.listPositions(submittedOrder.userId).find(
+      (candidate) => candidate.symbol === submittedOrder.symbol
+    );
     const executedOrder: Order = {
       ...submittedOrder,
       quantity: execution.filledQuantity || submittedOrder.quantity,
@@ -2927,6 +3143,13 @@ export class PlatformService implements OnModuleInit {
       filledAveragePrice: execution.filledAveragePrice
     });
 
+    let trade: Trade | undefined;
+    if (executedOrder.status === "FILLED" || executedOrder.status === "PARTIALLY_FILLED") {
+      // Persist a local trade row before Alpaca sync so Trade History is never empty after fills.
+      trade = this.recordFilledTrade(executedOrder, existingPosition);
+      await this.platformRepository.persistTrade(trade);
+    }
+
     await this.syncAlpacaState(executedOrder.userId);
     const portfolio = this.getPrimaryPortfolio(executedOrder.userId);
     const position = this.listPositions(executedOrder.userId).find(
@@ -2934,6 +3157,13 @@ export class PlatformService implements OnModuleInit {
     );
 
     if (executedOrder.status === "FILLED" || executedOrder.status === "PARTIALLY_FILLED") {
+      if (position) {
+        logPositionCreated({
+          symbol: position.symbol,
+          quantity: position.quantity,
+          averagePrice: position.averagePrice
+        });
+      }
       this.store.appendAudit({
         userId: executedOrder.userId,
         actorUserId: executedOrder.userId,
@@ -2958,12 +3188,13 @@ export class PlatformService implements OnModuleInit {
       this.realtime.publish({
         userId: executedOrder.userId,
         type: "trade.executed",
-        data: { order: executedOrder, portfolio }
+        data: { order: executedOrder, portfolio, ...(trade ? { trade } : {}) }
       });
     }
 
     return {
       order: executedOrder,
+      ...(trade ? { trade } : {}),
       ...(position ? { position } : {}),
       portfolio,
       riskDecision: executedOrder.riskDecision
@@ -3134,6 +3365,12 @@ export class PlatformService implements OnModuleInit {
       this.platformRepository.persistPortfolio(updatedPortfolio)
     ]);
 
+    logPositionCreated({
+      symbol: position.symbol,
+      quantity: position.quantity,
+      averagePrice: position.averagePrice
+    });
+
     this.store.appendAudit({
       userId: executedOrder.userId,
       actorUserId: executedOrder.userId,
@@ -3158,7 +3395,7 @@ export class PlatformService implements OnModuleInit {
     this.realtime.publish({
       userId: executedOrder.userId,
       type: "trade.executed",
-      data: { trade }
+      data: { trade, position, portfolio: updatedPortfolio }
     });
 
     return {

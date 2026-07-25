@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { PaperBrokerAdapter } from "../src/brokers/paper-broker.adapter.js";
 import { AlpacaBrokerAdapter } from "../src/brokers/alpaca-broker.adapter.js";
@@ -131,6 +131,55 @@ describe("Dondie survival loop", () => {
     expect(result.automation.symbol).toBe("AAPL");
     expect(store.auditLogs.some((log) => log.action === "DONDIE_RUN")).toBe(true);
     expect(dondie.listMemories(user.id).length).toBeGreaterThan(0);
+  });
+
+  it("executes a paper trade from a BUY signal without regenerating the signal", async () => {
+    installAlpacaFetchMock();
+    const { dondie, platform, store } = createDondie();
+    const user = store.createUser({
+      email: `dondie-exec-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Dondie",
+      lastName: "Trader",
+      role: "TRADER"
+    });
+    // No pre-seeded paper broker — ensurePaperBrokerAccount must provision + fund.
+    const strategy = platform.createStrategy(user.id, {
+      name: "Execute Strategy",
+      description: "Must fill paper orders",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { confidenceThreshold: 1, stopLossPercent: 5, takeProfitPercent: 8 }
+    });
+    await dondie.activate(user.id, { strategyId: strategy.id });
+    platform.updateAutomationSettings(user.id, {
+      mode: "AUTOPILOT",
+      emergencyStop: false,
+      minimumConfidence: 1,
+      marketHoursOnly: false,
+      cooldownSeconds: 0
+    });
+
+    const signal = {
+      id: randomUUID(),
+      userId: user.id,
+      strategyId: strategy.id,
+      symbol: "AAPL",
+      signalType: "BUY" as const,
+      confidenceScore: 88,
+      modelVersion: "mvp-baseline-1.0.0",
+      features: { latestClose: 190 },
+      generatedAt: new Date().toISOString()
+    };
+    store.signals.set(signal.id, signal);
+    const generateSpy = vi.spyOn(platform, "generateTradingSignal").mockResolvedValue(signal);
+
+    const result = await dondie.run(user.id, { symbol: "AAPL" });
+    expect(result.automation.status).toBe("EXECUTED");
+    expect(generateSpy).toHaveBeenCalledTimes(1);
+    expect(platform.listTrades(user.id).length).toBeGreaterThan(0);
+    expect(platform.listPositions(user.id).some((position) => position.symbol === "AAPL")).toBe(true);
+    expect(platform.getPrimaryPortfolio(user.id).cashBalance).toBeLessThan(100_000);
   });
 
   it("exposes wallet ledger after credits", async () => {

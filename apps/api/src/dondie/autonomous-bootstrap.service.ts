@@ -24,6 +24,12 @@ export class AutonomousBootstrapService {
   async ensureAutonomousMode(userId: UUID): Promise<AutonomousBootstrapResult> {
     // Ensure portfolio / risk / watchlist rows exist before mutating them.
     this.platform.getRiskRules(userId);
+    // Paper execution path: provision internal PAPER broker + demo cash when Alpaca is absent.
+    const brokers = this.platform.listBrokerAccounts(userId);
+    const hasAlpaca = brokers.some((account) => account.brokerName === "ALPACA" && account.hasCredentials);
+    if (!hasAlpaca) {
+      await this.platform.ensurePaperBrokerAccount(userId, { fundIfEmpty: true });
+    }
 
     const existingAgent = this.dondie.getAgent(userId);
     const existingAutomation = this.platform.getAutomationSettings(userId);

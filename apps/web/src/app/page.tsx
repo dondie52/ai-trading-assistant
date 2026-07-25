@@ -986,10 +986,11 @@ export default function Page(): ReactElement {
     },
     onSuccess: async (result) => {
       setAutomationRunResult(result.automation);
+      const skipReason = result.automation.reason || result.reasoning;
       setNotice(
         result.automation.status === "EXECUTED"
           ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
-          : `Dondie scanned and skipped ${result.symbol}: ${result.reasoning}`
+          : `Dondie scanned and skipped ${result.symbol}: ${skipReason}`
       );
       await invalidateTradingData();
     },
