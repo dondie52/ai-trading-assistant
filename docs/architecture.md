@@ -40,9 +40,12 @@ Dondie runs as a modular monolith: the agent orchestrates trading through shared
 
 - `DondieService` — activate, pause, run, scheduled execution
 - `DondieBrainFreeService` — Phase 1 brain (signal-based, no LLM cost)
-- `DondieScheduler` — periodic run trigger
+- `DondieScheduler` — in-process interval + immediate boot catch-up tick
+- `InternalDondieController` — `POST /internal/dondie/tick` (CRON_SECRET) for overnight wakeups
 - `DondieRepository` — agent persistence
 - `dondie.config.ts` — survival economics thresholds
+
+AUTOPILOT runs on the API process, not in the browser. External keepalive (GitHub Actions) must call `/internal/dondie/tick` so free-tier cold starts still scan due agents.
 
 Planned:
 

@@ -160,7 +160,17 @@ Vercel → Project → Settings → Environment Variables (Production + Preview)
 - `NEXT_PUBLIC_SUPABASE_URL` = `https://axrclxwittqyurwqjvdq.supabase.co`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` = (Dashboard → Settings → API)
 
-Redeploy the web app after saving. Free Render APIs sleep after idle — the web client retries/wakes the API automatically, and `.github/workflows/render-api-keepalive.yml` pings `/api/v1/health` every 12 minutes to limit cold starts.
+Redeploy the web app after saving.
+
+### Overnight AUTOPILOT (no browser required)
+
+Dondie scans on the **API server**, not in your phone tab. Free Render APIs still sleep after ~15 minutes idle, so keep them awake **and** tick overdue agents:
+
+1. Set the same `CRON_SECRET` on the Render `dondie-api` service and as a GitHub Actions **repository secret** named `CRON_SECRET`.
+2. `.github/workflows/render-api-keepalive.yml` runs every ~12 minutes: wakes `/api/v1/health`, then `POST /api/v1/internal/dondie/tick`.
+3. On every API boot/wake, the in-process scheduler also catch-up ticks immediately (default every 15 minutes via `DONDIE_SCHEDULE_MINUTES`).
+
+“Force scan now” in the UI is optional — closing the tab must not stop AUTOPILOT once `CRON_SECRET` is configured.
 
 ## Tests
 

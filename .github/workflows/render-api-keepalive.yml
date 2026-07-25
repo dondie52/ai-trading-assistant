@@ -1,5 +1,7 @@
-# Keeps the free Render API from spinning down after ~15 minutes of idle traffic.
-# Pings the public health endpoint; no secrets required.
+# Keeps the free Render API awake and runs overdue AUTOPILOT agents.
+# Health-only wake is not enough — after a cold start the in-process timer
+# used to wait a full schedule interval. This workflow POSTs /internal/dondie/tick
+# so Dondie keeps scanning overnight without a browser tab open.
 
 name: Render API keepalive
 
@@ -16,33 +18,66 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Wake Render trading API
+      - name: Wake API and tick overdue Dondie agents
         env:
           RENDER_API_HEALTH_URL: ${{ vars.RENDER_API_HEALTH_URL }}
+          RENDER_API_TICK_URL: ${{ vars.RENDER_API_TICK_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
-          URL="${RENDER_API_HEALTH_URL:-https://ai-trading-assistant-cgpp.onrender.com/api/v1/health}"
-          echo "Pinging ${URL}"
+          HEALTH_URL="${RENDER_API_HEALTH_URL:-https://ai-trading-assistant-cgpp.onrender.com/api/v1/health}"
+          TICK_URL="${RENDER_API_TICK_URL:-https://ai-trading-assistant-cgpp.onrender.com/api/v1/internal/dondie/tick}"
 
+          echo "Pinging health ${HEALTH_URL}"
           for attempt in 1 2 3 4 5; do
             HTTP_CODE=$(curl -sS -o /tmp/render-api-health.json -w "%{http_code}" \
               --max-time 90 \
               -H "Accept: application/json" \
-              "$URL" || echo "000")
+              "$HEALTH_URL" || echo "000")
 
-            echo "Attempt ${attempt}: HTTP ${HTTP_CODE}"
+            echo "Health attempt ${attempt}: HTTP ${HTTP_CODE}"
             head -c 500 /tmp/render-api-health.json || true
             echo
 
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "Render API keepalive OK"
-              exit 0
+              break
             fi
-
             sleep 12
           done
 
-          echo "::error::Render API did not become healthy"
+          if [ "${HTTP_CODE:-000}" != "200" ]; then
+            echo "::error::Render API did not become healthy"
+            exit 1
+          fi
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::warning::CRON_SECRET secret is not set — woke API but did not tick agents"
+            echo "Add repo secret CRON_SECRET (same value as Render env CRON_SECRET) for overnight AUTOPILOT."
+            exit 0
+          fi
+
+          echo "Ticking overdue agents ${TICK_URL}"
+          for attempt in 1 2 3; do
+            HTTP_CODE=$(curl -sS -o /tmp/render-api-tick.json -w "%{http_code}" \
+              --max-time 180 \
+              -X POST \
+              -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
+              -H "X-Cron-Secret: ${CRON_SECRET}" \
+              "$TICK_URL" || echo "000")
+
+            echo "Tick attempt ${attempt}: HTTP ${HTTP_CODE}"
+            head -c 800 /tmp/render-api-tick.json || true
+            echo
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Render API keepalive + Dondie tick OK"
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "::error::Dondie tick endpoint failed"
           exit 1

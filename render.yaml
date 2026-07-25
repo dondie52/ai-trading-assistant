@@ -1,5 +1,10 @@
 # Render Blueprint — Dondie API
 # Dashboard: https://dashboard.render.com/blueprints/new?repo=https://github.com/dondie52/ai-trading-assistant
+#
+# Autopilot does NOT depend on the browser tab.
+# Free web services sleep after ~15m idle; overnight runs are driven by:
+#   GitHub Actions → POST /api/v1/internal/dondie/tick (see .github/workflows/render-api-keepalive.yml)
+# Set the same CRON_SECRET on this service and as a GitHub Actions repository secret.
 services:
   - type: web
     name: dondie-api
@@ -43,3 +48,7 @@ services:
         value: PAPER
       - key: DONDIE_SCHEDULER_ENABLED
         value: "true"
+      - key: DONDIE_SCHEDULE_MINUTES
+        value: "15"
+      - key: CRON_SECRET
+        sync: false
