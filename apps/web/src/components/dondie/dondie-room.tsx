@@ -48,7 +48,7 @@ export function DondieRoomPanel({
     return (
       <Panel title="Dondie Room" icon={<Sparkles className="h-5 w-5 text-violet-300" aria-hidden="true" />} compact>
         <p data-testid="dondie-room-error" className="text-sm text-slate-400">
-          Unable to load Dondie Room right now. Refresh or sign in again if your session expired.
+          Unable to load Dondie Room right now. Pull to refresh — your agent data may still be available below.
         </p>
       </Panel>
     );
