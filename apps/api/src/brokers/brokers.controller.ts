@@ -26,11 +26,24 @@ export class BrokersController {
   }
 
   @Get("accounts")
-  accounts(
+  async accounts(
     @CurrentUser() user: AuthenticatedPrincipal,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string
-  ): ReturnType<typeof ok> {
+  ): Promise<ReturnType<typeof ok>> {
+    const accounts = this.platform.listBrokerAccounts(user.sub);
+    const alpacaReady = accounts.some(
+      (account) =>
+        account.brokerName === "ALPACA" && account.status === "CONNECTED" && account.hasCredentials
+    );
+    // Already connected before hands-off shipped: start autonomy without reconnecting.
+    if (alpacaReady && !this.platform.hasHandsOffAgent(user.sub)) {
+      try {
+        await this.bootstrap.ensureAutonomousMode(user.sub);
+      } catch {
+        // Listing brokers must still succeed if bootstrap cannot complete.
+      }
+    }
     return ok(paginate(this.platform.listBrokerAccounts(user.sub), page, pageSize));
   }
 

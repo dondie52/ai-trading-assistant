@@ -31,7 +31,7 @@ import {
   WalletCards
 } from "lucide-react";
 import type { FormEvent, ReactElement } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import type {
   AuditLog,
@@ -292,6 +292,7 @@ export default function Page(): ReactElement {
   const [automationRunResult, setAutomationRunResult] = useState<AutomationRunResult | null>(null);
   const [lastAutonomy, setLastAutonomy] = useState<AutonomousBootstrapResult | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const autoHandsOffAttempted = useRef(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserFirstName, setNewUserFirstName] = useState("");
@@ -1234,6 +1235,37 @@ export default function Page(): ReactElement {
     }
   });
 
+  // Alpaca already connected (no reconnect needed): start hands-off once on load.
+  useEffect(() => {
+    if (!authenticated || !alpacaConnected || autoHandsOffAttempted.current) {
+      return;
+    }
+    if (brokerAccounts.isLoading || automationSettings.isLoading || dondieAgent.isLoading) {
+      return;
+    }
+    if (automationSettings.data?.emergencyStop) {
+      return;
+    }
+    const alreadyHandsOff =
+      automationSettings.data?.mode === "AUTOPILOT" && dondieAgent.data?.status === "ACTIVE";
+    if (alreadyHandsOff) {
+      autoHandsOffAttempted.current = true;
+      return;
+    }
+    autoHandsOffAttempted.current = true;
+    goAutonomousMutation.mutate();
+  }, [
+    authenticated,
+    alpacaConnected,
+    brokerAccounts.isLoading,
+    automationSettings.isLoading,
+    automationSettings.data?.emergencyStop,
+    automationSettings.data?.mode,
+    dondieAgent.isLoading,
+    dondieAgent.data?.status,
+    goAutonomousMutation
+  ]);
+
   const markNotificationsReadMutation = useMutation({
     mutationFn: () =>
       apiFetch<readonly Notification[]>(
@@ -1473,7 +1505,12 @@ export default function Page(): ReactElement {
       onSecretChange={setAlpacaSecret}
       onConnect={() => connectBrokerMutation.mutate()}
       connecting={connectBrokerMutation.isPending}
-      onReconnect={() => void invalidateTradingData()}
+      onReconnect={() => {
+        void invalidateTradingData();
+        if (alpacaConnected) {
+          goAutonomousMutation.mutate();
+        }
+      }}
     />
   );
 

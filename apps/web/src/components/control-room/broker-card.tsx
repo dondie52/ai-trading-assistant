@@ -160,7 +160,7 @@ export function BrokerConnectionCard({
                 {alpacaConnected
                   ? active.environment === "LIVE"
                     ? "Live trading requires explicit operator enablement."
-                    : "Alpaca linked — agent manages strategy and AUTOPILOT. Deposit or withdraw in Alpaca."
+                    : "Alpaca linked — if hands-off is not running yet, tap Reconnect / refresh or open Trade and start hands-off. Deposit or withdraw in Alpaca."
                   : "No Alpaca credentials yet. Connect to fund trading and let the agent run hands-off."}
               </p>
             </div>
