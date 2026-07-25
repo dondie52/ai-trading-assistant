@@ -442,17 +442,23 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
   }
 
   // --- Portfolio ---
+  const cashTooLow =
+    typeof input.portfolio?.cashBalance === "number" && input.portfolio.cashBalance > 0 && input.portfolio.cashBalance < 100;
   let portfolioAgent = buildAgent(
     "portfolio",
-    "idle",
-    openPositions.length > 0
-      ? `Monitoring ${openPositions.length} open position(s)`
-      : "No open positions",
+    cashTooLow ? "alert" : "idle",
+    cashTooLow
+      ? `Cash $${input.portfolio!.cashBalance.toFixed(2)} — too low for equity shares`
+      : openPositions.length > 0
+        ? `Monitoring ${openPositions.length} open position(s)`
+        : "No open positions",
     input.portfolio?.createdAt ?? nowIso,
     input.portfolio
       ? [
           `Value ${input.portfolio.portfolioValue.toFixed(2)}`,
-          `Unrealized ${input.portfolio.unrealizedPnl.toFixed(2)}`
+          cashTooLow
+            ? "Fund Alpaca paper — weekend BTC desk still works"
+            : `Unrealized ${input.portfolio.unrealizedPnl.toFixed(2)}`
         ]
       : []
   );

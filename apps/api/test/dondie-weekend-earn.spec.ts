@@ -171,4 +171,41 @@ describe("Dondie weekend paper BTC desk", () => {
     expect(dondie.listMemories(user.id)[0]?.evaluation.weekendGig).toBe(true);
     expect(platform.listTrades(user.id).some((trade) => trade.symbol === "BTCUSD")).toBe(true);
   });
+
+  it("kicks a weekend paper BTC scalp when the office lifestyle is polled", async () => {
+    const { dondie, platform, store, weekendEarn } = createStack();
+    const user = store.createUser({
+      email: `office-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Office",
+      lastName: "Kick",
+      role: "TRADER"
+    });
+    const paperId = randomUUID();
+    store.brokerAccounts.set(paperId, {
+      id: paperId,
+      userId: user.id,
+      brokerName: "PAPER",
+      accountId: `paper-${user.id.slice(0, 8)}`,
+      status: "CONNECTED",
+      createdAt: new Date().toISOString()
+    });
+    const strategy = platform.createStrategy(user.id, {
+      name: "Office kick",
+      description: "test",
+      version: "1.0.0",
+      status: "ACTIVE",
+      configuration: { agentManaged: true, confidenceThreshold: 65 }
+    });
+    await dondie.activate(user.id, { strategyId: strategy.id });
+    // ASSISTED (not only AUTOPILOT) should still earn when the operator opens the office.
+    platform.updateAutomationSettings(user.id, { mode: "ASSISTED", emergencyStop: false });
+    vi.spyOn(weekendEarn, "isWeekendEarnWindow").mockReturnValue(true);
+
+    const before = platform.listTrades(user.id).length;
+    const world = await dondie.getLifestyle(user.id);
+    expect(world.activity).toBe("SIDE_HUSTLE");
+    expect(platform.listTrades(user.id).length).toBeGreaterThan(before);
+    expect(platform.listTrades(user.id).some((trade) => trade.symbol === "BTCUSD")).toBe(true);
+  });
 });

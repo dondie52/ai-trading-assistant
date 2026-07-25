@@ -410,10 +410,11 @@ export class DondieService implements OnModuleInit {
       return;
     }
     const settings = this.platform.getAutomationSettings(userId);
-    if (settings.mode !== "AUTOPILOT" || settings.emergencyStop) {
+    // MANUAL/paused operators opted out; ASSISTED still gets weekend paper BTC when the office opens.
+    if (settings.mode === "MANUAL" || settings.emergencyStop || settings.runtimeState === "PAUSED") {
       return;
     }
-    if (!this.listDueScheduledUserIds().includes(userId)) {
+    if (!this.isWeekendHustleDue(userId, agent)) {
       return;
     }
     if (this.weekendHustleInFlight.has(userId)) {
@@ -427,6 +428,28 @@ export class DondieService implements OnModuleInit {
     } finally {
       this.weekendHustleInFlight.delete(userId);
     }
+  }
+
+  /** Weekend due clock uses last BTC paper scalp — not equity lastRunAt. */
+  private isWeekendHustleDue(userId: UUID, agent: DondieAgent, nowMs: number = Date.now()): boolean {
+    const scheduleMinutes = Math.max(1, agent.scheduleMinutes || dondieConfig.defaultScheduleMinutes);
+    const scheduleMs = Math.max(60_000, scheduleMinutes * 60_000);
+    const lastBtc = [...this.store.trades.values()]
+      .filter(
+        (trade) =>
+          trade.userId === userId &&
+          trade.symbol === dondieConfig.weekendEarnSymbol &&
+          Boolean(trade.closedAt)
+      )
+      .sort((left, right) => (right.closedAt ?? "").localeCompare(left.closedAt ?? ""))[0];
+    if (!lastBtc?.closedAt) {
+      return true;
+    }
+    const last = Date.parse(lastBtc.closedAt);
+    if (!Number.isFinite(last)) {
+      return true;
+    }
+    return nowMs - last >= scheduleMs;
   }
 
   private async runWeekendSideHustle(userId: UUID, agent: DondieAgent): Promise<DondieRunResult> {
