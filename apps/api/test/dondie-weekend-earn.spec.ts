@@ -106,6 +106,70 @@ describe("Dondie weekend paper BTC desk", () => {
     expect(weekendEarn.isWeekendEarnWindow(saturday)).toBe(false);
   });
 
+  it("keeps BUY win rate near the FREE tier chance (no side/outcome salt coupling)", async () => {
+    const { weekendEarn, store } = createStack();
+    let buyWins = 0;
+    let buyTotal = 0;
+    let sellWins = 0;
+    let sellTotal = 0;
+
+    for (let sample = 0; sample < 80; sample += 1) {
+      const user = store.createUser({
+        email: `salt-${sample}-${randomUUID()}@example.com`,
+        passwordHash: "hash",
+        firstName: "Salt",
+        lastName: "Test",
+        role: "TRADER"
+      });
+      fundMicroStake(store, user.id, 10);
+      const day = new Date(Date.UTC(2026, 6, 25 + (sample % 2), 15, 0, 0));
+      const now = day.toISOString();
+      const agent: DondieAgent = {
+        id: randomUUID(),
+        userId: user.id,
+        name: "Dondie",
+        tier: "FREE",
+        status: "ACTIVE",
+        walletBalance: 0,
+        scheduleMinutes: 60,
+        symbolUniverse: ["AAPL"],
+        createdAt: now,
+        updatedAt: now
+      };
+      store.dondieAgents.set(agent.id, agent);
+
+      for (let run = 0; run < 5; run += 1) {
+        const current = store.dondieAgents.get(agent.id)!;
+        const result = await weekendEarn.runWeekendGig(user.id, current, day);
+        const trade = result.automation.execution?.trade;
+        if (!trade) {
+          continue;
+        }
+        const won = (trade.pnl ?? 0) > 0;
+        if (trade.side === "BUY") {
+          buyTotal += 1;
+          if (won) {
+            buyWins += 1;
+          }
+        } else {
+          sellTotal += 1;
+          if (won) {
+            sellWins += 1;
+          }
+        }
+      }
+    }
+
+    expect(buyTotal).toBeGreaterThan(80);
+    expect(sellTotal).toBeGreaterThan(80);
+    // FREE winChance is 0.52. Pre-fix BUY rate collapsed near ~8% because side and
+    // outcome shared one salt; require BUY wins in a plausible band around 52%.
+    expect(buyWins / buyTotal).toBeGreaterThan(0.35);
+    expect(buyWins / buyTotal).toBeLessThan(0.7);
+    expect(sellWins / sellTotal).toBeGreaterThan(0.35);
+    expect(sellWins / sellTotal).toBeLessThan(0.7);
+  });
+
   it("paper-trades BTCUSD, records fills, and caps wallet credits", async () => {
     const { weekendEarn, store, wallet } = createStack();
     const user = store.createUser({
