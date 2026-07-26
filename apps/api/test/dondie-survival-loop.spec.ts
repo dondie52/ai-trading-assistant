@@ -68,6 +68,7 @@ const createStack = (): {
   readonly memory: DondieMemoryService;
   readonly brain: DondieBrainService;
   readonly llmBrain: DondieBrainLlmService;
+  readonly weekendEarn: DondieWeekendEarnService;
 } => {
   process.env.AUTH_PROVIDER = "legacy";
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
