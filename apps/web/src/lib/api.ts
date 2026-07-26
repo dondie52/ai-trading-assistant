@@ -6,6 +6,12 @@ export const REALTIME_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/u, "");
 /** Delays between transport retries while a free Render instance wakes. */
 const NETWORK_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 12_000, 20_000] as const;
 
+/**
+ * Per-attempt fetch budget. Mobile Safari can leave fetch() pending forever after
+ * a tab is backgrounded; without a timeout the office stays on "Syncing…".
+ */
+export const REQUEST_TIMEOUT_MS = 15_000;
+
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
@@ -48,6 +54,52 @@ const sleep = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError" || error.name === "TimeoutError";
+  }
+  return error instanceof Error && error.name === "AbortError";
+};
+
+/** True when the caller (e.g. React Query cancelQueries) aborted the request. */
+export const isCallerAbortError = (error: unknown, signal?: AbortSignal | null): boolean =>
+  Boolean(signal?.aborted) && isAbortError(error);
+
+const createTimeoutSignal = (ms: number): AbortSignal => {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  setTimeout(() => {
+    controller.abort();
+  }, ms);
+  return controller.signal;
+};
+
+/** Combines an optional caller signal with a timeout so hung Safari fetches fail. */
+export const withRequestTimeout = (
+  callerSignal: AbortSignal | null | undefined,
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): AbortSignal => {
+  const timeoutSignal = createTimeoutSignal(timeoutMs);
+  if (!callerSignal) {
+    return timeoutSignal;
+  }
+  if (callerSignal.aborted) {
+    return callerSignal;
+  }
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.any === "function") {
+    return AbortSignal.any([callerSignal, timeoutSignal]);
+  }
+  const controller = new AbortController();
+  const abort = (): void => {
+    controller.abort();
+  };
+  callerSignal.addEventListener("abort", abort, { once: true });
+  timeoutSignal.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+};
+
 const isApiFailure = (value: unknown): value is ApiFailure => {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -78,7 +130,7 @@ const toTransportError = (error: unknown): ApiError => {
   if (error instanceof ApiError) {
     return error;
   }
-  if (isNetworkFailure(error)) {
+  if (isNetworkFailure(error) || isAbortError(error)) {
     return new ApiError(
       "NETWORK_ERROR",
       "Could not reach the trading API. If the service was asleep, wait a few seconds and try again.",
@@ -121,14 +173,19 @@ const executeFetch = async <T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
+  const signal = withRequestTimeout(requestInit.signal);
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...requestInit,
       headers,
+      signal,
       cache: "no-store"
     });
   } catch (error) {
+    if (isCallerAbortError(error, requestInit.signal)) {
+      throw error;
+    }
     throw toTransportError(error);
   }
 
@@ -165,9 +222,17 @@ const executeFetchWithNetworkRetry = async <T>(
   let lastError: ApiError | undefined;
 
   for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw options.signal.reason instanceof Error
+        ? options.signal.reason
+        : new DOMException("The operation was aborted.", "AbortError");
+    }
     try {
       return await executeFetch<T>(path, options, token);
     } catch (error) {
+      if (isCallerAbortError(error, options.signal)) {
+        throw error;
+      }
       const normalized = toTransportError(error);
       lastError = normalized;
       if (!allowNetworkRetry || !isRetryableTransportError(normalized)) {
@@ -206,7 +271,8 @@ export async function wakeTradingApi(options: { readonly force?: boolean } = {})
       const response = await fetch(`${API_BASE_URL}/health`, {
         method: "GET",
         cache: "no-store",
-        headers: { Accept: "application/json" }
+        headers: { Accept: "application/json" },
+        signal: withRequestTimeout(undefined, REQUEST_TIMEOUT_MS)
       });
       if (!response.ok) {
         return false;
@@ -231,6 +297,9 @@ export async function apiFetch<T>(
   try {
     return await executeFetchWithNetworkRetry<T>(path, options, token);
   } catch (error) {
+    if (isCallerAbortError(error, options.signal)) {
+      throw error;
+    }
     const normalized = toTransportError(error);
     const allowRetry = options.authRetry !== false;
     const handlers = apiAuthHandlers;
