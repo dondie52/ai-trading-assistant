@@ -72,7 +72,8 @@ jobs:
             head -c 800 /tmp/render-api-tick.json || true
             echo
 
-            if [ "$HTTP_CODE" = "200" ]; then
+            # Nest POST defaults to 201 unless the route sets @HttpCode(200).
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
               echo "Render API keepalive + Dondie tick OK"
               exit 0
             fi
