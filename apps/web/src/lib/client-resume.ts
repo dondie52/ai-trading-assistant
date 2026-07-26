@@ -62,11 +62,15 @@ export function startClientResumeRecovery(queryClient: QueryClient): ClientResum
     }
   };
 
+  const handlePageShow = (event: Event): void => {
+    void onPageShow(event as PageTransitionEvent);
+  };
+
   if (typeof document !== "undefined") {
     document.addEventListener("visibilitychange", onVisibilityChange);
   }
   if (typeof window !== "undefined") {
-    window.addEventListener("pageshow", onPageShow as EventListener);
+    window.addEventListener("pageshow", handlePageShow);
   }
 
   return {
@@ -77,7 +81,7 @@ export function startClientResumeRecovery(queryClient: QueryClient): ClientResum
         document.removeEventListener("visibilitychange", onVisibilityChange);
       }
       if (typeof window !== "undefined") {
-        window.removeEventListener("pageshow", onPageShow as EventListener);
+        window.removeEventListener("pageshow", handlePageShow);
       }
     }
   };
