@@ -37,6 +37,8 @@ const createHarness = (): {
 } => {
   process.env.AUTH_PROVIDER = "legacy";
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
+  process.env.DONDIE_FULL_POWER = "false";
+  delete process.env.DONDIE_LLM_API_KEY;
   const prisma = new PrismaService();
   const store = new PlatformStore();
   const repository = new PrismaPlatformRepository(prisma);
@@ -161,5 +163,43 @@ describe("AutonomousBootstrapService", () => {
     expect(restored.mode).toBe("AUTOPILOT");
     expect(restored.runtimeState).toBe("RUNNING");
     expect(platform.hasHandsOffAgent(userId)).toBe(true);
+  });
+
+  it("full power lets Dondie own strategy gates and unlocks PRO cognition wallet", async () => {
+    process.env.DONDIE_FULL_POWER = "true";
+    process.env.DONDIE_LLM_API_KEY = "test-key-full-power";
+    process.env.DONDIE_SCHEDULE_MINUTES = "15";
+    const { bootstrap, platform, dondie, store, userId } = createHarness();
+    process.env.DONDIE_FULL_POWER = "true";
+    process.env.DONDIE_LLM_API_KEY = "test-key-full-power";
+    process.env.DONDIE_SCHEDULE_MINUTES = "15";
+    const portfolio = [...store.portfolios.values()].find((entry) => entry.userId === userId)!;
+    store.portfolios.set(portfolio.id, {
+      ...portfolio,
+      cashBalance: 12_000,
+      portfolioValue: 12_000
+    });
+
+    const result = await bootstrap.ensureAutonomousMode(userId);
+    const automation = platform.getAutomationSettings(userId);
+    const agent = dondie.getAgent(userId);
+
+    expect(result.automationMode).toBe("AUTOPILOT");
+    expect(automation.maxTradesPerDay).toBe(20);
+    expect(automation.minimumConfidence).toBeLessThanOrEqual(55);
+    expect(agent?.tier).toBe("PRO");
+    expect(agent?.walletBalance).toBeGreaterThanOrEqual(100);
+    expect(agent?.scheduleMinutes).toBe(15);
+
+    // Weak score → Dondie re-chooses mean reversion on the next full-power sync/run path.
+    const scored = {
+      ...agent!,
+      lastEvaluationScore: 20,
+      updatedAt: new Date().toISOString()
+    };
+    store.dondieAgents.set(scored.id, scored);
+    await dondie.runScheduled(userId);
+    const strategy = platform.listStrategies(userId).find((entry) => entry.configuration.agentManaged === true);
+    expect(strategy?.configuration.templateId).toBe("mean_reversion");
   });
 });

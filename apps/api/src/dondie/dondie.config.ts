@@ -25,5 +25,15 @@ export const dondieConfig = {
   llmApiUrl: process.env.DONDIE_LLM_API_URL ?? "https://api.openai.com/v1",
   llmApiKey: process.env.DONDIE_LLM_API_KEY ?? "",
   llmStandardModel: process.env.DONDIE_LLM_STANDARD_MODEL ?? "gpt-4o-mini",
-  llmProModel: process.env.DONDIE_LLM_PRO_MODEL ?? "gpt-4o"
+  llmProModel: process.env.DONDIE_LLM_PRO_MODEL ?? "gpt-4o",
+  fullPowerMaxTradesPerDay: Number(process.env.DONDIE_FULL_POWER_MAX_TRADES_PER_DAY ?? "20"),
+  fullPowerMinConfidence: Number(process.env.DONDIE_FULL_POWER_MIN_CONFIDENCE ?? "55"),
+  fullPowerAiGrantReason: "FULL_POWER_AI_GRANT",
+  /** Wallet balance target for the one-time full-power cognition grant (PRO by default). */
+  fullPowerTargetWalletUsd: Number(
+    process.env.DONDIE_FULL_POWER_TARGET_WALLET_USD ?? process.env.DONDIE_PRO_MIN_BALANCE ?? "100"
+  )
 } as const;
+
+/** Live env read so tests/ops can toggle without module reload. */
+export const isDondieFullPower = (): boolean => process.env.DONDIE_FULL_POWER === "true";
