@@ -3,6 +3,8 @@
 import type { ReactElement } from "react";
 import type { OfficeAgentState, OfficeRole, OfficeWorld } from "./office-types";
 import { resolvePose, statusBubbleText, type OfficePose } from "./office-pose";
+import { DondieSprite } from "./dondie-sprite";
+import { resolveSpriteMode } from "./dondie-sprite-art";
 
 function deskPose(agent: OfficeAgentState): OfficePose {
   const pose = resolvePose(agent);
@@ -31,6 +33,7 @@ function LaptopDesk({
 
       <div className="office-desk__gear">
         <div className="office-desk__table">
+          <span className="office-desk__papers" />
           <div className="office-desk__laptop" data-on={hot ? "true" : "false"}>
             <span className="office-desk__laptop-lid">
               <span className="office-desk__laptop-screen" data-active={hot ? "true" : "false"}>
@@ -39,7 +42,13 @@ function LaptopDesk({
             </span>
             <span className="office-desk__laptop-base" />
           </div>
+          <span className="office-desk__mug" data-steam={hot ? "true" : "false"}>
+            <i /><i />
+          </span>
         </div>
+        <span className="office-desk__legs">
+          <i /><i />
+        </span>
       </div>
 
       <p className="office-desk__label">
@@ -58,6 +67,7 @@ function AgentSprite({
   readonly pose: OfficePose;
 }): ReactElement {
   const bubble = statusBubbleText(agent.status, agent.activity);
+  const mode = resolveSpriteMode(pose, agent.status);
 
   return (
     <div
@@ -65,6 +75,7 @@ function AgentSprite({
       data-role="coordinator"
       data-status={agent.status}
       data-pose={pose}
+      data-mode={mode}
       data-testid="office-agent-coordinator"
       aria-hidden="true"
     >
@@ -73,17 +84,8 @@ function AgentSprite({
           {bubble}
         </span>
       ) : null}
-      {pose === "think" ? (
-        <span className="office-actor__dots">
-          <i /><i /><i />
-        </span>
-      ) : null}
       <span className="office-actor__sprite">
-        <span className="office-actor__head" />
-        <span className="office-actor__body" />
-        <span className="office-actor__legs">
-          <span /><span />
-        </span>
+        <DondieSprite pose={pose} status={agent.status} />
       </span>
     </div>
   );
@@ -95,7 +97,9 @@ function OfficeDecor({ night }: { readonly night: boolean }): ReactElement {
       <div className="office-decor__wall-left" />
       <div className="office-decor__wall-right" />
       <div className="office-decor__back-wall" />
-      <div className="office-decor__window" data-night={night ? "true" : "false"} />
+      <div className="office-decor__window" data-night={night ? "true" : "false"}>
+        <span /><span />
+      </div>
       <div className="office-decor__server office-decor__server--a">
         <span /><span /><span /><span />
       </div>

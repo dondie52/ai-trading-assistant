@@ -12,6 +12,10 @@
   --office-accent: #3db8a0;
   --office-alert: #e07a6a;
   --office-work: #58c4d4;
+  /* Sprite art unit — keep an integer px so the pixel grid stays crisp. */
+  --office-sprite-px: 4px;
+  --office-shirt: var(--office-accent);
+  --office-shirt-shade: color-mix(in srgb, var(--office-accent) 58%, #05080e);
   color: var(--office-ink);
 }
 
@@ -176,7 +180,10 @@
   height: 100%;
   min-height: 0;
   image-rendering: pixelated;
+  /* Mullions are clipped to the glazing band by background-size, so the top of
+     the room reads as a curtain wall instead of a flat colour block. */
   background:
+    repeating-linear-gradient(90deg, transparent 0 3.2rem, #101820 3.2rem 3.4rem),
     linear-gradient(180deg, var(--office-sky) 0 12%, var(--office-wall) 12% 24%, transparent 24%),
     linear-gradient(
       135deg,
@@ -185,12 +192,14 @@
       var(--office-floor-a) 50% 75%,
       var(--office-floor-b) 75%
     );
-  background-size: auto, 22px 22px;
+  background-size: 100% 12%, auto, 22px 22px;
+  background-repeat: no-repeat, no-repeat, repeat;
 }
 
 @media (min-width: 1024px) {
   .office-scene {
     background:
+      repeating-linear-gradient(90deg, transparent 0 4.4rem, #101820 4.4rem 4.6rem),
       linear-gradient(180deg, var(--office-sky) 0 14%, var(--office-wall) 14% 28%, transparent 28%),
       linear-gradient(
         135deg,
@@ -199,7 +208,8 @@
         var(--office-floor-a) 50% 75%,
         var(--office-floor-b) 75%
       );
-    background-size: auto, 22px 22px;
+    background-size: 100% 14%, auto, 22px 22px;
+    background-repeat: no-repeat, no-repeat, repeat;
   }
 }
 
@@ -269,14 +279,36 @@
 .office-decor__wall-left { left: 0; }
 .office-decor__wall-right { right: 0; }
 
+/* Stacked below the ticker in absolute terms so the two never collide. */
 .office-decor__window {
   position: absolute;
-  top: 15.5%;
-  right: 10%;
-  width: 9%;
-  height: 10%;
+  top: calc(14.4% + 1.55rem);
+  right: 9%;
+  width: 2.6rem;
+  height: min(2.1rem, 5%);
   border: 3px solid #101820;
   background: linear-gradient(180deg, #7fa8c8, #3a5a78);
+}
+
+.office-decor__window span {
+  position: absolute;
+  background: #101820;
+}
+
+.office-decor__window span:nth-child(1) {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-1px);
+}
+
+.office-decor__window span:nth-child(2) {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: translateY(-1px);
 }
 
 .office-decor__window[data-night="true"] {
@@ -371,7 +403,7 @@
   position: absolute;
   left: 8%;
   right: 8%;
-  top: 13.5%;
+  top: 14.4%;
   height: 1.2rem;
   border: 2px solid #101820;
   background: #0a121c;
@@ -382,7 +414,7 @@
   .office-decor__ticker {
     left: 12%;
     right: 12%;
-    top: 15.8%;
+    top: 14.4%;
     height: 1.35rem;
   }
 }
@@ -580,19 +612,26 @@
 .office-stage {
   position: absolute;
   left: 50%;
-  top: 58%;
+  top: 60%;
   z-index: 4;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.15rem;
   width: min(13.5rem, 78vw);
-  padding: 1.6rem 0.5rem 0.35rem;
+  padding: 2.6rem 0.5rem 0.35rem;
   border: 0;
   background: transparent;
   cursor: pointer;
-  transform: translate(-50%, -50%);
+  /* Scale in steps that keep --office-sprite-px a whole number. */
+  transform: translate(-50%, -50%) scale(1.25);
   transform-origin: center center;
+}
+
+@media (max-width: 359px) {
+  .office-stage {
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 .office-stage:focus-visible {
@@ -674,8 +713,8 @@
 }
 
 .office-desk__laptop-lid {
-  width: 3.4rem;
-  height: 2.15rem;
+  width: 2.6rem;
+  height: 2.05rem;
   border: 2px solid #101820;
   background: #1a2434;
   display: flex;
@@ -716,12 +755,91 @@
 .office-desk__laptop-screen i:nth-child(3) { height: 55%; animation-delay: 0.24s; background: #c4a35a; }
 
 .office-desk__laptop-base {
-  width: 3.9rem;
+  width: 2.9rem;
   height: 0.38rem;
   border: 2px solid #101820;
   border-top: 0;
   background: #2a3548;
   margin-top: -1px;
+}
+
+.office-desk__papers {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.35rem;
+  width: 1.15rem;
+  height: 0.45rem;
+  border: 2px solid #101820;
+  background: #d6dbe8;
+  box-shadow:
+    0 -0.2rem 0 -0.06rem #101820,
+    0 -0.18rem 0 -0.08rem #aeb6c8;
+}
+
+.office-desk__mug {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.35rem;
+  width: 0.62rem;
+  height: 0.72rem;
+  border: 2px solid #101820;
+  background: linear-gradient(180deg, #d76a54 0 30%, #b64f3c 30%);
+}
+
+.office-desk__mug::after {
+  content: "";
+  position: absolute;
+  right: -0.34rem;
+  top: 0.12rem;
+  width: 0.26rem;
+  height: 0.3rem;
+  border: 2px solid #101820;
+  border-left: 0;
+}
+
+.office-desk__mug i {
+  position: absolute;
+  bottom: 100%;
+  width: 0.16rem;
+  height: 0.16rem;
+  background: rgba(226, 238, 255, 0.7);
+  opacity: 0;
+}
+
+.office-desk__mug i:nth-child(1) { left: 0.04rem; }
+.office-desk__mug i:nth-child(2) { left: 0.3rem; }
+
+.office-desk__mug[data-steam="true"] i {
+  animation: office-steam 2.4s ease-out infinite;
+}
+
+.office-desk__mug[data-steam="true"] i:nth-child(2) {
+  animation-delay: 1.2s;
+}
+
+@keyframes office-steam {
+  0% { opacity: 0; transform: translateY(0); }
+  30% { opacity: 0.8; }
+  100% { opacity: 0; transform: translateY(-0.75rem); }
+}
+
+.office-desk__legs {
+  display: flex;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 9rem;
+  margin: 0.45rem auto 0;
+  padding: 0 0.85rem;
+}
+
+.office-desk__legs i {
+  display: block;
+  width: 0.3rem;
+  height: 0.95rem;
+  border: 2px solid #101820;
+  border-top: 0;
+  background: #4a3524;
 }
 
 .office-desk__laptop[data-on="true"] .office-desk__laptop-lid {
@@ -731,15 +849,33 @@
 }
 
 .office-desk__label {
-  margin: 0.55rem 0 0;
+  width: fit-content;
+  margin: 0.7rem auto 0;
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.45rem;
+  border: 2px solid #101820;
+  background: rgba(8, 12, 20, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  padding: 0.16rem 0.45rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: rgba(215, 224, 242, 0.75);
+}
+
+.office-desk__label span:first-child {
+  color: #eef3ff;
+}
+
+.office-desk__label span:last-child::before {
+  content: "";
+  display: inline-block;
+  width: 0.3rem;
+  height: 0.3rem;
+  margin-right: 0.3rem;
+  background: currentColor;
 }
 
 .office-desk__label span:last-child[data-status="working"] { color: #8fd8e8; }
@@ -754,21 +890,19 @@
   top: auto;
   width: auto;
   transform: none;
-  margin-bottom: -0.35rem;
+  /* One art pixel of overlap so the hands rest on the desk edge. */
+  margin-bottom: calc(-1 * var(--office-sprite-px));
   z-index: 5;
   pointer-events: none;
   transition: none;
 }
 
-.office-actor--desk[data-pose="sleep"] {
-  transform: rotate(-12deg);
-}
 
 @media (max-width: 639px) {
   .office-stage {
-    top: 56%;
+    top: 62%;
     width: min(12.5rem, 82vw);
-    transform: translate(-50%, -50%) scale(0.92);
+    padding-top: 2.3rem;
   }
 
   .office-decor__server,
@@ -784,16 +918,13 @@
   }
 
   .office-decor__window {
-    width: 12%;
-    height: 8%;
-    top: 13.5%;
     right: 8%;
   }
 
   .office-decor__rug {
     width: min(16rem, 78%);
     height: min(11rem, 32%);
-    top: 56%;
+    top: 62%;
   }
 
   .office-empty,
@@ -809,8 +940,9 @@
 
 @media (min-width: 640px) and (max-width: 1023px) {
   .office-stage {
-    top: 57%;
+    top: 60%;
     width: min(14rem, 48vw);
+    transform: translate(-50%, -50%) scale(1.5);
   }
 
   .office-decor__server--b,
@@ -821,8 +953,15 @@
 
 @media (min-width: 1024px) {
   .office-stage {
-    top: 56%;
+    top: 58%;
     width: 14rem;
+    transform: translate(-50%, -50%) scale(2);
+  }
+
+  .office-decor__rug {
+    top: 62%;
+    width: min(26rem, 60%);
+    height: min(16rem, 40%);
   }
 }
 
@@ -1188,105 +1327,122 @@
 }
 
 .office-actor__sprite {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 2.2rem;
+  display: block;
 }
 
-.office-actor__head {
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid #0b1018;
-  background: #e5d3b8;
+.office-sprite {
+  display: block;
+  width: calc(24 * var(--office-sprite-px));
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 var(--office-sprite-px) 0 rgba(0, 0, 0, 0.4));
 }
 
-.office-actor__body {
-  width: 1.35rem;
-  height: 1.45rem;
-  border: 2px solid #0b1018;
-  background: var(--office-accent);
+/* Two-frame flip-book: hard cuts, no tweening. Frame 1 is hidden unless the
+   flip animation is running, so a frozen sprite shows exactly one frame. */
+.office-sprite__frame[data-frame="1"] {
+  opacity: 0;
 }
 
-.office-actor__legs {
-  display: flex;
-  gap: 0.18rem;
-  margin-top: 1px;
+.office-sprite[data-frames="2"] .office-sprite__frame[data-frame="0"] {
+  animation: office-sprite-frame-a var(--office-sprite-tempo, 0.62s) linear infinite;
 }
 
-.office-actor__legs span {
-  width: 0.45rem;
-  height: 0.7rem;
-  border: 2px solid #0b1018;
-  background: #2a3548;
+.office-sprite[data-frames="2"] .office-sprite__frame[data-frame="1"] {
+  animation: office-sprite-frame-b var(--office-sprite-tempo, 0.62s) linear infinite;
 }
 
-.office-actor[data-role="signal"] .office-actor__body { background: #3d9ec4; }
-.office-actor[data-role="brain"] .office-actor__body { background: #5a8fd4; }
-.office-actor[data-role="risk"] .office-actor__body { background: #c47a4a; }
-.office-actor[data-role="broker"] .office-actor__body { background: #4aa87a; }
-.office-actor[data-role="portfolio"] .office-actor__body { background: #8a7ac4; }
-.office-actor[data-role="coordinator"] .office-actor__body { background: #c4a35a; }
+.office-sprite[data-mode="type"] { --office-sprite-tempo: 0.46s; }
+.office-sprite[data-mode="panic"] { --office-sprite-tempo: 0.32s; }
 
-.office-actor[data-pose="sit"] .office-actor__legs { display: none; }
-.office-actor[data-pose="sit"] .office-actor__body { height: 1.15rem; }
-
-.office-actor[data-pose="think"] .office-actor__body {
-  animation: office-type 0.55s steps(2) infinite;
+@keyframes office-sprite-frame-a {
+  0%, 49.99% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
-.office-actor[data-pose="execute"] .office-actor__body {
-  animation: office-execute 0.35s steps(2) infinite;
+@keyframes office-sprite-frame-b {
+  0%, 49.99% { opacity: 0; }
+  50%, 100% { opacity: 1; }
 }
 
-.office-actor[data-pose="walk"] .office-actor__legs span:first-child {
-  animation: office-walk 0.35s steps(2) infinite;
+.office-sprite__blink {
+  opacity: 0;
+  animation: office-sprite-blink 5.4s linear infinite;
 }
 
-.office-actor[data-pose="walk"] .office-actor__legs span:last-child {
-  animation: office-walk 0.35s steps(2) infinite reverse;
+@keyframes office-sprite-blink {
+  0%, 93.5% { opacity: 0; }
+  94%, 96.5% { opacity: 1; }
+  97%, 100% { opacity: 0; }
 }
 
-.office-actor[data-pose="sleep"] {
-  opacity: 0.45;
-  transform: translate(-50%, -100%) rotate(-12deg);
+.office-actor[data-mode="rest"] .office-actor__sprite,
+.office-actor[data-mode="ponder"] .office-actor__sprite,
+.office-actor[data-mode="stand"] .office-actor__sprite {
+  animation: office-sprite-breathe 3.6s ease-in-out infinite;
 }
 
-.office-actor[data-pose="alert"] .office-actor__head {
-  background: #e8a0a0;
+.office-actor[data-mode="sleep"] .office-actor__sprite {
+  animation: office-sprite-breathe 5.2s ease-in-out infinite;
 }
 
-.office-actor[data-status="offline"] {
-  opacity: 0.4;
+.office-actor[data-mode="panic"] .office-actor__sprite {
+  animation: office-sprite-jolt 0.32s steps(2) infinite;
 }
 
-@keyframes office-type {
+@keyframes office-sprite-breathe {
+  0%, 100% { transform: translateY(0); }
   50% { transform: translateY(1px); }
 }
 
-@keyframes office-execute {
-  50% { transform: translateY(2px) scaleY(0.96); }
+@keyframes office-sprite-jolt {
+  0%, 100% { transform: translateX(-1px); }
+  50% { transform: translateX(1px); }
 }
 
-@keyframes office-walk {
-  50% { transform: translateY(-2px); }
+.office-actor[data-status="offline"] {
+  opacity: 0.6;
 }
 
 .office-actor__bubble {
   position: absolute;
-  top: -1.35rem;
+  top: -1.6rem;
   left: 50%;
   transform: translateX(-50%);
-  border: 2px solid rgba(255, 255, 255, 0.18);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   background: rgba(8, 12, 20, 0.94);
   color: #e8eef8;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.58rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 0.12rem 0.3rem;
+  padding: 0.16rem 0.34rem;
   white-space: nowrap;
   animation: office-bubble 1.4s ease-in-out infinite;
+}
+
+/* Stepped pixel tail under the balloon. */
+.office-actor__bubble::before,
+.office-actor__bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  background: rgba(8, 12, 20, 0.94);
+  box-shadow: 0 2px 0 rgba(255, 255, 255, 0.2);
+}
+
+.office-actor__bubble::before {
+  bottom: -4px;
+  width: 8px;
+  height: 4px;
+  transform: translateX(-50%);
+}
+
+.office-actor__bubble::after {
+  bottom: -8px;
+  width: 4px;
+  height: 4px;
+  transform: translateX(-100%);
 }
 
 .office-actor__bubble[data-tone="alert"],
@@ -1297,26 +1453,6 @@
 @keyframes office-bubble {
   50% { transform: translateX(-50%) translateY(-3px); }
 }
-
-.office-actor__dots {
-  position: absolute;
-  top: -0.55rem;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 0.15rem;
-}
-
-.office-actor__dots i {
-  width: 0.22rem;
-  height: 0.22rem;
-  background: #9eb0c8;
-  display: block;
-  animation: office-nodes 1s ease-in-out infinite;
-}
-
-.office-actor__dots i:nth-child(2) { animation-delay: 0.15s; }
-.office-actor__dots i:nth-child(3) { animation-delay: 0.3s; }
 
 /* ===== INSPECTOR / SHEET ===== */
 
@@ -1532,16 +1668,16 @@
   .office-desk__laptop-screen[data-active="true"],
   .office-desk__laptop-screen[data-active="true"] i,
   .office-actor__bubble,
-  .office-actor[data-pose="think"] .office-actor__body,
-  .office-actor[data-pose="execute"] .office-actor__body,
-  .office-actor[data-pose="walk"] .office-actor__legs span,
+  .office-actor__sprite,
+  .office-desk__mug[data-steam="true"] i,
+  .office-sprite__blink,
+  .office-sprite__frame,
   .office-meeting__screen[data-on="true"],
   .office-meeting__screen span,
   .office-screen--ticker[data-active="true"] span,
   .office-screen--bars[data-active="true"] span,
   .office-screen--nodes i,
-  .office-screen--gauge em,
-  .office-actor__dots i {
+  .office-screen--gauge em {
     animation: none !important;
   }
 
