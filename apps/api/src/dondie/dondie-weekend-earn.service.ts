@@ -19,10 +19,10 @@ import { DondieWalletService } from "./dondie-wallet.service.js";
 const roundUsd = (value: number): number => Number(value.toFixed(4));
 const roundPrice = (value: number): number => Number(value.toFixed(2));
 
-/** Deterministic 0..1 salt so tests stay stable for a given agent/day/run. */
-const runSalt = (agentId: UUID, dayKey: string, runIndex: number): number => {
+/** Deterministic 0..1 salt so tests stay stable for a given agent/day/run/channel. */
+const runSalt = (agentId: UUID, dayKey: string, runIndex: number, channel = "default"): number => {
   let hash = 0;
-  const seed = `${agentId}:${dayKey}:${runIndex}`;
+  const seed = `${agentId}:${dayKey}:${runIndex}:${channel}`;
   for (let index = 0; index < seed.length; index += 1) {
     hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
   }
@@ -76,7 +76,12 @@ export class DondieWeekendEarnService {
   async runWeekendGig(userId: UUID, agent: DondieAgent, at: Date = new Date()): Promise<DondieRunResult> {
     const dayKey = at.toISOString().slice(0, 10);
     const runIndex = this.countPaperCryptoTradesToday(userId, dayKey);
-    const salt = runSalt(agent.id, dayKey, runIndex);
+    // Independent channels — a single salt made BUY (salt>=0.48) almost always lose
+    // for FREE tier (win when salt<0.52), so BUY win rate collapsed to ~8%.
+    const sideSalt = runSalt(agent.id, dayKey, runIndex, "side");
+    const outcomeSalt = runSalt(agent.id, dayKey, runIndex, "outcome");
+    const priceSalt = runSalt(agent.id, dayKey, runIndex, "price");
+    const moveSalt = runSalt(agent.id, dayKey, runIndex, "move");
     // Stamp the gig on the calendar day being earned — wall-clock "now" breaks
     // daily caps / creditedToday when tests or schedulers pass a specific `at`.
     const now = at.toISOString();
@@ -93,14 +98,14 @@ export class DondieWeekendEarnService {
       throw new Error("Weekend crypto desk requires a portfolio.");
     }
 
-    const side = salt >= 0.48 ? "BUY" : "SELL";
-    const entryPrice = roundPrice(64_000 + (salt - 0.5) * 2_400);
+    const side = sideSalt >= 0.48 ? "BUY" : "SELL";
+    const entryPrice = roundPrice(64_000 + (priceSalt - 0.5) * 2_400);
     // Size to the real stake (e.g. $10) — never pretend a $640 BTC lot.
     const stakeCash = Math.max(0, portfolio.cashBalance);
     const notional = Math.min(Math.max(stakeCash * 0.85, stakeCash > 0 ? 1 : 0), Math.max(stakeCash, 0));
     const quantity = entryPrice > 0 && notional > 0 ? Number((notional / entryPrice).toFixed(6)) : 0;
-    const movePct = 0.0012 + salt * 0.0038;
-    const won = salt < winChanceForTier(agent.tier);
+    const movePct = 0.0012 + moveSalt * 0.0038;
+    const won = outcomeSalt < winChanceForTier(agent.tier);
     const signedMove = won ? movePct : -movePct;
     const exitPrice = roundPrice(entryPrice * (1 + (side === "BUY" ? signedMove : -signedMove)));
     const grossPnl =
@@ -159,7 +164,7 @@ export class DondieWeekendEarnService {
       strategyId,
       symbol,
       signalType: side,
-      confidenceScore: Math.round(58 + salt * 20),
+      confidenceScore: Math.round(58 + outcomeSalt * 20),
       modelVersion: dondieConfig.weekendEarnBrain,
       features: {
         weekendGig: true,
