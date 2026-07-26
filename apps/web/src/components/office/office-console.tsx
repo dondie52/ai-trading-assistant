@@ -76,6 +76,7 @@ export function OfficeConsole({
   const [selectedRole, setSelectedRole] = useState<OfficeRole | null>("coordinator");
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const [speechOverride, setSpeechOverride] = useState<string | null>(null);
 
   const world = useMemo(
     () =>
@@ -171,6 +172,7 @@ export function OfficeConsole({
             world={world}
             selectedRole={selectedRole}
             onSelectRole={handleSelectRole}
+            speechOverride={speechOverride}
           />
           <OfficeInspector
             world={world}
@@ -178,6 +180,7 @@ export function OfficeConsole({
             collapsed={inspectorCollapsed}
             onToggleCollapsed={() => setInspectorCollapsed((value) => !value)}
             actions={actions}
+            onSpeechBubble={setSpeechOverride}
           />
         </div>
       </div>
@@ -188,6 +191,7 @@ export function OfficeConsole({
           selectedRole={selectedRole}
           onClose={() => setMobileSheetOpen(false)}
           actions={actions}
+          onSpeechBubble={setSpeechOverride}
         />
       ) : null}
     </div>

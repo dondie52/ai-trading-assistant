@@ -3,13 +3,15 @@ import { CurrentUser } from "../auth/decorators.js";
 import { ok } from "../common/api-response.js";
 import type { AuthenticatedPrincipal } from "../common/request.js";
 import { AutonomousBootstrapService } from "./autonomous-bootstrap.service.js";
+import { DondieChatService } from "./dondie-chat.service.js";
 import { DondieService } from "./dondie.service.js";
 
 @Controller("dondie")
 export class DondieController {
   constructor(
     @Inject(DondieService) private readonly dondie: DondieService,
-    @Inject(AutonomousBootstrapService) private readonly bootstrap: AutonomousBootstrapService
+    @Inject(AutonomousBootstrapService) private readonly bootstrap: AutonomousBootstrapService,
+    @Inject(DondieChatService) private readonly chatService: DondieChatService
   ) {}
 
   @Get()
@@ -30,6 +32,19 @@ export class DondieController {
   @Get("memories")
   memories(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
     return ok(this.dondie.listMemories(user.sub));
+  }
+
+  @Get("chat")
+  chatThread(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
+    return ok(this.chatService.getThread(user.sub));
+  }
+
+  @Post("chat")
+  async sendChat(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Body() body: unknown
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.chatService.chat(user.sub, body));
   }
 
   @Post("universe")

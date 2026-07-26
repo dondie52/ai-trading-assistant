@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AuditLog,
   DondieAgent,
+  DondieChatThread,
   DondieMemory,
   DondieWalletLedgerEntry,
   JsonObject,
@@ -120,6 +121,7 @@ export class PlatformStore {
   readonly dondieAgents = new Map<UUID, DondieAgent>();
   readonly dondieWalletLedger = new Map<UUID, DondieWalletLedgerEntry>();
   readonly dondieMemories = new Map<UUID, DondieMemory>();
+  readonly dondieChatThreads = new Map<UUID, DondieChatThread>();
   readonly automationSettings = new Map<UUID, import("@trading/types").AutomationSettings>();
   readonly automationIdempotency = new Map<string, import("@trading/types").AutomationRunResult>();
   readonly auditLogs: AuditLog[] = [];

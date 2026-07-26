@@ -421,6 +421,29 @@ export interface DondieMemory {
   readonly createdAt: string;
 }
 
+export type DondieChatRole = "user" | "assistant";
+
+export interface DondieChatMessage {
+  readonly id: UUID;
+  readonly role: DondieChatRole;
+  readonly content: string;
+  readonly createdAt: string;
+}
+
+export interface DondieChatThread {
+  readonly userId: UUID;
+  readonly messages: readonly DondieChatMessage[];
+  readonly updatedAt: string;
+}
+
+export interface DondieChatReply {
+  readonly message: DondieChatMessage;
+  readonly thread: DondieChatThread;
+  /** Short sprite bubble label derived from the assistant reply. */
+  readonly speechBubble: string;
+  readonly source: "template" | "llm";
+}
+
 export interface DondieSubscription {
   readonly id: UUID;
   readonly userId: UUID;

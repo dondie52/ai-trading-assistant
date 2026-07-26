@@ -61,13 +61,16 @@ function LaptopDesk({
 
 function AgentSprite({
   agent,
-  pose
+  pose,
+  speechOverride
 }: {
   readonly agent: OfficeAgentState;
   readonly pose: OfficePose;
+  readonly speechOverride?: string | null | undefined;
 }): ReactElement {
-  const bubble = statusBubbleText(agent.status, agent.activity);
+  const bubble = speechOverride?.trim() || statusBubbleText(agent.status, agent.activity);
   const mode = resolveSpriteMode(pose, agent.status);
+  const tone = speechOverride?.trim() ? "working" : agent.status;
 
   return (
     <div
@@ -80,7 +83,7 @@ function AgentSprite({
       aria-hidden="true"
     >
       {bubble ? (
-        <span className="office-actor__bubble" data-tone={agent.status}>
+        <span className="office-actor__bubble" data-tone={tone} data-testid="office-speech-bubble">
           {bubble}
         </span>
       ) : null}
@@ -128,11 +131,13 @@ function OfficeDecor({ night }: { readonly night: boolean }): ReactElement {
 export function AgentOfficeScene({
   world,
   selectedRole,
-  onSelectRole
+  onSelectRole,
+  speechOverride
 }: {
   readonly world: OfficeWorld;
   readonly selectedRole: OfficeRole | null;
   readonly onSelectRole: (role: OfficeRole) => void;
+  readonly speechOverride?: string | null | undefined;
 }): ReactElement {
   const agent = world.agents.coordinator;
   const selected = selectedRole === "coordinator";
@@ -159,7 +164,7 @@ export function AgentOfficeScene({
             aria-label={`${agent.label}, ${agent.status}: ${agent.activity}`}
             onClick={() => onSelectRole("coordinator")}
           >
-            <AgentSprite agent={agent} pose={deskPose(agent)} />
+            <AgentSprite agent={agent} pose={deskPose(agent)} speechOverride={speechOverride} />
             <LaptopDesk agent={agent} selected={selected} />
           </button>
 

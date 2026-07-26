@@ -8,12 +8,14 @@ export function OfficeBottomSheet({
   world,
   selectedRole,
   onClose,
-  actions
+  actions,
+  onSpeechBubble
 }: {
   readonly world: OfficeWorld;
   readonly selectedRole: OfficeRole;
   readonly onClose: () => void;
   readonly actions: OfficeInspectorActions;
+  readonly onSpeechBubble?: ((text: string | null) => void) | undefined;
 }): ReactElement {
   const agent = world.agents[selectedRole];
 
@@ -38,7 +40,12 @@ export function OfficeBottomSheet({
             Close
           </button>
         </div>
-        <InspectorContent agent={agent} timeline={world.timeline} actions={actions} />
+        <InspectorContent
+          agent={agent}
+          timeline={world.timeline}
+          actions={actions}
+          onSpeechBubble={onSpeechBubble}
+        />
       </div>
     </div>
   );

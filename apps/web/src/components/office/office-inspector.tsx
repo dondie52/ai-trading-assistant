@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactElement } from "react";
+import { OfficeChat } from "./office-chat";
 import type { OfficeAgentState, OfficeRole, OfficeTimelineEntry, OfficeWorld } from "./office-types";
 
 function formatTime(iso: string): string {
@@ -112,11 +113,13 @@ function RoleControls({
 export function InspectorContent({
   agent,
   timeline,
-  actions
+  actions,
+  onSpeechBubble
 }: {
   readonly agent: OfficeAgentState;
   readonly timeline: readonly OfficeTimelineEntry[];
   readonly actions: OfficeInspectorActions;
+  readonly onSpeechBubble?: ((text: string | null) => void) | undefined;
 }): ReactElement {
   const roleTimeline = timeline.filter((entry) => entry.role === agent.role).slice(0, 5);
   const shownTimeline = roleTimeline.length > 0 ? roleTimeline : timeline.slice(0, 5);
@@ -166,6 +169,12 @@ export function InspectorContent({
         <RoleControls role={agent.role} actions={actions} />
       </div>
 
+      {agent.role === "coordinator" ? (
+        <div className="office-inspector__block">
+          <OfficeChat onSpeechBubble={onSpeechBubble} />
+        </div>
+      ) : null}
+
       <div className="office-inspector__block">
         <p className="office-inspector__label">Activity</p>
         <div className="office-timeline" data-testid="office-timeline">
@@ -192,13 +201,15 @@ export function OfficeInspector({
   selectedRole,
   collapsed,
   onToggleCollapsed,
-  actions
+  actions,
+  onSpeechBubble
 }: {
   readonly world: OfficeWorld;
   readonly selectedRole: OfficeRole | null;
   readonly collapsed: boolean;
   readonly onToggleCollapsed: () => void;
   readonly actions: OfficeInspectorActions;
+  readonly onSpeechBubble?: ((text: string | null) => void) | undefined;
 }): ReactElement {
   const role = selectedRole ?? "coordinator";
   const agent = world.agents[role];
@@ -210,7 +221,12 @@ export function OfficeInspector({
       </button>
       {!collapsed ? (
         <div className="office-inspector__body">
-          <InspectorContent agent={agent} timeline={world.timeline} actions={actions} />
+          <InspectorContent
+            agent={agent}
+            timeline={world.timeline}
+            actions={actions}
+            onSpeechBubble={onSpeechBubble}
+          />
         </div>
       ) : null}
     </aside>
