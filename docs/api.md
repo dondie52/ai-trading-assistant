@@ -31,6 +31,8 @@ Survival agent endpoints:
 - `POST /dondie/run` — optional `symbol`, `timeframe`; executes brain → automation pipeline
 - `GET /dondie/wallet` — wallet balance, tier, and immutable ledger (PnL credits + brain debits)
 - `GET /dondie/memories` — recent run memories and evaluation scores
+- `GET /dondie/chat` — short in-office talk thread with Dondie (last ~20 messages)
+- `POST /dondie/chat` — body `{ "message": "..." }`; returns assistant reply, thread, and a short `speechBubble` for the Office sprite. Replies are grounded in live agent status/strategy/memories. Uses `DONDIE_LLM_API_KEY` when set; otherwise a deterministic template. Does **not** debit the survival wallet.
 - `POST /dondie/universe` — body `{ "symbols": ["AAPL", ...] }` updates the agent's symbol universe
 
 Survival loop behavior on `POST /dondie/run`:

@@ -1578,6 +1578,98 @@
   background: rgba(61, 184, 160, 0.12);
 }
 
+.office-chat {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.office-chat__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.office-chat__chip {
+  min-height: 2rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--office-line);
+  background: rgba(88, 196, 212, 0.08);
+  color: #b7dce6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.office-chat__chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.office-chat__messages {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.office-chat__bubble {
+  border-left: 2px solid var(--office-line);
+  padding: 0.25rem 0.4rem;
+}
+
+.office-chat__bubble[data-role="assistant"] {
+  border-left-color: rgba(61, 184, 160, 0.55);
+  background: rgba(61, 184, 160, 0.06);
+}
+
+.office-chat__bubble[data-role="user"] {
+  border-left-color: rgba(88, 196, 212, 0.45);
+  background: rgba(88, 196, 212, 0.05);
+}
+
+.office-chat__meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--office-muted);
+  margin-bottom: 0.1rem;
+}
+
+.office-chat__text {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--office-ink);
+}
+
+.office-chat__error {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.68rem;
+  color: #f0b0a4;
+}
+
+.office-chat__form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.office-chat__input {
+  min-height: 2.5rem;
+  border: 1px solid var(--office-line);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--office-ink);
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.office-chat__input:focus {
+  outline: 1px solid rgba(61, 184, 160, 0.45);
+}
+
 .office-timeline {
   display: grid;
   gap: 0.4rem;

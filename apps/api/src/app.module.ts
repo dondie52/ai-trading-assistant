@@ -52,6 +52,7 @@ import { DondieMemoryService } from "./dondie/dondie-memory.service.js";
 import { DondieScheduler } from "./dondie/dondie.scheduler.js";
 import { DondieWalletService } from "./dondie/dondie-wallet.service.js";
 import { DondieWeekendEarnService } from "./dondie/dondie-weekend-earn.service.js";
+import { DondieChatService } from "./dondie/dondie-chat.service.js";
 import { AutonomousBootstrapService } from "./dondie/autonomous-bootstrap.service.js";
 
 @Module({
@@ -105,6 +106,7 @@ import { AutonomousBootstrapService } from "./dondie/autonomous-bootstrap.servic
     DondieWalletService,
     DondieMemoryService,
     DondieWeekendEarnService,
+    DondieChatService,
     AutonomousBootstrapService,
     {
       provide: APP_GUARD,
