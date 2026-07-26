@@ -44,7 +44,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
   min-height: 2.5rem;
   padding: 0.35rem 0.15rem;
   border-bottom: 1px solid var(--office-line);
@@ -52,6 +52,39 @@
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+@media (max-width: 639px) {
+  .office-console__topbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding-bottom: 0.45rem;
+  }
+
+  .office-console__topbar > .flex {
+    min-width: 0;
+  }
+
+  .office-console__meta {
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+
+  .office-console__account {
+    max-width: 9.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.65rem;
+    min-height: 1.75rem;
+    padding: 0.15rem 0.4rem;
+  }
+
+  .office-console__pill {
+    padding: 0.15rem 0.35rem;
+    font-size: 0.62rem;
+  }
 }
 
 .office-console__brand {
@@ -104,6 +137,7 @@
 .office-console__workspace {
   display: grid;
   grid-template-columns: 1fr;
+  height: 100%;
   min-height: 0;
   gap: 0.5rem;
 }
@@ -122,28 +156,28 @@
 
 .office-scene-wrap {
   position: relative;
+  height: 100%;
   min-height: 0;
   border: 1px solid var(--office-line);
   background: #070d18;
   overflow: hidden;
-  touch-action: pan-x pan-y;
 }
 
 .office-scene-scroller {
   width: 100%;
   height: 100%;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .office-scene {
   position: relative;
-  width: max(100%, 64rem);
-  height: max(100%, 42rem);
-  min-height: 42rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   image-rendering: pixelated;
   background:
-    linear-gradient(180deg, var(--office-sky) 0 14%, var(--office-wall) 14% 28%, transparent 28%),
+    linear-gradient(180deg, var(--office-sky) 0 12%, var(--office-wall) 12% 24%, transparent 24%),
     linear-gradient(
       135deg,
       var(--office-floor-a) 25%,
@@ -152,6 +186,21 @@
       var(--office-floor-b) 75%
     );
   background-size: auto, 22px 22px;
+}
+
+@media (min-width: 1024px) {
+  .office-scene {
+    background:
+      linear-gradient(180deg, var(--office-sky) 0 14%, var(--office-wall) 14% 28%, transparent 28%),
+      linear-gradient(
+        135deg,
+        var(--office-floor-a) 25%,
+        var(--office-floor-b) 25% 50%,
+        var(--office-floor-a) 50% 75%,
+        var(--office-floor-b) 75%
+      );
+    background-size: auto, 22px 22px;
+  }
 }
 
 .office-scene[data-night="true"] .office-decor__window {
@@ -245,6 +294,16 @@
   gap: 0.15rem;
 }
 
+.office-decor__server--a { left: 6%; top: 42%; }
+.office-decor__server--b { left: 6%; top: 62%; }
+
+.office-decor__shelf--a { left: 94%; top: 40%; }
+.office-decor__shelf--b { left: 94%; top: 55%; }
+
+.office-decor__plant--tl { left: 10%; top: 30%; }
+.office-decor__plant--br { left: 90%; top: 82%; }
+.office-decor__plant--bc { left: 22%; top: 86%; }
+
 .office-decor__server span {
   height: 0.45rem;
   background: #0d141f;
@@ -310,13 +369,22 @@
 
 .office-decor__ticker {
   position: absolute;
-  left: 12%;
-  right: 12%;
-  top: 15.8%;
-  height: 1.35rem;
+  left: 8%;
+  right: 8%;
+  top: 13.5%;
+  height: 1.2rem;
   border: 2px solid #101820;
   background: #0a121c;
   overflow: hidden;
+}
+
+@media (min-width: 1024px) {
+  .office-decor__ticker {
+    left: 12%;
+    right: 12%;
+    top: 15.8%;
+    height: 1.35rem;
+  }
 }
 
 .office-decor__ticker-track {
@@ -367,15 +435,15 @@
 
 .office-decor__rug {
   position: absolute;
-  left: 38%;
-  top: 42%;
-  width: 24%;
-  height: 18%;
+  left: 50%;
+  top: 58%;
+  width: min(18rem, 70%);
+  height: min(12rem, 34%);
   border: 2px solid #2a2018;
   background:
     repeating-linear-gradient(90deg, #3a2c20 0 8px, #2e241a 8px 16px);
   opacity: 0.55;
-  transform: rotate(-8deg);
+  transform: translate(-50%, -50%) rotate(-4deg);
 }
 
 /* ===== FLOW ===== */
@@ -507,35 +575,50 @@
   color: rgba(215, 224, 242, 0.7);
 }
 
-/* ===== SINGLE DESK (table + laptop) ===== */
+/* ===== SINGLE DESK STAGE (person + table + laptop) ===== */
+
+.office-stage {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  width: min(13.5rem, 78vw);
+  padding: 1.6rem 0.5rem 0.35rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+}
+
+.office-stage:focus-visible {
+  outline: 2px solid var(--office-accent);
+  outline-offset: 4px;
+}
+
+.office-stage[data-selected="true"] .office-desk__gear {
+  filter: drop-shadow(0 0 8px rgba(61, 184, 160, 0.35));
+}
 
 .office-desk {
-  position: absolute;
-  width: 12rem;
-  transform: translate(-50%, -50%);
+  position: relative;
+  width: 100%;
   border: 0;
   padding: 0;
   background: transparent;
-  cursor: pointer;
   text-align: left;
-  z-index: 3;
-}
-
-.office-desk:focus-visible {
-  outline: 2px solid var(--office-accent);
-  outline-offset: 3px;
-}
-
-.office-desk[data-selected="true"] .office-desk__gear {
-  filter: drop-shadow(0 0 8px rgba(61, 184, 160, 0.35));
 }
 
 .office-desk__halo {
   position: absolute;
   left: 50%;
-  top: 42%;
-  width: 7rem;
-  height: 3.2rem;
+  top: 40%;
+  width: 8rem;
+  height: 3.4rem;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(88, 196, 212, 0.28), transparent 70%);
@@ -546,7 +629,7 @@
 .office-desk__beacon {
   position: absolute;
   left: 50%;
-  top: 8%;
+  top: -0.2rem;
   width: 0.55rem;
   height: 0.55rem;
   transform: translateX(-50%);
@@ -562,15 +645,15 @@
   flex-direction: column;
   align-items: center;
   gap: 0.2rem;
-  min-height: 5.5rem;
 }
 
 .office-desk__table {
-  width: 8.5rem;
-  height: 2.15rem;
+  width: 100%;
+  max-width: 9rem;
+  height: 2.25rem;
+  margin: 0 auto;
   border: 2px solid #101820;
-  background:
-    linear-gradient(180deg, #6a5238 0 18%, #5a422c 18% 100%);
+  background: linear-gradient(180deg, #6a5238 0 18%, #5a422c 18% 100%);
   box-shadow:
     inset 0 2px 0 rgba(255, 220, 160, 0.12),
     0 0.45rem 0 #3a2a18;
@@ -580,15 +663,6 @@
   padding-bottom: 0.35rem;
   position: relative;
   z-index: 1;
-}
-
-.office-desk__chair {
-  width: 1.7rem;
-  height: 1.1rem;
-  margin-top: -0.15rem;
-  border: 2px solid #101820;
-  background: #2a3548;
-  box-shadow: 0 0.25rem 0 #1a2230;
 }
 
 .office-desk__laptop {
@@ -657,7 +731,7 @@
 }
 
 .office-desk__label {
-  margin: 0.35rem 0 0;
+  margin: 0.55rem 0 0;
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
@@ -673,6 +747,84 @@
 .office-desk__label span:last-child[data-status="alert"],
 .office-desk__label span:last-child[data-status="error"] { color: #f0b0a4; }
 .office-desk__label span:last-child[data-status="offline"] { color: #6a7588; }
+
+.office-actor--desk {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: auto;
+  transform: none;
+  margin-bottom: -0.35rem;
+  z-index: 5;
+  pointer-events: none;
+  transition: none;
+}
+
+.office-actor--desk[data-pose="sleep"] {
+  transform: rotate(-12deg);
+}
+
+@media (max-width: 639px) {
+  .office-stage {
+    top: 56%;
+    width: min(12.5rem, 82vw);
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+
+  .office-decor__server,
+  .office-decor__shelf,
+  .office-decor__plant--tl,
+  .office-decor__plant--bc {
+    display: none;
+  }
+
+  .office-decor__wall-left,
+  .office-decor__wall-right {
+    width: 2.2%;
+  }
+
+  .office-decor__window {
+    width: 12%;
+    height: 8%;
+    top: 13.5%;
+    right: 8%;
+  }
+
+  .office-decor__rug {
+    width: min(16rem, 78%);
+    height: min(11rem, 32%);
+    top: 56%;
+  }
+
+  .office-empty,
+  .office-error {
+    left: 0.5rem;
+    right: 0.5rem;
+    top: auto;
+    bottom: 0.55rem;
+    font-size: 0.68rem;
+    padding: 0.5rem 0.6rem;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .office-stage {
+    top: 57%;
+    width: min(14rem, 48vw);
+  }
+
+  .office-decor__server--b,
+  .office-decor__shelf {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .office-stage {
+    top: 56%;
+    width: 14rem;
+  }
+}
 
 /* ===== STATIONS (legacy, unused by single-desk scene) ===== */
 
@@ -1374,7 +1526,11 @@
   .office-flow__node[data-on="true"],
   .office-station__beacon,
   .office-station__halo,
+  .office-desk__beacon,
+  .office-desk__halo,
   .office-screen[data-active="true"],
+  .office-desk__laptop-screen[data-active="true"],
+  .office-desk__laptop-screen[data-active="true"] i,
   .office-actor__bubble,
   .office-actor[data-pose="think"] .office-actor__body,
   .office-actor[data-pose="execute"] .office-actor__body,
