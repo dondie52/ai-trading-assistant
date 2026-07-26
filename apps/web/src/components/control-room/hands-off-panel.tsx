@@ -61,8 +61,8 @@ export function HandsOffCapitalPanel({
     >
       <div className="space-y-4" data-testid="hands-off-panel">
         <p className="text-sm text-slate-300">
-          You deposit and withdraw in Alpaca. Dondie picks the strategy, risk defaults, symbols, and
-          runs on AUTOPILOT — no manual trade decisions required.
+          You deposit and withdraw in Alpaca. Dondie chooses the trading strategy, risk defaults,
+          symbols, and runs on full AUTOPILOT AI power — no manual trade decisions required.
         </p>
 
         <ol className="grid gap-2 text-sm sm:grid-cols-3">
@@ -144,8 +144,8 @@ export function HandsOffCapitalPanel({
 
         {handsOff ? (
           <p className="text-xs text-slate-500" data-testid="hands-off-status">
-            AUTOPILOT active · Agent owns strategy selection · Your only jobs are fund and withdraw in
-            Alpaca (plus emergency stop if needed).
+            Full AI power · AUTOPILOT · Dondie re-picks strategy from performance · Your only jobs are
+            fund and withdraw in Alpaca (plus emergency stop if needed).
           </p>
         ) : null}
       </div>

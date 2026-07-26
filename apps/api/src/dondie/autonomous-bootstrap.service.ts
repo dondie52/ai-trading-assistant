@@ -6,6 +6,7 @@ import {
   isAgentManagedStrategy,
   selectAgentStrategyTemplate
 } from "./agent-strategy-catalog.js";
+import { dondieConfig, isDondieFullPower } from "./dondie.config.js";
 import { DondieService } from "./dondie.service.js";
 
 const ALPACA_DASHBOARD_URL = "https://app.alpaca.markets/";
@@ -20,6 +21,7 @@ export class AutonomousBootstrapService {
   /**
    * Hands-off mode: strategy, risk, watchlist, AUTOPILOT, and Dondie activation.
    * Operator capital stays in Alpaca — deposit and withdraw there.
+   * When DONDIE_FULL_POWER=true, Dondie keeps choosing strategy and runs at max AI autonomy.
    */
   async ensureAutonomousMode(userId: UUID): Promise<AutonomousBootstrapResult> {
     // Ensure portfolio / risk / watchlist rows exist before mutating them.
@@ -46,20 +48,31 @@ export class AutonomousBootstrapService {
       existingAgent?.lastEvaluationScore
     );
 
+    const fullPower = isDondieFullPower();
     const risk = this.platform.updateRiskRules(userId, {
-      maxRiskPerTradePercent: 1,
-      maxDailyLossPercent: 3,
-      maxDrawdownPercent: 12,
-      maxPositionSizePercent: 15,
+      maxRiskPerTradePercent: fullPower ? 1.5 : 1,
+      maxDailyLossPercent: fullPower ? 5 : 3,
+      maxDrawdownPercent: fullPower ? 15 : 12,
+      maxPositionSizePercent: fullPower ? 20 : 15,
       stopTrading: false
     });
 
     const symbols = [...DEFAULT_AUTONOMOUS_UNIVERSE];
     this.platform.updateWatchlist(userId, { symbols });
 
+    const templateConfidence =
+      typeof template.configuration.confidenceThreshold === "number"
+        ? template.configuration.confidenceThreshold
+        : 65;
+    const minimumConfidence = fullPower
+      ? Math.min(templateConfidence, dondieConfig.fullPowerMinConfidence)
+      : templateConfidence;
+
     const strategy = this.ensureAgentManagedStrategy(userId, template.name, template.description, {
       ...template.configuration,
-      templateId: template.id
+      templateId: template.id,
+      confidenceThreshold: minimumConfidence,
+      fullPower
     });
 
     const automation = this.platform.updateAutomationSettings(userId, {
@@ -67,21 +80,20 @@ export class AutonomousBootstrapService {
       emergencyStop: false,
       watchlist: symbols,
       marketHoursOnly: true,
-      minimumConfidence:
-        typeof template.configuration.confidenceThreshold === "number"
-          ? template.configuration.confidenceThreshold
-          : 65,
-      maxTradesPerDay: 5,
+      minimumConfidence,
+      maxTradesPerDay: fullPower ? dondieConfig.fullPowerMaxTradesPerDay : 5,
       riskPerTradePercent: risk.maxRiskPerTradePercent,
       maxPositionSizePercent: risk.maxPositionSizePercent,
       dailyLossLimitPercent: risk.maxDailyLossPercent,
       maxDrawdownPercent: risk.maxDrawdownPercent,
-      cooldownSeconds: 60,
+      cooldownSeconds: fullPower ? 30 : 60,
       // Hands-off: do not ask for per-order confirmation
       requireConfirmationAboveValue: 1_000_000_000
     });
 
-    const agent = await this.dondie.ensureActiveWithStrategy(userId, strategy.id);
+    let agent = await this.dondie.ensureActiveWithStrategy(userId, strategy.id);
+    agent = await this.dondie.applyFullPowerSchedule(userId, agent);
+    agent = await this.dondie.ensureFullPowerAiGrant(agent);
     await this.dondie.updateSymbolUniverse(userId, { symbols });
 
     return {

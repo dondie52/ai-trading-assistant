@@ -19,9 +19,13 @@ import type {
 import { buildDondieLifestyleWorld, isUsEquityMarketOpen, isUsEquityWeekend } from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
-import { DEFAULT_AUTONOMOUS_UNIVERSE } from "./agent-strategy-catalog.js";
+import {
+  DEFAULT_AUTONOMOUS_UNIVERSE,
+  isAgentManagedStrategy,
+  selectAgentStrategyTemplate
+} from "./agent-strategy-catalog.js";
 import { DondieBrainService } from "./dondie-brain.service.js";
-import { dondieConfig } from "./dondie.config.js";
+import { dondieConfig, isDondieFullPower } from "./dondie.config.js";
 import { DondieMemoryService } from "./dondie-memory.service.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
@@ -29,6 +33,7 @@ import { DondieWalletService } from "./dondie-wallet.service.js";
 import { DondieWeekendEarnService } from "./dondie-weekend-earn.service.js";
 
 const isoNow = (): string => new Date().toISOString();
+const roundUsd = (value: number): number => Number(value.toFixed(4));
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -106,13 +111,75 @@ export class DondieService implements OnModuleInit {
           agent.symbolUniverse.length > 0
             ? [...agent.symbolUniverse]
             : [...DEFAULT_AUTONOMOUS_UNIVERSE],
-        requireConfirmationAboveValue: 1_000_000_000
+        requireConfirmationAboveValue: 1_000_000_000,
+        ...(isDondieFullPower()
+          ? {
+              maxTradesPerDay: dondieConfig.fullPowerMaxTradesPerDay,
+              minimumConfidence: dondieConfig.fullPowerMinConfidence,
+              cooldownSeconds: 30
+            }
+          : {})
       });
+      if (isDondieFullPower()) {
+        const powered = await this.applyFullPowerSchedule(agent.userId, agent);
+        await this.ensureFullPowerAiGrant(powered);
+      }
     }
     this.scheduler.start(
       (scheduledUserId) => this.runScheduled(scheduledUserId),
       () => this.listDueScheduledUserIds()
     );
+  }
+
+  /** Keep schedule tight when full AI power is enabled. */
+  async applyFullPowerSchedule(userId: UUID, agent: DondieAgent): Promise<DondieAgent> {
+    if (!isDondieFullPower()) {
+      return agent;
+    }
+    const scheduleMinutes = Math.max(
+      1,
+      Number(process.env.DONDIE_SCHEDULE_MINUTES ?? dondieConfig.defaultScheduleMinutes)
+    );
+    if (agent.scheduleMinutes === scheduleMinutes) {
+      return agent;
+    }
+    const updated: DondieAgent = {
+      ...agent,
+      scheduleMinutes,
+      updatedAt: isoNow()
+    };
+    this.store.dondieAgents.set(updated.id, updated);
+    await this.repository.persistAgent(updated);
+    return updated;
+  }
+
+  /**
+   * One-time cognition wallet grant so STANDARD/PRO LLM brains unlock under full power.
+   * No-op without DONDIE_FULL_POWER or an LLM API key.
+   */
+  async ensureFullPowerAiGrant(agent: DondieAgent): Promise<DondieAgent> {
+    const llmKey = process.env.DONDIE_LLM_API_KEY ?? dondieConfig.llmApiKey;
+    if (!isDondieFullPower() || !llmKey.trim()) {
+      return agent;
+    }
+    const target = Math.max(0, dondieConfig.fullPowerTargetWalletUsd);
+    if (!(target > 0) || agent.walletBalance >= target) {
+      return agent;
+    }
+    const alreadyGranted = this.wallet
+      .listLedger(agent.id)
+      .some((entry) => entry.reason === dondieConfig.fullPowerAiGrantReason);
+    if (alreadyGranted) {
+      return agent;
+    }
+    const amount = roundUsd(target - agent.walletBalance);
+    if (!(amount > 0)) {
+      return agent;
+    }
+    return this.wallet.credit(agent, amount, dondieConfig.fullPowerAiGrantReason, {
+      fullPower: true,
+      targetWalletUsd: target
+    });
   }
 
   /** Wake path for external cron/keepalive — runs overdue AUTOPILOT agents. */
@@ -321,15 +388,19 @@ export class DondieService implements OnModuleInit {
   }
 
   async runScheduled(userId: UUID): Promise<void> {
-    const agent = this.getAgent(userId);
+    let agent = this.getAgent(userId);
     if (!agent || agent.status !== "ACTIVE") {
       return;
     }
-    const settings = this.platform.getAutomationSettings(userId);
+    let settings = this.platform.getAutomationSettings(userId);
     if (settings.emergencyStop || settings.runtimeState === "PAUSED" || settings.mode === "MANUAL") {
       return;
     }
     try {
+      if (isDondieFullPower()) {
+        agent = await this.syncFullPowerAutonomy(userId, agent);
+        settings = this.platform.getAutomationSettings(userId);
+      }
       if (this.weekendEarn.isWeekendEarnWindow()) {
         await this.runWeekendSideHustle(userId, agent);
         return;
@@ -384,6 +455,7 @@ export class DondieService implements OnModuleInit {
    * Weekends: ACTIVE non-MANUAL agents due for paper BTC (ASSISTED included so overnight
    * keepalive works even if the operator never flipped AUTOPILOT).
    * Weekdays: ACTIVE AUTOPILOT agents whose schedule interval elapsed.
+   * Full power also wakes ASSISTED agents (then promotes them to AUTOPILOT on run).
    */
   listDueScheduledUserIds(nowMs: number = Date.now()): readonly UUID[] {
     const weekend = this.weekendEarn.isWeekendEarnWindow(new Date(nowMs));
@@ -399,7 +471,7 @@ export class DondieService implements OnModuleInit {
         if (weekend) {
           return this.isWeekendHustleDue(agent.userId, agent, nowMs);
         }
-        if (settings.mode !== "AUTOPILOT") {
+        if (settings.mode !== "AUTOPILOT" && !isDondieFullPower()) {
           return false;
         }
         const scheduleMinutes = Math.max(1, agent.scheduleMinutes || dondieConfig.defaultScheduleMinutes);
@@ -414,6 +486,82 @@ export class DondieService implements OnModuleInit {
         return nowMs - last >= scheduleMs;
       })
       .map((agent) => agent.userId);
+  }
+
+  /**
+   * Full AI power wake: Dondie re-picks its agent-managed strategy from equity + score,
+   * forces AUTOPILOT, tightens the schedule, and unlocks LLM cognition when configured.
+   */
+  private async syncFullPowerAutonomy(userId: UUID, agent: DondieAgent): Promise<DondieAgent> {
+    let updated = await this.adaptAgentManagedStrategy(userId, agent);
+    updated = await this.applyFullPowerSchedule(userId, updated);
+    updated = await this.ensureFullPowerAiGrant(updated);
+
+    const portfolio = this.platform.getPrimaryPortfolio(userId);
+    const template = selectAgentStrategyTemplate(
+      portfolio.portfolioValue || portfolio.cashBalance,
+      updated.lastEvaluationScore
+    );
+    const templateConfidence =
+      typeof template.configuration.confidenceThreshold === "number"
+        ? template.configuration.confidenceThreshold
+        : 65;
+    const minimumConfidence = Math.min(templateConfidence, dondieConfig.fullPowerMinConfidence);
+    const symbols =
+      updated.symbolUniverse.length > 0 ? [...updated.symbolUniverse] : [...DEFAULT_AUTONOMOUS_UNIVERSE];
+
+    this.platform.updateAutomationSettings(userId, {
+      mode: "AUTOPILOT",
+      emergencyStop: false,
+      watchlist: symbols,
+      marketHoursOnly: true,
+      minimumConfidence,
+      maxTradesPerDay: dondieConfig.fullPowerMaxTradesPerDay,
+      cooldownSeconds: 30,
+      requireConfirmationAboveValue: 1_000_000_000
+    });
+    return updated;
+  }
+
+  /** Dondie chooses (or re-chooses) the agent-managed strategy template. */
+  private async adaptAgentManagedStrategy(userId: UUID, agent: DondieAgent): Promise<DondieAgent> {
+    const portfolio = this.platform.getPrimaryPortfolio(userId);
+    const template = selectAgentStrategyTemplate(
+      portfolio.portfolioValue || portfolio.cashBalance,
+      agent.lastEvaluationScore
+    );
+    const templateConfidence =
+      typeof template.configuration.confidenceThreshold === "number"
+        ? template.configuration.confidenceThreshold
+        : 65;
+    const fullPower = isDondieFullPower();
+    const confidenceThreshold = fullPower
+      ? Math.min(templateConfidence, dondieConfig.fullPowerMinConfidence)
+      : templateConfidence;
+    const configuration = {
+      ...template.configuration,
+      templateId: template.id,
+      confidenceThreshold,
+      fullPower
+    };
+
+    const strategies = this.platform.listStrategies(userId);
+    const managed = strategies.find((strategy) => isAgentManagedStrategy(strategy.configuration));
+    const strategy = managed
+      ? this.platform.updateStrategy(userId, managed.id, {
+          name: template.name,
+          description: template.description,
+          status: "ACTIVE",
+          configuration
+        })
+      : this.platform.createStrategy(userId, {
+          name: template.name,
+          description: template.description,
+          status: "ACTIVE",
+          configuration
+        });
+
+    return this.ensureActiveWithStrategy(userId, strategy.id);
   }
 
   private async maybeEarnWeekendIfDue(userId: UUID): Promise<void> {

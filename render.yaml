@@ -50,5 +50,8 @@ services:
         value: "true"
       - key: DONDIE_SCHEDULE_MINUTES
         value: "15"
+      # Dondie picks strategy + max AI autonomy on every AUTOPILOT wake.
+      - key: DONDIE_FULL_POWER
+        value: "true"
       - key: CRON_SECRET
         sync: false
