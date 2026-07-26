@@ -2,8 +2,12 @@ import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
-  esbuild: {
-    jsx: "automatic"
+  // apps/web sets tsconfig jsx: "preserve" for Next; the test transform needs
+  // to actually compile JSX instead.
+  oxc: {
+    jsx: {
+      runtime: "automatic"
+    }
   },
   test: {
     environment: "node",
