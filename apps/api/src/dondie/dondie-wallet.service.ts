@@ -41,19 +41,21 @@ export class DondieWalletService {
     agent: DondieAgent,
     amount: number,
     reason: string,
-    metadata: JsonObject = {}
+    metadata: JsonObject = {},
+    at?: Date
   ): Promise<DondieAgent> {
     if (amount <= 0) {
       throw new BadRequestException({ code: "VALIDATION_ERROR", message: "Credit amount must be positive." });
     }
-    return this.applyEntry(agent, "CREDIT", amount, reason, metadata);
+    return this.applyEntry(agent, "CREDIT", amount, reason, metadata, at);
   }
 
   async debit(
     agent: DondieAgent,
     amount: number,
     reason: string,
-    metadata: JsonObject = {}
+    metadata: JsonObject = {},
+    at?: Date
   ): Promise<DondieAgent> {
     if (amount <= 0) {
       throw new BadRequestException({ code: "VALIDATION_ERROR", message: "Debit amount must be positive." });
@@ -61,7 +63,7 @@ export class DondieWalletService {
     if (agent.walletBalance < amount) {
       throw new BadRequestException({ code: "DONDIE_INSUFFICIENT_FUNDS", message: "Dondie wallet balance is too low." });
     }
-    return this.applyEntry(agent, "DEBIT", amount, reason, metadata);
+    return this.applyEntry(agent, "DEBIT", amount, reason, metadata, at);
   }
 
   async creditTradePnl(agent: DondieAgent, pnl: number, symbol: string): Promise<DondieAgent> {
@@ -80,8 +82,10 @@ export class DondieWalletService {
     entryType: DondieWalletLedgerEntry["entryType"],
     amount: number,
     reason: string,
-    metadata: JsonObject
+    metadata: JsonObject,
+    at?: Date
   ): Promise<DondieAgent> {
+    const stampedAt = at?.toISOString() ?? isoNow();
     const signedAmount = entryType === "CREDIT" ? amount : -amount;
     const balanceAfter = roundUsd(agent.walletBalance + signedAmount);
     const entry: DondieWalletLedgerEntry = {
@@ -92,7 +96,7 @@ export class DondieWalletService {
       amount: roundUsd(amount),
       balanceAfter,
       metadata,
-      createdAt: isoNow()
+      createdAt: stampedAt
     };
     this.store.dondieWalletLedger.set(entry.id, entry);
     await this.repository.persistLedgerEntry(entry);
@@ -102,7 +106,7 @@ export class DondieWalletService {
       ...agent,
       walletBalance: balanceAfter,
       tier: nextTier,
-      updatedAt: isoNow()
+      updatedAt: stampedAt
     };
     this.store.dondieAgents.set(agent.id, updated);
     await this.repository.persistAgent(updated);

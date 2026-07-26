@@ -16,7 +16,6 @@ import { PlatformStore } from "../store/platform.store.js";
 import { dondieConfig } from "./dondie.config.js";
 import { DondieWalletService } from "./dondie-wallet.service.js";
 
-const isoNow = (): string => new Date().toISOString();
 const roundUsd = (value: number): number => Number(value.toFixed(4));
 const roundPrice = (value: number): number => Number(value.toFixed(2));
 
@@ -78,7 +77,9 @@ export class DondieWeekendEarnService {
     const dayKey = at.toISOString().slice(0, 10);
     const runIndex = this.countPaperCryptoTradesToday(userId, dayKey);
     const salt = runSalt(agent.id, dayKey, runIndex);
-    const now = isoNow();
+    // Stamp the gig on the calendar day being earned — wall-clock "now" breaks
+    // daily caps / creditedToday when tests or schedulers pass a specific `at`.
+    const now = at.toISOString();
     const symbol = dondieConfig.weekendEarnSymbol;
     const strategyId = agent.strategyId ?? agent.id;
     const remainingDailyCap = Math.max(
@@ -117,7 +118,6 @@ export class DondieWeekendEarnService {
         : 0;
 
     if (!(quantity > 0)) {
-      const nowEmpty = isoNow();
       const emptySignal: Signal = {
         id: randomUUID(),
         userId,
@@ -127,7 +127,7 @@ export class DondieWeekendEarnService {
         confidenceScore: 40,
         modelVersion: dondieConfig.weekendEarnBrain,
         features: { weekendGig: true, venue: "PAPER_CRYPTO", skipped: "NO_CASH" },
-        generatedAt: nowEmpty
+        generatedAt: now
       };
       return {
         agentId: agent.id,
@@ -144,7 +144,7 @@ export class DondieWeekendEarnService {
           reason: "No cash available to size a micro BTC paper scalp."
         },
         walletBalance: agent.walletBalance,
-        ranAt: nowEmpty
+        ranAt: now
       };
     }
     const broker =
@@ -223,16 +223,22 @@ export class DondieWeekendEarnService {
 
     let updatedAgent = agent;
     if (walletCredit > 0) {
-      updatedAgent = await this.wallet.credit(agent, walletCredit, dondieConfig.weekendEarnLedgerReason, {
-        symbol,
-        side,
-        grossPnl,
-        entryPrice,
-        exitPrice,
-        weekend: true,
-        venue: "PAPER_CRYPTO",
-        remainingDailyCap: roundUsd(remainingDailyCap - walletCredit)
-      });
+      updatedAgent = await this.wallet.credit(
+        agent,
+        walletCredit,
+        dondieConfig.weekendEarnLedgerReason,
+        {
+          symbol,
+          side,
+          grossPnl,
+          entryPrice,
+          exitPrice,
+          weekend: true,
+          venue: "PAPER_CRYPTO",
+          remainingDailyCap: roundUsd(remainingDailyCap - walletCredit)
+        },
+        at
+      );
     }
 
     updatedAgent = {
@@ -240,6 +246,7 @@ export class DondieWeekendEarnService {
       lastRunAt: now,
       updatedAt: now
     };
+    this.store.dondieAgents.set(updatedAgent.id, updatedAgent);
 
     const reasoning =
       walletCredit > 0
