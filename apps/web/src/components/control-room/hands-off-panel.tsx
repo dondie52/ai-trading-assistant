@@ -15,6 +15,7 @@ const ALPACA_URL = "https://app.alpaca.markets/";
 
 export function HandsOffCapitalPanel({
   alpacaConnected,
+  brokerLoading = false,
   agent,
   automation,
   portfolio,
@@ -25,6 +26,8 @@ export function HandsOffCapitalPanel({
   busy
 }: {
   readonly alpacaConnected: boolean;
+  /** Avoid a false "Connect broker" flash while accounts are still syncing after resume. */
+  readonly brokerLoading?: boolean;
   readonly agent: DondieAgent | null | undefined;
   readonly automation: AutomationSettings | null | undefined;
   readonly portfolio: Portfolio | null | undefined;
@@ -41,17 +44,20 @@ export function HandsOffCapitalPanel({
   const cash = portfolio?.cashBalance ?? 0;
   const equity = portfolio?.portfolioValue ?? 0;
   const profit = (portfolio?.realizedPnl ?? 0) + (portfolio?.unrealizedPnl ?? 0);
+  const statusLabel = handsOff
+    ? "Agent running"
+    : brokerLoading
+      ? "Syncing broker"
+      : alpacaConnected
+        ? "Ready to start"
+        : "Connect broker";
+  const statusTone = handsOff ? "emerald" : brokerLoading ? "slate" : "amber";
 
   return (
     <Panel
       title="Hands-off capital"
       icon={<Rocket className="h-5 w-5 text-cyan-300" aria-hidden="true" />}
-      action={
-        <StatusPill
-          label={handsOff ? "Agent running" : alpacaConnected ? "Ready to start" : "Connect broker"}
-          tone={handsOff ? "emerald" : "amber"}
-        />
-      }
+      action={<StatusPill label={statusLabel} tone={statusTone} />}
     >
       <div className="space-y-4" data-testid="hands-off-panel">
         <p className="text-sm text-slate-300">
@@ -85,7 +91,7 @@ export function HandsOffCapitalPanel({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {!alpacaConnected ? (
+          {!brokerLoading && !alpacaConnected ? (
             <button
               type="button"
               data-testid="hands-off-connect"

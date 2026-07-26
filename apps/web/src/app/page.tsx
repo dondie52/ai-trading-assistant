@@ -14,7 +14,6 @@ import {
   DollarSign,
   Download,
   FlaskConical,
-  Gauge,
   History,
   Home,
   LineChart,
@@ -327,62 +326,62 @@ export default function Page(): ReactElement {
     queryKey: ["portfolios", accessToken],
     enabled: authenticated,
     refetchInterval: authenticated ? 15_000 : false,
-    queryFn: () => apiFetchPage<Portfolio>("/portfolios", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Portfolio>("/portfolios", { signal }, token)
   });
   const strategies = useQuery({
     queryKey: ["strategies", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<Strategy>("/strategies", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Strategy>("/strategies", { signal }, token)
   });
   const signals = useQuery({
     queryKey: ["signals", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<Signal>("/signals/history", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Signal>("/signals/history", { signal }, token)
   });
   const orders = useQuery({
     queryKey: ["orders", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<Order>("/orders", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Order>("/orders", { signal }, token)
   });
   const trades = useQuery({
     queryKey: ["trades", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<Trade>("/trades/history", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Trade>("/trades/history", { signal }, token)
   });
   const positions = useQuery({
     queryKey: ["positions", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<Position>("/positions", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Position>("/positions", { signal }, token)
   });
   const risk = useQuery({
     queryKey: ["risk", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetch<RiskRules>("/risk", {}, token)
+    queryFn: ({ signal }) => apiFetch<RiskRules>("/risk", { signal }, token)
   });
   const analytics = useQuery({
     queryKey: ["analytics", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetch<PerformanceSummary>("/analytics/performance", {}, token)
+    queryFn: ({ signal }) => apiFetch<PerformanceSummary>("/analytics/performance", { signal }, token)
   });
   const notifications = useQuery({
     queryKey: ["notifications", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<Notification>("/notifications", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<Notification>("/notifications", { signal }, token)
   });
   const profile = useQuery({
     queryKey: ["profile", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetch<PublicUser>("/users/profile", {}, token)
+    queryFn: ({ signal }) => apiFetch<PublicUser>("/users/profile", { signal }, token)
   });
   const brokerAccounts = useQuery({
     queryKey: ["broker-accounts", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<BrokerAccountView>("/brokers/accounts", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<BrokerAccountView>("/brokers/accounts", { signal }, token)
   });
   const automationSettings = useQuery({
     queryKey: ["automation-settings", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetch<AutomationSettings>("/automation/settings", {}, token)
+    queryFn: ({ signal }) => apiFetch<AutomationSettings>("/automation/settings", { signal }, token)
   });
   const manualMarketEnabled =
     authenticated &&
@@ -391,10 +390,10 @@ export default function Page(): ReactElement {
   const marketPrices = useQuery({
     queryKey: ["market-prices", symbol, timeframe, accessToken],
     enabled: manualMarketEnabled,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetchPage<MarketCandle>(
         `/market/prices/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
-        {},
+        { signal },
         token
       )
   });
@@ -404,75 +403,75 @@ export default function Page(): ReactElement {
     // Wait until automation settings resolve so we do not race-poll AAPL on load.
     enabled: manualMarketEnabled,
     refetchInterval: realtimeConnected ? false : 5_000,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetch<MarketQuote>(
         `/market/quotes/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
-        {},
+        { signal },
         token
       )
   });
   const marketIndicators = useQuery({
     queryKey: ["market-indicators", symbol, timeframe, accessToken],
     enabled: manualMarketEnabled,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetch<IndicatorSnapshot>(
         `/market/indicators/${encodeURIComponent(symbol)}?timeframe=${timeframe}`,
-        {},
+        { signal },
         token
       )
   });
   const watchlists = useQuery({
     queryKey: ["watchlists", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetchPage<WatchlistView>("/market/watchlists", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<WatchlistView>("/market/watchlists", { signal }, token)
   });
   const auditLogs = useQuery({
     queryKey: ["admin-audit", accessToken],
     enabled: authenticated && showAdmin,
-    queryFn: () => apiFetchPage<AuditLog>("/admin/audit-logs", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<AuditLog>("/admin/audit-logs", { signal }, token)
   });
   const adminUsers = useQuery({
     queryKey: ["admin-users", accessToken],
     enabled: authenticated && showAdmin,
-    queryFn: () => apiFetchPage<PublicUser>("/admin/users", {}, token)
+    queryFn: ({ signal }) => apiFetchPage<PublicUser>("/admin/users", { signal }, token)
   });
   const systemHealth = useQuery({
     queryKey: ["admin-health", accessToken],
     enabled: authenticated && showAdmin,
-    queryFn: () => apiFetch<SystemHealthView>("/admin/system-health", {}, token)
+    queryFn: ({ signal }) => apiFetch<SystemHealthView>("/admin/system-health", { signal }, token)
   });
   const operationalMetrics = useQuery({
     queryKey: ["admin-metrics", accessToken],
     enabled: authenticated && showAdmin,
     refetchInterval: 10_000,
-    queryFn: () => apiFetch<OperationalMetricsSnapshot>("/admin/metrics", {}, token)
+    queryFn: ({ signal }) => apiFetch<OperationalMetricsSnapshot>("/admin/metrics", { signal }, token)
   });
   const dondieAgent = useQuery({
     queryKey: ["dondie", accessToken],
     enabled: authenticated,
-    queryFn: () => apiFetch<DondieAgent | null>("/dondie", {}, token)
+    queryFn: ({ signal }) => apiFetch<DondieAgent | null>("/dondie", { signal }, token)
   });
   const dondieMemories = useQuery({
     queryKey: ["dondie-memories", accessToken],
     enabled: authenticated && Boolean(dondieAgent.data),
-    queryFn: () => apiFetch<readonly DondieMemory[]>("/dondie/memories", {}, token)
+    queryFn: ({ signal }) => apiFetch<readonly DondieMemory[]>("/dondie/memories", { signal }, token)
   });
   const dondieLifestyle = useQuery({
     queryKey: ["dondie-lifestyle", accessToken],
     enabled: authenticated,
     refetchInterval: authenticated ? 15_000 : false,
-    queryFn: () => apiFetch<DondieLifestyleWorld>("/dondie/lifestyle", {}, token)
+    queryFn: ({ signal }) => apiFetch<DondieLifestyleWorld>("/dondie/lifestyle", { signal }, token)
   });
   const dondieWallet = useQuery({
     queryKey: ["dondie-wallet", accessToken],
     enabled: authenticated && Boolean(dondieAgent.data),
     refetchInterval: authenticated ? 15_000 : false,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetch<{
         readonly balance: number;
         readonly tier: DondieAgent["tier"];
         readonly ledger: readonly { readonly reason: string; readonly amount: number; readonly createdAt: string }[];
-      }>("/dondie/wallet", {}, token)
+      }>("/dondie/wallet", { signal }, token)
   });
 
   const primaryPortfolio = portfolios.data?.[0];
@@ -2251,6 +2250,7 @@ export default function Page(): ReactElement {
         <section data-testid="settings-view" className="space-y-5">
           <HandsOffCapitalPanel
             alpacaConnected={alpacaConnected}
+            brokerLoading={brokerAccounts.isLoading}
             agent={dondieAgent.data ?? null}
             automation={automationSettings.data ?? null}
             portfolio={primaryPortfolio ?? null}

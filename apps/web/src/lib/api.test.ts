@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  REQUEST_TIMEOUT_MS,
   apiFetch,
   apiFetchPage,
+  isCallerAbortError,
   isRetryableTransportError,
   registerApiAuthHandlers,
-  wakeTradingApi
+  wakeTradingApi,
+  withRequestTimeout
 } from "./api";
 
 describe("apiFetch auth retry", () => {
@@ -278,5 +281,85 @@ describe("apiFetch auth retry", () => {
     );
 
     await expect(wakeTradingApi({ force: true })).resolves.toBe(true);
+  });
+
+  it("times out hung fetches so resume cannot stick on Syncing forever", async () => {
+    vi.useFakeTimers();
+    // AbortSignal.timeout() does not always honor Vitest fake timers — use the fallback path.
+    const timeoutFn = AbortSignal.timeout.bind(AbortSignal);
+    Object.defineProperty(AbortSignal, "timeout", {
+      configurable: true,
+      value: undefined
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("The operation was aborted.", "AbortError"));
+              },
+              { once: true }
+            );
+          })
+      )
+    );
+
+    try {
+      const pending = apiFetch("/dondie", { networkRetry: false }, "token");
+      const expectation = expect(pending).rejects.toMatchObject({ code: "NETWORK_ERROR" });
+      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 10);
+      await expectation;
+    } finally {
+      Object.defineProperty(AbortSignal, "timeout", {
+        configurable: true,
+        value: timeoutFn
+      });
+    }
+  });
+
+  it("does not convert React Query cancellations into NETWORK_ERROR", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("The operation was aborted.", "AbortError"));
+              },
+              { once: true }
+            );
+          })
+      )
+    );
+
+    const pending = apiFetch("/dondie", { signal: controller.signal, networkRetry: false }, "token");
+    const expectation = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await expectation;
+  });
+
+  it("composes caller abort with the request timeout", () => {
+    const controller = new AbortController();
+    const signal = withRequestTimeout(controller.signal, 5_000);
+    expect(signal.aborted).toBe(false);
+    controller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("detects caller abort errors", () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      isCallerAbortError(new DOMException("The operation was aborted.", "AbortError"), controller.signal)
+    ).toBe(true);
+    expect(
+      isCallerAbortError(new DOMException("The operation was aborted.", "AbortError"), undefined)
+    ).toBe(false);
   });
 });
