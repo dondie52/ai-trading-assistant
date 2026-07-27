@@ -7,7 +7,7 @@ Dondie runs as a modular monolith: the agent orchestrates trading through shared
 1. **Dondie scheduler** (or operator manual run) triggers `DondieService.run`.
 2. Active brain plans EXECUTE or SKIP (FREE, or STANDARD/PRO LLM when wallet + `DONDIE_LLM_API_KEY` allow).
 3. EXECUTE paths call `PlatformService.runAutomation` → signal → risk → order.
-4. Paper orders fill via `PaperBrokerAdapter`; live via Alpaca when approved.
+4. Connected Alpaca (paper or live) receives all order modes including AUTO; without Alpaca, fills use `PaperBrokerAdapter`.
 5. Trade PnL credits Dondie wallet; brain runs debit wallet (insufficient funds fall back to FREE).
 6. Wallet balance determines tier (FREE / STANDARD / PRO); ledger + run memories persist.
 7. Operator console reads agent state, wallet ledger, memories, runs, and audit trail.
@@ -31,8 +31,8 @@ Dondie runs as a modular monolith: the agent orchestrates trading through shared
 | Automation | Signal → risk → order pipeline |
 | Trading | Order/position lifecycle |
 | Risk | Pre-trade validation (highest authority) |
-| Paper broker | Default execution environment |
-| Alpaca broker | Live execution when approved |
+| Paper broker | Fallback when Alpaca is not connected |
+| Alpaca broker | Paper/live execution when credentials are connected |
 | Analytics | Performance metrics for operator |
 | Admin | Health, metrics, audit, user provisioning |
 
