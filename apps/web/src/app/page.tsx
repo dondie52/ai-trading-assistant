@@ -929,7 +929,7 @@ export default function Page(): ReactElement {
     onSuccess: async (payload) => {
       setRiskPassed(true);
       setRiskResult(null);
-      setNotice(`Manual paper order ${payload.order.status.toLowerCase()} for ${payload.order.symbol}.`);
+      setNotice(`Manual order ${payload.order.status.toLowerCase()} for ${payload.order.symbol}.`);
       await invalidateTradingData();
     },
     onError: async (error) => {
@@ -1749,14 +1749,16 @@ export default function Page(): ReactElement {
     <Panel title="Trade History" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
       <div data-testid="trade-history" className="space-y-2">
         {(trades.data ?? []).length === 0 ? (
-          <EmptyLine text="No paper trades yet" />
+          <EmptyLine text="No trades yet" />
         ) : (
           trades.data?.slice(-8).reverse().map((trade) => (
             <div key={trade.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-5">
               <span className="font-mono text-white">{trade.symbol}</span>
               <span>{trade.side}</span>
-              <span>{formatQty(trade.quantity)}</span>
-              <span className="sm:text-right">{formatCurrency(trade.entryPrice)}</span>
+              <span>
+                {formatQty(trade.quantity)} @ {formatCurrency(trade.entryPrice)}
+              </span>
+              <span className="sm:text-right">{formatCurrency(trade.quantity * trade.entryPrice)}</span>
               <span className={`text-right ${trade.pnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
                 {trade.closedAt ? formatCurrency(trade.pnl) : "Open"}
               </span>

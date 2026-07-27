@@ -729,6 +729,42 @@ describe("platform integration", () => {
     ).toBe(true);
   });
 
+  it("routes AUTO orders to Alpaca when paper credentials are connected", async () => {
+    const fetchMock = installAlpacaFetchMock();
+    const { platform, store } = createPlatform();
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
+    await platform.connectBroker(userId, {
+      brokerName: "ALPACA",
+      accountId: "paper-account",
+      apiKey: "validated-key",
+      secret: "validated-secret",
+      environment: "PAPER"
+    });
+
+    const quote = await platform.getMarketQuote(userId, "AAPL", "1m");
+    const submitted = await platform.createOrder(userId, {
+      symbol: "AAPL",
+      side: "BUY",
+      orderType: "MARKET",
+      mode: "AUTO",
+      quantity: 1,
+      price: quote.price,
+      stopLoss: Number((quote.price * 0.95).toFixed(2)),
+      takeProfit: Number((quote.price * 1.05).toFixed(2))
+    });
+
+    const orderPosts = fetchMock.mock.calls.filter(
+      (call) => String(call[0]).includes("/v2/orders") && call[1]?.method === "POST"
+    );
+    expect(orderPosts.length).toBeGreaterThanOrEqual(1);
+    expect(submitted.order.mode).toBe("AUTO");
+    expect(submitted.order.status).toBe("FILLED");
+    expect(
+      platform.listBrokerAccounts(userId).find((account) => account.id === submitted.order.brokerAccountId)
+        ?.brokerName
+    ).toBe("ALPACA");
+  });
+
   it("validates Alpaca credentials and never exposes credential material", async () => {
     const { platform, store } = createPlatform();
     const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });

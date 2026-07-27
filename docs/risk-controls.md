@@ -32,6 +32,6 @@ Pending orders rejected at execution:
 Approved orders:
 
 - Create `RISK_APPROVED_ORDER`.
-- Execute through `PaperBrokerAdapter`.
+- Execute through Alpaca when connected, otherwise `PaperBrokerAdapter`.
 - Create `TRADE_EXECUTED`.
 - Update portfolio, positions, orders, trades, notifications, and analytics inputs.

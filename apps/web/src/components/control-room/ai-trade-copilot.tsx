@@ -146,8 +146,8 @@ export function AITradeCopilot({
           >
             <p className="font-medium">You do not pick symbols or strategies.</p>
             <p className="mt-1 text-emerald-100/80">
-              Dondie scans its universe, chooses setups, and places paper orders on AUTOPILOT. Fund and
-              withdraw only in Alpaca.
+              Dondie scans its universe, chooses setups, and places orders in your Alpaca paper account
+              on AUTOPILOT. Fund and withdraw only in Alpaca.
             </p>
           </div>
 

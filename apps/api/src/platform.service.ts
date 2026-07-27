@@ -1743,7 +1743,11 @@ export class PlatformService implements OnModuleInit {
       { id: "strategy", label: "Evaluating strategy", status: "pending" },
       { id: "rank", label: "Ranking signals", status: "pending" },
       { id: "risk", label: "Running risk validation", status: "pending" },
-      { id: "order", label: "Creating paper order", status: "pending" },
+      {
+        id: "order",
+        label: this.usesAlpacaExecution(userId) ? "Submitting Alpaca order" : "Creating paper order",
+        status: "pending"
+      },
       { id: "portfolio", label: "Updating portfolio", status: "pending" }
     ];
 
@@ -1824,9 +1828,9 @@ export class PlatformService implements OnModuleInit {
       );
     }
 
-    // Internal paper AUTO fills are available 24/7. Only live Alpaca waits for the cash session.
-    if (settings.marketHoursOnly && this.hasLiveAlpacaCredentials(userId) && !isUsEquityMarketOpen()) {
-      return skipAutomation("Market closed — live Alpaca auto-execution waits for the US equity cash session.", 1);
+    // Alpaca paper and live both follow the US equity cash session when marketHoursOnly is on.
+    if (settings.marketHoursOnly && this.usesAlpacaExecution(userId) && !isUsEquityMarketOpen()) {
+      return skipAutomation("Market closed — Alpaca auto-execution waits for the US equity cash session.", 1);
     }
 
     const autoOrdersToday = this.listOrders(userId).filter(
@@ -2134,20 +2138,11 @@ export class PlatformService implements OnModuleInit {
     const orderType = readEnum<OrderType>(body, "orderType", ["MARKET", "LIMIT", "STOP"], "MARKET");
     const mode = readEnum<TradingMode>(body, "mode", ["MANUAL", "SEMI_AUTO", "AUTO"], "MANUAL");
     const requestedPrice = readNumber(body, "price", { required: true, min: 0.01 });
-    // AUTO paper path fills on the internal broker so portfolio/trades update immediately.
-    // Live Alpaca keeps the external order route. Cash-only sync avoids wiping local paper positions.
-    const preferInternalPaper = mode === "AUTO" && !this.hasLiveAlpacaCredentials(userId);
+    // When Alpaca is connected (paper or live), every mode — including AUTO — submits there.
+    // Internal PaperBrokerAdapter is only for users without Alpaca credentials.
+    const preferInternalPaper = !this.usesAlpacaExecution(userId);
     if (preferInternalPaper) {
-      await this.ensurePaperBrokerAccount(userId, { fundIfEmpty: !this.usesAlpacaExecution(userId) });
-      // Seed buying power from Alpaca paper once; afterward the local paper ledger owns cash/positions.
-      if (this.usesAlpacaExecution(userId)) {
-        const portfolio = this.getPrimaryPortfolio(userId);
-        const hasLocalBook =
-          this.listTrades(userId).length > 0 || this.listPositions(userId).length > 0;
-        if (!hasLocalBook && portfolio.cashBalance <= 0) {
-          await this.syncAlpacaCashOnly(userId);
-        }
-      }
+      await this.ensurePaperBrokerAccount(userId, { fundIfEmpty: true });
     } else {
       await this.syncAlpacaState(userId);
     }
@@ -2945,15 +2940,6 @@ export class PlatformService implements OnModuleInit {
     return Boolean(account?.encryptedApiKey && account.encryptedSecret);
   }
 
-  private hasLiveAlpacaCredentials(userId: UUID): boolean {
-    const account = this.getAlpacaBrokerAccount(userId);
-    return Boolean(
-      account?.encryptedApiKey &&
-        account.encryptedSecret &&
-        account.environment === "LIVE"
-    );
-  }
-
   /**
    * Ensure an internal PAPER broker exists. Optionally seed demo cash when Alpaca is absent
    * so risk sizing and paper fills can run end-to-end.
@@ -3042,34 +3028,6 @@ export class PlatformService implements OnModuleInit {
       adapter: this.paperBroker,
       account: paperAccount
     };
-  }
-
-  /** Sync Alpaca equity/cash into the local portfolio without replacing local paper positions. */
-  async syncAlpacaCashOnly(userId: UUID): Promise<void> {
-    const account = this.getAlpacaBrokerAccount(userId);
-    if (!account?.encryptedApiKey || !account.encryptedSecret) {
-      return;
-    }
-    const credentials: BrokerCredentials = {
-      apiKey: this.brokerCredentials.decrypt(account.encryptedApiKey),
-      secret: this.brokerCredentials.decrypt(account.encryptedSecret),
-      environment: account.environment ?? "PAPER"
-    };
-    const alpacaAccount = await this.alpacaBroker.getAccount(credentials);
-    const portfolio = this.getPrimaryPortfolio(userId);
-    const localUnrealized = this.listPositions(userId).reduce(
-      (sum, position) => sum + position.unrealizedPnl,
-      0
-    );
-    const updatedPortfolio: Portfolio = {
-      ...portfolio,
-      portfolioName: credentials.environment === "LIVE" ? "Alpaca Live Account" : "Alpaca Paper Account",
-      portfolioValue: Number(alpacaAccount.equity.toFixed(2)),
-      cashBalance: Number(alpacaAccount.cash.toFixed(2)),
-      unrealizedPnl: Number(localUnrealized.toFixed(2))
-    };
-    this.store.portfolios.set(updatedPortfolio.id, updatedPortfolio);
-    await this.platformRepository.persistPortfolio(updatedPortfolio);
   }
 
   async syncAlpacaState(userId: UUID): Promise<void> {
