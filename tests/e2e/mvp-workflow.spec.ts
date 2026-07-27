@@ -123,7 +123,7 @@ test.describe.serial("Dondie survival agent platform", () => {
       await clickPrimaryTab(page, "tab-trade");
       await expect(page.getByTestId("trade-view")).toBeVisible();
       await page.getByTestId("execute-manual-trade").click();
-      await expect(page.getByTestId("workflow-notice")).toContainText("Manual paper order filled");
+      await expect(page.getByTestId("workflow-notice")).toContainText(/Manual order filled/i);
     });
 
     await test.step("Generate signal", async () => {
