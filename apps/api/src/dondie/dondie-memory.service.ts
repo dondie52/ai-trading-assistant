@@ -67,9 +67,7 @@ export class DondieMemoryService {
         ? `${result.brain} brain skipped on ${result.symbol}: ${reasonCode ?? "UNKNOWN"}${
             skipDetail ? ` — ${skipDetail}` : ""
           }`
-        : result.automation.status === "EXECUTED"
-          ? `${result.brain} brain executed on ${result.symbol}: ${result.reasoning}`
-          : `${result.brain} brain ${result.automation.status.toLowerCase()} on ${result.symbol}: ${result.reasoning}`;
+        : `${result.brain} brain executed on ${result.symbol}: ${result.reasoning}`;
     const memory: DondieMemory = {
       id: randomUUID(),
       agentId: agent.id,

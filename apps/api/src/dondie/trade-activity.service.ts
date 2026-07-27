@@ -119,14 +119,16 @@ export class TradeActivityService {
         : {}),
       headline: formatActivityHeadline({
         stage: input.stage,
-        symbol: input.symbol,
-        signal: input.signal,
-        confidence: input.confidence,
-        reasonCode: input.reasonCode,
-        reason: input.reason,
-        filledQuantity: input.filledQuantity,
-        filledAveragePrice: input.filledAveragePrice,
-        triggerType: input.triggerType
+        triggerType: input.triggerType,
+        ...(input.symbol ? { symbol: input.symbol } : {}),
+        ...(input.signal ? { signal: input.signal } : {}),
+        ...(typeof input.confidence === "number" ? { confidence: input.confidence } : {}),
+        ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
+        ...(input.reason ? { reason: input.reason } : {}),
+        ...(typeof input.filledQuantity === "number" ? { filledQuantity: input.filledQuantity } : {}),
+        ...(typeof input.filledAveragePrice === "number"
+          ? { filledAveragePrice: input.filledAveragePrice }
+          : {})
       }),
       source:
         input.source ??
@@ -173,7 +175,7 @@ export class SchedulerStatusService {
   private lastOrdersFilled?: number;
   private lastErrors: string[] = [];
   private scanLocked = false;
-  private lockHolder?: string;
+  private lockHolder: string | undefined;
   private readonly orderIdempotency = new Set<string>();
   private readonly fillIdempotency = new Set<string>();
 

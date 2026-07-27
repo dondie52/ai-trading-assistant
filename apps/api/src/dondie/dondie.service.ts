@@ -948,10 +948,12 @@ export class DondieService implements OnModuleInit {
         clientOrderId: automation.execution.order.id,
         orderStatus: automation.execution.order.status,
         requestedQuantity: automation.execution.order.quantity,
-        requestedNotional:
-          typeof automation.execution.order.price === "number"
-            ? automation.execution.order.quantity * automation.execution.order.price
-            : undefined,
+        ...(typeof automation.execution.order.price === "number"
+          ? {
+              requestedNotional:
+                automation.execution.order.quantity * automation.execution.order.price
+            }
+          : {}),
         source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
       });
       if (

@@ -3522,7 +3522,7 @@ export class PlatformService implements OnModuleInit {
     return position;
   }
 
-  private updatePortfolioFromTrade(portfolio: Portfolio, order: Order, trade: Trade): Portfolio {
+  private updatePortfolioFromTrade(portfolio: Portfolio, order: Order, _trade: Trade): Portfolio {
     const cashDelta = order.side === "BUY" ? -order.price * order.quantity : order.price * order.quantity;
     const positions = this.listPositions(order.userId);
     const realizedPnl = this.getLifetimeRealizedPnl(order.userId);

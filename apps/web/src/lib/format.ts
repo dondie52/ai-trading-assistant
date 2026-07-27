@@ -1,4 +1,15 @@
-import { formatUsd, formatUsdTooltip, normalizeSignedZero } from "@trading/shared";
+/**
+ * Currency display helpers for micro paper accounts.
+ * Keep these local to the web app so Next transpilePackages does not
+ * pull @trading/shared source (which uses .js extension re-exports).
+ */
+
+export const normalizeSignedZero = (value: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Object.is(value, -0) || value === 0 ? 0 : value;
+};
 
 export const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -8,10 +19,42 @@ export const currency = new Intl.NumberFormat("en-US", {
 
 export const formatCurrency = (
   value: number | undefined,
-  options?: { readonly microDetail?: boolean }
-): string => formatUsd(value, options);
+  options?: {
+    readonly microDetail?: boolean;
+    readonly minimumFractionDigits?: number;
+    readonly maximumFractionDigits?: number;
+  }
+): string => {
+  const raw = normalizeSignedZero(value ?? 0);
+  const abs = Math.abs(raw);
+  const microDetail = options?.microDetail ?? false;
 
-export const formatCurrencyTooltip = (value: number | undefined): string => formatUsdTooltip(value);
+  if (abs > 0 && abs < 0.005) {
+    if (microDetail) {
+      const digits = Math.max(4, options?.maximumFractionDigits ?? 4);
+      const sign = raw < 0 ? "-" : "";
+      return `${sign}$${abs.toFixed(digits)}`;
+    }
+    return raw < 0 ? "<$0.01 loss" : "<$0.01 gain";
+  }
+
+  const maximumFractionDigits = options?.maximumFractionDigits ?? (microDetail && abs < 1 ? 4 : 2);
+  const minimumFractionDigits = options?.minimumFractionDigits ?? Math.min(2, maximumFractionDigits);
+  const normalized = normalizeSignedZero(Number(raw.toFixed(maximumFractionDigits)));
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits,
+    maximumFractionDigits
+  }).format(normalized);
+};
+
+export const formatCurrencyTooltip = (value: number | undefined): string => {
+  const raw = normalizeSignedZero(value ?? 0);
+  const sign = raw < 0 ? "-" : "";
+  return `${sign}$${Math.abs(raw).toFixed(6)}`;
+};
 
 export const formatPercent = (value: number | undefined): string =>
   `${normalizeSignedZero(value ?? 0).toFixed(2)}%`;

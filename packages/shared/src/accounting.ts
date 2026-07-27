@@ -4,6 +4,7 @@
  */
 
 export interface AccountingPositionInput {
+  readonly symbol?: string;
   readonly quantity: number;
   readonly averagePrice: number;
   readonly unrealizedPnl?: number;
@@ -48,6 +49,11 @@ export const sumUnrealizedPnl = (
       }
       if (typeof position.unrealizedPnl === "number" && Number.isFinite(position.unrealizedPnl)) {
         return sum + position.unrealizedPnl;
+      }
+      // Optional mark map for callers that only have avg entry + live quote.
+      const mark = markPrices?.get((position.symbol ?? "").toUpperCase());
+      if (typeof mark === "number" && Number.isFinite(mark)) {
+        return sum + (mark - position.averagePrice) * position.quantity;
       }
       return sum;
     }, 0)
