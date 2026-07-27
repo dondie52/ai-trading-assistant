@@ -765,6 +765,41 @@ describe("platform integration", () => {
     ).toBe("ALPACA");
   });
 
+  it("hides and purges local paper trades once Alpaca is connected", async () => {
+    installAlpacaFetchMock();
+    const { platform, store } = createPlatform();
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
+    const quote = await platform.getMarketQuote(userId, "AAPL", "1m");
+    const paperFill = await platform.createOrder(userId, {
+      symbol: "AAPL",
+      side: "BUY",
+      orderType: "MARKET",
+      mode: "MANUAL",
+      quantity: 1,
+      price: quote.price,
+      stopLoss: Number((quote.price * 0.95).toFixed(2)),
+      takeProfit: Number((quote.price * 1.05).toFixed(2))
+    });
+    expect(paperFill.order.status).toBe("FILLED");
+    expect(platform.listTrades(userId).length).toBeGreaterThan(0);
+    expect(
+      platform.listBrokerAccounts(userId).find((account) => account.id === paperFill.order.brokerAccountId)
+        ?.brokerName
+    ).toBe("PAPER");
+
+    await platform.connectBroker(userId, {
+      brokerName: "ALPACA",
+      accountId: "paper-account",
+      apiKey: "validated-key",
+      secret: "validated-secret",
+      environment: "PAPER"
+    });
+
+    expect(platform.listTrades(userId)).toHaveLength(0);
+    expect(platform.listOrders(userId)).toHaveLength(0);
+    expect(platform.listPositions(userId)).toHaveLength(0);
+  });
+
   it("validates Alpaca credentials and never exposes credential material", async () => {
     const { platform, store } = createPlatform();
     const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
