@@ -2751,16 +2751,23 @@ export default function Page(): ReactElement {
                 <LabInput
                   name="startingEquity"
                   label="Starting equity"
-                  value={primaryPortfolio?.portfolioValue && primaryPortfolio.portfolioValue > 0 ? primaryPortfolio.portfolioValue : 1}
-                  step="0.01"
+                  // Keep 2dp so HTML5 step validation cannot block submit when
+                  // live portfolio equity is stored at 4dp after paper fills.
+                  value={
+                    primaryPortfolio?.portfolioValue && primaryPortfolio.portfolioValue > 0
+                      ? Number(primaryPortfolio.portfolioValue.toFixed(2))
+                      : 100_000
+                  }
+                  step="any"
+                  min="1"
                 />
-                <LabInput name="maxPositionPercent" label="Max position %" value={20} />
-                <LabInput name="fastPeriod" label="Fast period" value={10} />
-                <LabInput name="slowPeriod" label="Slow period" value={20} />
-                <LabInput name="feePerTrade" label="Fee per trade" value={1} step="0.01" />
-                <LabInput name="slippagePercent" label="Slippage %" value={0.05} step="0.01" />
-                <LabInput name="trainSize" label="Training candles" value={45} />
-                <LabInput name="testSize" label="Test candles" value={20} />
+                <LabInput name="maxPositionPercent" label="Max position %" value={20} step="any" />
+                <LabInput name="fastPeriod" label="Fast period" value={10} step="any" />
+                <LabInput name="slowPeriod" label="Slow period" value={20} step="any" />
+                <LabInput name="feePerTrade" label="Fee per trade" value={1} step="any" />
+                <LabInput name="slippagePercent" label="Slippage %" value={0.05} step="any" />
+                <LabInput name="trainSize" label="Training candles" value={45} step="any" />
+                <LabInput name="testSize" label="Test candles" value={20} step="any" />
                 <button data-testid="run-backtest" type="submit" className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-violetSignal px-4 py-3 text-sm text-white sm:col-span-2">
                   <FlaskConical className="h-4 w-4" aria-hidden="true" />
                   Run Backtest
@@ -3055,12 +3062,14 @@ function LabInput({
   name,
   label,
   value,
-  step = "1"
+  step = "any",
+  min = "0"
 }: {
   readonly name: string;
   readonly label: string;
   readonly value: number;
   readonly step?: string;
+  readonly min?: string;
 }): ReactElement {
   return (
     <label className="text-sm text-slate-300">
@@ -3068,7 +3077,7 @@ function LabInput({
       <input
         name={name}
         type="number"
-        min="0"
+        min={min}
         step={step}
         defaultValue={value}
         className="mt-2 w-full rounded-md border border-line bg-surface px-3 py-2 text-white"
