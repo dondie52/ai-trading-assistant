@@ -155,6 +155,10 @@ export class PrismaPlatformRepository {
         cashBalance: Number(portfolio.cashBalance),
         realizedPnl: Number(portfolio.realizedPnl),
         unrealizedPnl: Number(portfolio.unrealizedPnl),
+        capitalDeployed: Number((portfolio as { capitalDeployed?: unknown }).capitalDeployed ?? 0),
+        marketValue: Number((portfolio as { marketValue?: unknown }).marketValue ?? 0),
+        costBasis: Number((portfolio as { costBasis?: unknown }).costBasis ?? 0),
+        dailyPnl: Number((portfolio as { dailyPnl?: unknown }).dailyPnl ?? 0),
         createdAt: portfolio.createdAt.toISOString()
       });
     }
@@ -243,6 +247,15 @@ export class PrismaPlatformRepository {
         quantity: Number(position.quantity),
         averagePrice: Number(position.averagePrice),
         unrealizedPnl: Number(position.unrealizedPnl),
+        ...((position as { assetId?: string | null }).assetId
+          ? { assetId: String((position as { assetId?: string | null }).assetId) }
+          : {}),
+        ...((position as { costBasis?: unknown }).costBasis != null
+          ? { costBasis: Number((position as { costBasis?: unknown }).costBasis) }
+          : {}),
+        ...((position as { marketValue?: unknown }).marketValue != null
+          ? { marketValue: Number((position as { marketValue?: unknown }).marketValue) }
+          : {}),
         updatedAt: position.updatedAt.toISOString()
       });
     }
@@ -558,13 +571,33 @@ export class PrismaPlatformRepository {
         quantity: position.quantity,
         averagePrice: position.averagePrice,
         unrealizedPnl: position.unrealizedPnl,
+        assetId: position.assetId ?? null,
+        costBasis: position.costBasis ?? null,
+        marketValue: position.marketValue ?? null,
         updatedAt: toDate(position.updatedAt)
       },
       update: {
+        // Keep the durable row id stable; only refresh marks/qty.
         quantity: position.quantity,
         averagePrice: position.averagePrice,
         unrealizedPnl: position.unrealizedPnl,
+        assetId: position.assetId ?? null,
+        costBasis: position.costBasis ?? null,
+        marketValue: position.marketValue ?? null,
         updatedAt: toDate(position.updatedAt)
+      }
+    });
+  }
+
+  async deletePositionsForUserExcept(userId: UUID, symbols: readonly string[]): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+    const keep = symbols.map((symbol) => symbol.toUpperCase());
+    await this.prisma.client().position.deleteMany({
+      where: {
+        userId,
+        ...(keep.length > 0 ? { symbol: { notIn: keep } } : {})
       }
     });
   }
@@ -718,6 +751,10 @@ export class PrismaPlatformRepository {
         cashBalance: portfolio.cashBalance,
         realizedPnl: portfolio.realizedPnl,
         unrealizedPnl: portfolio.unrealizedPnl,
+        capitalDeployed: portfolio.capitalDeployed ?? 0,
+        marketValue: portfolio.marketValue ?? 0,
+        costBasis: portfolio.costBasis ?? 0,
+        dailyPnl: portfolio.dailyPnl ?? 0,
         createdAt: toDate(portfolio.createdAt)
       },
       update: {
@@ -725,7 +762,11 @@ export class PrismaPlatformRepository {
         portfolioValue: portfolio.portfolioValue,
         cashBalance: portfolio.cashBalance,
         realizedPnl: portfolio.realizedPnl,
-        unrealizedPnl: portfolio.unrealizedPnl
+        unrealizedPnl: portfolio.unrealizedPnl,
+        capitalDeployed: portfolio.capitalDeployed ?? 0,
+        marketValue: portfolio.marketValue ?? 0,
+        costBasis: portfolio.costBasis ?? 0,
+        dailyPnl: portfolio.dailyPnl ?? 0
       }
     });
   }

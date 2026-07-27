@@ -1,7 +1,6 @@
 /**
  * Currency display helpers for micro paper accounts.
- * Keep these local to the web app so Next transpilePackages does not
- * pull @trading/shared source (which uses .js extension re-exports).
+ * Never render negative zero; keep sub-cent P&L visible in detail views.
  */
 
 export const normalizeSignedZero = (value: number): number => {
@@ -11,24 +10,19 @@ export const normalizeSignedZero = (value: number): number => {
   return Object.is(value, -0) || value === 0 ? 0 : value;
 };
 
-export const currency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 2
-});
-
-export const formatCurrency = (
+export const formatUsd = (
   value: number | undefined,
   options?: {
-    readonly microDetail?: boolean;
     readonly minimumFractionDigits?: number;
     readonly maximumFractionDigits?: number;
+    readonly microDetail?: boolean;
   }
 ): string => {
   const raw = normalizeSignedZero(value ?? 0);
   const abs = Math.abs(raw);
   const microDetail = options?.microDetail ?? false;
 
+  // Values that round to zero at 2dp but are non-zero: show detail or compact loss/gain.
   if (abs > 0 && abs < 0.005) {
     if (microDetail) {
       const digits = Math.max(4, options?.maximumFractionDigits ?? 4);
@@ -50,40 +44,8 @@ export const formatCurrency = (
   }).format(normalized);
 };
 
-export const formatCurrencyTooltip = (value: number | undefined): string => {
+export const formatUsdTooltip = (value: number | undefined): string => {
   const raw = normalizeSignedZero(value ?? 0);
   const sign = raw < 0 ? "-" : "";
   return `${sign}$${Math.abs(raw).toFixed(6)}`;
-};
-
-export const formatPercent = (value: number | undefined): string =>
-  `${normalizeSignedZero(value ?? 0).toFixed(2)}%`;
-
-/** Share qty — keep sub-cent lots visible (Alpaca paper underfunding used to show 0.00). */
-export const formatQty = (value: number | undefined): string => {
-  const qty = value ?? 0;
-  if (Math.abs(qty) > 0 && Math.abs(qty) < 0.01) {
-    return qty.toFixed(4);
-  }
-  if (Number.isInteger(qty)) {
-    return String(qty);
-  }
-  return qty.toFixed(4).replace(/\.?0+$/, "");
-};
-
-export const maskAccountId = (accountId: string): string => {
-  if (accountId.length <= 8) {
-    return accountId;
-  }
-  return `${accountId.slice(0, 4)}…${accountId.slice(-4)}`;
-};
-
-export const insufficientHistoryLabel = (closedTrades: number, minimum = 5): string => {
-  if (closedTrades <= 0) {
-    return "Not enough trade history";
-  }
-  if (closedTrades < minimum) {
-    return `Available after ${minimum} closed trades`;
-  }
-  return "";
 };

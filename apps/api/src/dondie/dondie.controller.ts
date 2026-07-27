@@ -76,6 +76,17 @@ export class DondieController {
     return ok(await this.dondie.resume(user.sub));
   }
 
+  @Get("scheduler")
+  scheduler(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
+    void user;
+    return ok(this.dondie.getSchedulerStatus());
+  }
+
+  @Get("activities")
+  activities(@CurrentUser() user: AuthenticatedPrincipal): ReturnType<typeof ok> {
+    return ok(this.dondie.listTradeActivities(user.sub));
+  }
+
   @Post("run")
   async run(@CurrentUser() user: AuthenticatedPrincipal, @Body() body: unknown): Promise<ReturnType<typeof ok>> {
     return ok(await this.dondie.run(user.sub, body));

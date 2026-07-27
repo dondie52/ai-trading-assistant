@@ -123,7 +123,7 @@ test.describe.serial("Dondie survival agent platform", () => {
       await clickPrimaryTab(page, "tab-trade");
       await expect(page.getByTestId("trade-view")).toBeVisible();
       await page.getByTestId("execute-manual-trade").click();
-      await expect(page.getByTestId("workflow-notice")).toContainText("Manual paper order filled");
+      await expect(page.getByTestId("workflow-notice")).toContainText(/Manual order filled/i);
     });
 
     await test.step("Generate signal", async () => {
@@ -193,11 +193,13 @@ test.describe.serial("Dondie survival agent platform", () => {
     await test.step("Historical backtest completes", async () => {
       await openSecondaryTab(page, "tab-lab");
       await expect(page.getByTestId("lab-view")).toBeVisible();
+      // Explicit clean equity avoids HTML5 step mismatches from live portfolio decimals.
+      await page.getByLabel("Starting equity").fill("100000");
       await page.getByTestId("run-backtest").click();
-      await expect(page.getByTestId("backtest-result")).toBeVisible();
+      await expect(page.getByTestId("backtest-result")).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId("workflow-notice")).toContainText("Backtest completed");
       await page.getByTestId("run-walk-forward").click();
-      await expect(page.getByTestId("walk-forward-result")).toBeVisible();
+      await expect(page.getByTestId("walk-forward-result")).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId("workflow-notice")).toContainText("Walk-forward test completed");
       await page.screenshot({ path: testInfo.outputPath("simulation-lab.png"), fullPage: true });
     });

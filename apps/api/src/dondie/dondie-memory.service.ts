@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { DondieAgent, DondieMemory, DondieRunResult, JsonObject, UUID } from "@trading/types";
+import { classifySkipReason } from "@trading/shared";
 import { PlatformStore } from "../store/platform.store.js";
 import { dondieConfig } from "./dondie.config.js";
 import { DondieRepository } from "./dondie.repository.js";
@@ -23,6 +24,12 @@ export class DondieMemoryService {
   evaluateRun(result: DondieRunResult): { readonly score: number; readonly evaluation: JsonObject } {
     const executed = result.automation.status === "EXECUTED";
     const confidence = result.automation.signal.confidenceScore;
+    const reasonCode =
+      result.reasonCode ??
+      result.automation.reasonCode ??
+      (result.automation.status === "SKIPPED"
+        ? classifySkipReason(result.automation.reason ?? result.reasoning)
+        : undefined);
     const base = executed ? 55 : 35;
     const confidenceBonus = Math.min(30, Math.round(confidence / 4));
     const walletBonus = result.walletBalance >= dondieConfig.standardTierMinBalance ? 10 : 0;
@@ -36,7 +43,11 @@ export class DondieMemoryService {
         symbol: result.symbol,
         automationStatus: result.automation.status,
         walletBalance: result.walletBalance,
-        score
+        score,
+        ...(reasonCode ? { reasonCode } : {}),
+        ...(result.triggerType ? { triggerType: result.triggerType } : {}),
+        ...(result.scanId ? { scanId: result.scanId } : {}),
+        ...(result.automation.reason ? { skipReason: result.automation.reason } : {})
       }
     };
   }
@@ -44,12 +55,23 @@ export class DondieMemoryService {
   async recordRun(agent: DondieAgent, result: DondieRunResult): Promise<DondieAgent> {
     const { score, evaluation } = this.evaluateRun(result);
     const weekendGig = result.brain === dondieConfig.weekendEarnBrain;
+    const reasonCode =
+      typeof evaluation.reasonCode === "string" ? evaluation.reasonCode : undefined;
+    const skipDetail =
+      result.automation.status === "SKIPPED"
+        ? result.automation.reason ?? result.reasoning
+        : result.reasoning;
+    const summary = weekendGig
+      ? `weekend crypto desk on ${result.symbol}: ${result.reasoning}`
+      : result.automation.status === "SKIPPED"
+        ? `${result.brain} brain skipped on ${result.symbol}: ${reasonCode ?? "UNKNOWN"}${
+            skipDetail ? ` — ${skipDetail}` : ""
+          }`
+        : `${result.brain} brain executed on ${result.symbol}: ${result.reasoning}`;
     const memory: DondieMemory = {
       id: randomUUID(),
       agentId: agent.id,
-      summary: weekendGig
-        ? `weekend crypto desk on ${result.symbol}: ${result.reasoning}`
-        : `${result.brain} brain ${result.automation.status.toLowerCase()} on ${result.symbol}: ${result.reasoning}`,
+      summary,
       evaluation: {
         ...evaluation,
         ...(weekendGig ? { weekendGig: true } : {})

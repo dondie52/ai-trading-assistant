@@ -442,15 +442,18 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
   }
 
   // --- Portfolio ---
-  const microStake =
-    typeof input.portfolio?.cashBalance === "number" &&
-    input.portfolio.cashBalance > 0 &&
-    input.portfolio.cashBalance <= 50;
+  const cash = input.portfolio?.cashBalance ?? 0;
+  const deployed =
+    input.portfolio?.capitalDeployed ??
+    Math.max(0, (input.portfolio?.portfolioValue ?? 0) - cash - (input.portfolio?.unrealizedPnl ?? 0));
+  const microStake = typeof input.portfolio?.cashBalance === "number" && cash > 0 && cash <= 50 && deployed < 1;
   let portfolioAgent = buildAgent(
     "portfolio",
-    microStake ? "working" : "idle",
+    microStake || deployed > 0 ? "working" : "idle",
     microStake
-      ? `Micro stake $${input.portfolio!.cashBalance.toFixed(2)} — fractional shares`
+      ? `Micro stake cash $${cash.toFixed(2)} free · deployed $${deployed.toFixed(2)}`
+      : deployed > 0
+        ? `Invested $${deployed.toFixed(2)} · cash $${cash.toFixed(2)}`
       : openPositions.length > 0
         ? `Monitoring ${openPositions.length} open position(s)`
         : "No open positions",
@@ -459,8 +462,8 @@ export const buildOfficeWorld = (input: OfficeAdapterInput): OfficeWorld => {
       ? [
           `Value ${input.portfolio.portfolioValue.toFixed(2)}`,
           microStake
-            ? "Dondie sizes tiny lots to your real cash"
-            : `Unrealized ${input.portfolio.unrealizedPnl.toFixed(2)}`
+            ? "Cash is free buying power; invested funds are capital deployed"
+            : `Unrealized ${input.portfolio.unrealizedPnl.toFixed(4)}`
         ]
       : []
   );

@@ -14,9 +14,12 @@ import type {
   DondieRunResult,
   JsonObject,
   MarketTimeframe,
+  ScanTriggerType,
+  SchedulerStatusView,
+  TradeActivity,
   UUID
 } from "@trading/types";
-import { buildDondieLifestyleWorld, isUsEquityMarketOpen, isUsEquityWeekend } from "@trading/shared";
+import { buildDondieLifestyleWorld, classifySkipReason, isUsEquityMarketOpen, isUsEquityWeekend } from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
 import {
@@ -31,6 +34,7 @@ import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
 import { DondieWalletService } from "./dondie-wallet.service.js";
 import { DondieWeekendEarnService } from "./dondie-weekend-earn.service.js";
+import { SchedulerStatusService, TradeActivityService } from "./trade-activity.service.js";
 
 const isoNow = (): string => new Date().toISOString();
 const roundUsd = (value: number): number => Number(value.toFixed(4));
@@ -90,7 +94,9 @@ export class DondieService implements OnModuleInit {
     @Inject(DondieScheduler) private readonly scheduler: DondieScheduler,
     @Inject(DondieWalletService) private readonly wallet: DondieWalletService,
     @Inject(DondieMemoryService) private readonly memory: DondieMemoryService,
-    @Inject(DondieWeekendEarnService) private readonly weekendEarn: DondieWeekendEarnService
+    @Inject(DondieWeekendEarnService) private readonly weekendEarn: DondieWeekendEarnService,
+    @Inject(TradeActivityService) private readonly activities: TradeActivityService,
+    @Inject(SchedulerStatusService) private readonly schedulerStatus: SchedulerStatusService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -366,6 +372,14 @@ export class DondieService implements OnModuleInit {
     return updated;
   }
 
+  getSchedulerStatus(): SchedulerStatusView {
+    return this.schedulerStatus.getStatus();
+  }
+
+  listTradeActivities(userId: UUID, limit = 100): readonly TradeActivity[] {
+    return this.activities.listForUser(userId, limit);
+  }
+
   async run(userId: UUID, bodyValue: unknown = {}): Promise<DondieRunResult> {
     const agent = this.requireAgent(userId);
     if (agent.status !== "ACTIVE") {
@@ -378,13 +392,73 @@ export class DondieService implements OnModuleInit {
     const body = asRecord(bodyValue);
     const timeframe = (readString(body, "timeframe") || "1h") as MarketTimeframe;
     const requestedSymbol = readString(body, "symbol");
-
-    // No symbol from the human → agent scans its own universe.
-    if (!requestedSymbol) {
-      return this.runUniverseScan(userId, agent, timeframe);
+    const triggerType: ScanTriggerType = "MANUAL_FORCE_SCAN";
+    const scanId = randomUUID();
+    const correlationId = randomUUID();
+    const lockHolder = `manual:${userId}:${scanId}`;
+    if (!this.schedulerStatus.tryAcquireScanLock(lockHolder)) {
+      this.activities.record({
+        userId,
+        agentId: agent.id,
+        scanId,
+        correlationId,
+        stage: "SIGNAL_SKIPPED",
+        triggerType,
+        reasonCode: "SCHEDULER_LOCKED",
+        reason: "A scan is already running — manual and scheduled scans cannot overlap.",
+        source: "manual"
+      });
+      throw new BadRequestException({
+        code: "SCHEDULER_LOCKED",
+        message: "A scan is already running. Wait for it to finish before forcing another."
+      });
     }
 
-    return this.runForSymbol(userId, agent, requestedSymbol.toUpperCase(), timeframe);
+    const started = Date.now();
+    try {
+      this.activities.record({
+        userId,
+        agentId: agent.id,
+        scanId,
+        correlationId,
+        stage: "SCAN_STARTED",
+        triggerType,
+        source: "manual"
+      });
+
+      // No symbol from the human → agent scans its own universe.
+      const result = !requestedSymbol
+        ? await this.runUniverseScan(userId, agent, timeframe, {
+            triggerType,
+            scanId,
+            correlationId
+          })
+        : await this.runForSymbol(userId, agent, requestedSymbol.toUpperCase(), timeframe, {
+            triggerType,
+            scanId,
+            correlationId
+          });
+
+      this.schedulerStatus.recordScanResult({
+        triggerType,
+        durationMs: Date.now() - started,
+        result: result.automation.status,
+        symbolsEvaluated: requestedSymbol ? 1 : this.resolveSymbolUniverse(userId, agent).length,
+        signalsGenerated: 1,
+        ordersSubmitted: result.automation.status === "EXECUTED" ? 1 : 0,
+        ordersFilled:
+          result.automation.execution?.order.status === "FILLED" ||
+          result.automation.execution?.order.status === "PARTIALLY_FILLED"
+            ? 1
+            : 0,
+        nextExpectedScanAt: new Date(
+          Date.now() + Math.max(60_000, dondieConfig.defaultScheduleMinutes * 60_000)
+        ).toISOString()
+      });
+      return result;
+    } finally {
+      this.schedulerStatus.releaseScanLock(lockHolder);
+    }
   }
 
   async runScheduled(userId: UUID): Promise<void> {
@@ -396,6 +470,9 @@ export class DondieService implements OnModuleInit {
     if (settings.emergencyStop || settings.runtimeState === "PAUSED" || settings.mode === "MANUAL") {
       return;
     }
+    const triggerType: ScanTriggerType = "SCHEDULED";
+    const scanId = randomUUID();
+    const correlationId = randomUUID();
     try {
       if (isDondieFullPower()) {
         agent = await this.syncFullPowerAutonomy(userId, agent);
@@ -408,13 +485,35 @@ export class DondieService implements OnModuleInit {
       if (settings.mode !== "AUTOPILOT") {
         return;
       }
-      await this.runUniverseScan(userId, agent, "1h");
+      this.activities.record({
+        userId,
+        agentId: agent.id,
+        scanId,
+        correlationId,
+        stage: "SCAN_STARTED",
+        triggerType,
+        source: "scheduled"
+      });
+      await this.runUniverseScan(userId, agent, "1h", { triggerType, scanId, correlationId });
     } catch (error) {
       // Advance lastRunAt + audit so silent schedule failures are visible and not tight-looped.
       const now = isoNow();
       const updated: DondieAgent = { ...agent, lastRunAt: now, updatedAt: now };
       this.store.dondieAgents.set(agent.id, updated);
       await this.repository.persistAgent(updated);
+      const reason = errorMessage(error);
+      const reasonCode = classifySkipReason(reason);
+      this.activities.record({
+        userId,
+        agentId: agent.id,
+        scanId,
+        correlationId,
+        stage: "ERROR",
+        triggerType,
+        reasonCode,
+        reason,
+        source: "scheduled"
+      });
       this.store.appendAudit({
         userId,
         actorUserId: userId,
@@ -423,18 +522,24 @@ export class DondieService implements OnModuleInit {
         entityId: agent.id,
         metadata: {
           scheduled: true,
+          triggerType,
+          scanId,
           automationStatus: "SKIPPED",
-          error: errorMessage(error)
+          reasonCode,
+          error: reason
         }
       });
       const memory = {
         id: randomUUID(),
         agentId: agent.id,
-        summary: `scheduler skipped on UNIVERSE: ${errorMessage(error)}`,
+        summary: `scheduler skipped on UNIVERSE: ${reasonCode} — ${reason}`,
         evaluation: {
           scheduled: true,
+          triggerType,
+          scanId,
           automationStatus: "SKIPPED",
-          error: errorMessage(error),
+          reasonCode,
+          error: reason,
           score: 0
         },
         createdAt: now
@@ -641,7 +746,16 @@ export class DondieService implements OnModuleInit {
   private async runUniverseScan(
     userId: UUID,
     agent: DondieAgent,
-    timeframe: MarketTimeframe
+    timeframe: MarketTimeframe,
+    context: {
+      readonly triggerType: ScanTriggerType;
+      readonly scanId: UUID;
+      readonly correlationId: UUID;
+    } = {
+      triggerType: "SCHEDULED",
+      scanId: randomUUID(),
+      correlationId: randomUUID()
+    }
   ): Promise<DondieRunResult> {
     if (this.weekendEarn.isWeekendEarnWindow()) {
       return this.runWeekendSideHustle(userId, agent);
@@ -656,10 +770,22 @@ export class DondieService implements OnModuleInit {
 
     for (const symbol of symbols) {
       if (tradesRemaining <= 0) {
+        this.activities.record({
+          userId,
+          agentId: agent.id,
+          scanId: context.scanId,
+          correlationId: context.correlationId,
+          stage: "SIGNAL_SKIPPED",
+          triggerType: context.triggerType,
+          symbol,
+          reasonCode: "MAX_TRADES_PER_DAY",
+          reason: `Max trades per day reached (${settings.maxTradesPerDay}).`,
+          source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+        });
         break;
       }
       try {
-        const result = await this.runForSymbol(userId, workingAgent, symbol, timeframe);
+        const result = await this.runForSymbol(userId, workingAgent, symbol, timeframe, context);
         lastResult = result;
         workingAgent = this.requireAgent(userId);
         if (result.automation.status === "EXECUTED") {
@@ -667,6 +793,18 @@ export class DondieService implements OnModuleInit {
         }
       } catch (error) {
         failures.push(`${symbol}: ${errorMessage(error)}`);
+        this.activities.record({
+          userId,
+          agentId: agent.id,
+          scanId: context.scanId,
+          correlationId: context.correlationId,
+          stage: "ERROR",
+          triggerType: context.triggerType,
+          symbol,
+          reasonCode: classifySkipReason(errorMessage(error)),
+          reason: errorMessage(error),
+          source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+        });
       }
     }
 
@@ -688,11 +826,34 @@ export class DondieService implements OnModuleInit {
     userId: UUID,
     agent: DondieAgent,
     symbol: string,
-    timeframe: MarketTimeframe
+    timeframe: MarketTimeframe,
+    context: {
+      readonly triggerType: ScanTriggerType;
+      readonly scanId: UUID;
+      readonly correlationId: UUID;
+    } = {
+      triggerType: "SCHEDULED",
+      scanId: randomUUID(),
+      correlationId: randomUUID()
+    }
   ): Promise<DondieRunResult> {
     if (!agent.strategyId) {
       throw new BadRequestException({ code: "DONDIE_STRATEGY_REQUIRED", message: "Link a strategy to Dondie." });
     }
+
+    const portfolioBefore = this.platform.getPrimaryPortfolio(userId);
+    this.activities.record({
+      userId,
+      agentId: agent.id,
+      scanId: context.scanId,
+      correlationId: context.correlationId,
+      stage: "SYMBOL_EVALUATED",
+      triggerType: context.triggerType,
+      symbol,
+      cashBefore: portfolioBefore.cashBalance,
+      buyingPowerBefore: portfolioBefore.cashBalance,
+      source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+    });
 
     let activeAgent = agent;
     let brainRun = await this.brain.plan(userId, activeAgent, agent.strategyId, symbol, timeframe);
@@ -707,23 +868,133 @@ export class DondieService implements OnModuleInit {
     }
     const plan = brainRun.plan;
 
+    this.activities.record({
+      userId,
+      agentId: agent.id,
+      scanId: context.scanId,
+      correlationId: context.correlationId,
+      stage: "SIGNAL_GENERATED",
+      triggerType: context.triggerType,
+      symbol,
+      signal: brainRun.signal.signalType,
+      confidence: brainRun.signal.confidenceScore,
+      decision: plan.action,
+      source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+    });
+
+    const orderIntentKey = `${userId}:${symbol}:${brainRun.signal.id}:${context.scanId}`;
     // Reuse the brain's signal — never regenerate, or BUY/SELL history can diverge from the trade path.
     const automation =
       plan.action === "EXECUTE"
-        ? await this.platform.runAutomation(userId, {
-            strategyId: agent.strategyId,
-            symbol,
-            timeframe,
-            signalId: brainRun.signal.id
-          })
+        ? this.schedulerStatus.claimOrderIntent(orderIntentKey)
+          ? await this.platform.runAutomation(userId, {
+              strategyId: agent.strategyId,
+              symbol,
+              timeframe,
+              signalId: brainRun.signal.id,
+              idempotencyKey: orderIntentKey
+            })
+          : {
+              status: "SKIPPED" as const,
+              mode: "AUTO" as const,
+              strategyId: agent.strategyId,
+              symbol,
+              signal: brainRun.signal,
+              reason: "Duplicate order intent blocked by idempotency lock.",
+              reasonCode: "ORDER_ALREADY_PENDING" as const
+            }
         : {
             status: "SKIPPED" as const,
             mode: "AUTO" as const,
             strategyId: agent.strategyId,
             symbol,
             signal: brainRun.signal,
-            reason: plan.reasoning
+            reason: plan.reasoning,
+            reasonCode: classifySkipReason(plan.reasoning)
           };
+
+    if (automation.status === "SKIPPED") {
+      const reasonCode =
+        automation.reasonCode ?? classifySkipReason(automation.reason ?? plan.reasoning);
+      this.activities.record({
+        userId,
+        agentId: agent.id,
+        scanId: context.scanId,
+        correlationId: context.correlationId,
+        stage: "SIGNAL_SKIPPED",
+        triggerType: context.triggerType,
+        symbol,
+        signal: brainRun.signal.signalType,
+        confidence: brainRun.signal.confidenceScore,
+        decision: "SKIP",
+        reasonCode,
+        reason: automation.reason ?? plan.reasoning,
+        cashBefore: portfolioBefore.cashBalance,
+        cashAfter: this.platform.getPrimaryPortfolio(userId).cashBalance,
+        source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+      });
+    } else if (automation.execution) {
+      this.activities.record({
+        userId,
+        agentId: agent.id,
+        scanId: context.scanId,
+        correlationId: context.correlationId,
+        stage: "ORDER_SUBMITTED",
+        triggerType: context.triggerType,
+        symbol,
+        signal: brainRun.signal.signalType,
+        confidence: brainRun.signal.confidenceScore,
+        decision: "EXECUTE",
+        clientOrderId: automation.execution.order.id,
+        orderStatus: automation.execution.order.status,
+        requestedQuantity: automation.execution.order.quantity,
+        ...(typeof automation.execution.order.price === "number"
+          ? {
+              requestedNotional:
+                automation.execution.order.quantity * automation.execution.order.price
+            }
+          : {}),
+        source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+      });
+      if (
+        automation.execution.order.status === "FILLED" ||
+        automation.execution.order.status === "PARTIALLY_FILLED"
+      ) {
+        const fillKey = `${automation.execution.order.id}:${automation.execution.order.status}:${automation.execution.order.quantity}`;
+        if (this.schedulerStatus.claimFillEvent(fillKey)) {
+          this.activities.record({
+            userId,
+            agentId: agent.id,
+            scanId: context.scanId,
+            correlationId: context.correlationId,
+            stage: "ORDER_FILLED",
+            triggerType: context.triggerType,
+            symbol,
+            clientOrderId: automation.execution.order.id,
+            orderStatus: automation.execution.order.status,
+            filledQuantity: automation.execution.order.quantity,
+            filledAveragePrice: automation.execution.order.price,
+            cashBefore: portfolioBefore.cashBalance,
+            cashAfter: automation.execution.portfolio?.cashBalance ?? this.platform.getPrimaryPortfolio(userId).cashBalance,
+            source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+          });
+          if (automation.execution.position) {
+            this.activities.record({
+              userId,
+              agentId: agent.id,
+              scanId: context.scanId,
+              correlationId: context.correlationId,
+              stage: "POSITION_OPENED",
+              triggerType: context.triggerType,
+              symbol,
+              filledQuantity: automation.execution.position.quantity,
+              filledAveragePrice: automation.execution.position.averagePrice,
+              source: context.triggerType === "MANUAL_FORCE_SCAN" ? "manual" : "scheduled"
+            });
+          }
+        }
+      }
+    }
 
     let updatedAgent: DondieAgent = {
       ...activeAgent,
@@ -748,7 +1019,10 @@ export class DondieService implements OnModuleInit {
         symbol,
         brain: brainRun.brain,
         plan: plan as unknown as JsonObject,
-        automationStatus: automation.status
+        automationStatus: automation.status,
+        triggerType: context.triggerType,
+        scanId: context.scanId,
+        reasonCode: automation.reasonCode ?? null
       }
     });
 
@@ -760,7 +1034,15 @@ export class DondieService implements OnModuleInit {
       reasoning: plan.reasoning,
       automation,
       walletBalance: updatedAgent.walletBalance,
-      ranAt: updatedAgent.lastRunAt!
+      ranAt: updatedAgent.lastRunAt!,
+      scanId: context.scanId,
+      correlationId: context.correlationId,
+      triggerType: context.triggerType,
+      ...(automation.reasonCode
+        ? { reasonCode: automation.reasonCode }
+        : automation.status === "SKIPPED"
+          ? { reasonCode: classifySkipReason(automation.reason ?? plan.reasoning) }
+          : {})
     };
     await this.memory.recordRun(updatedAgent, result);
     return result;
