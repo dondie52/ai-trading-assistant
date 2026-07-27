@@ -173,7 +173,7 @@ export function AITradeCopilot({
                   : "Waiting for first scheduled scan"}
               </p>
               <p className="mt-1 text-xs text-slate-400">
-                Runs on the server — closing this tab does not stop AUTOPILOT.
+                Runs on the server via the in-process scheduler and external cron keepalive — closing this tab does not stop AUTOPILOT while the API worker is awake.
               </p>
             </div>
           </div>

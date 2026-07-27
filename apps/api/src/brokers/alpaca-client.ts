@@ -13,9 +13,11 @@ export interface AlpacaAccount {
 
 export interface AlpacaPosition {
   readonly symbol: string;
+  readonly assetId?: string;
   readonly quantity: number;
   readonly averagePrice: number;
   readonly marketValue: number;
+  readonly costBasis: number;
   readonly unrealizedPnl: number;
 }
 
@@ -124,9 +126,11 @@ export const fetchAlpacaPositions = async (
   const payload = await tradingFetch<readonly Record<string, unknown>[]>(credentials, "/v2/positions");
   return payload.map((position) => ({
     symbol: String(position.symbol ?? "").toUpperCase(),
+    assetId: position.asset_id ? String(position.asset_id) : undefined,
     quantity: parseNumber(position.qty),
     averagePrice: parseNumber(position.avg_entry_price),
     marketValue: parseNumber(position.market_value),
+    costBasis: parseNumber(position.cost_basis),
     unrealizedPnl: parseNumber(position.unrealized_pl)
   }));
 };

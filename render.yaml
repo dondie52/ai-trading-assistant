@@ -2,9 +2,11 @@
 # Dashboard: https://dashboard.render.com/blueprints/new?repo=https://github.com/dondie52/ai-trading-assistant
 #
 # Autopilot does NOT depend on the browser tab.
-# Free web services sleep after ~15m idle; overnight runs are driven by:
-#   GitHub Actions → POST /api/v1/internal/dondie/tick (see .github/workflows/render-api-keepalive.yml)
-# Set the same CRON_SECRET on this service and as a GitHub Actions repository secret.
+# Durable wake paths (browser closed):
+#   1. In-process DondieScheduler while the web service is awake
+#   2. Render cron → POST /api/v1/internal/dondie/tick (this file)
+#   3. GitHub Actions keepalive (see .github/workflows/render-api-keepalive.yml)
+# Set the same CRON_SECRET on the web service, cron job, and GitHub Actions secret.
 services:
   - type: web
     name: dondie-api
@@ -55,3 +57,38 @@ services:
         value: "true"
       - key: CRON_SECRET
         sync: false
+
+  # Durable scheduled tick — does not require a browser session.
+  # Wakes the free web service and runs overdue AUTOPILOT agents.
+  - type: cron
+    name: dondie-autopilot-tick
+    runtime: node
+    plan: starter
+    region: frankfurt
+    rootDir: .
+    schedule: "*/12 * * * *"
+    buildCommand: echo "cron tick uses curl only"
+    startCommand: |
+      set -euo pipefail
+      HEALTH_URL="${RENDER_API_HEALTH_URL:-https://dondie-api.onrender.com/api/v1/health}"
+      TICK_URL="${RENDER_API_TICK_URL:-https://dondie-api.onrender.com/api/v1/internal/dondie/tick}"
+      for attempt in 1 2 3 4 5; do
+        code=$(curl -sS -o /tmp/health.json -w "%{http_code}" --max-time 90 "$HEALTH_URL" || echo 000)
+        if [ "$code" = "200" ]; then break; fi
+        sleep 10
+      done
+      test "${code:-000}" = "200"
+      test -n "${CRON_SECRET:-}"
+      curl -sS --fail-with-body --max-time 180 -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Cron-Secret: ${CRON_SECRET}" \
+        "$TICK_URL"
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: RENDER_API_HEALTH_URL
+        sync: false
+      - key: RENDER_API_TICK_URL
+        sync: false
+      - key: ALPACA_ENVIRONMENT
+        value: PAPER

@@ -81,7 +81,7 @@ import { EmptyLine, MetricCard, Panel, SmallStat, StatusPill } from "../componen
 import { ApiError, REALTIME_BASE_URL, apiFetch, apiFetchPage } from "../lib/api";
 import { signInWithSupabase, signOutSupabase } from "../lib/auth";
 import { consumeAuthFailureMessage } from "../lib/auth-session";
-import { formatCurrency, formatPercent, formatQty, insufficientHistoryLabel } from "../lib/format";
+import { formatCurrency, formatCurrencyTooltip, formatPercent, formatQty, insufficientHistoryLabel } from "../lib/format";
 import { type OrderDraft, buildOrderDraftFromSignal } from "../lib/order-draft";
 import {
   formatRiskResultMessage,
@@ -228,7 +228,9 @@ const refreshableQueryKeys = [
   ["dondie"],
   ["dondie-wallet"],
   ["dondie-memories"],
-  ["dondie-lifestyle"]
+  ["dondie-lifestyle"],
+  ["dondie-scheduler"],
+  ["dondie-activities"]
 ] as const;
 
 const normalizeDraftCalculations = (draft: OrderDraft): OrderDraft => {
@@ -455,6 +457,19 @@ export default function Page(): ReactElement {
     queryKey: ["dondie-memories", accessToken],
     enabled: authenticated && Boolean(dondieAgent.data),
     queryFn: ({ signal }) => apiFetch<readonly DondieMemory[]>("/dondie/memories", { signal }, token)
+  });
+  const schedulerStatus = useQuery({
+    queryKey: ["dondie-scheduler", accessToken],
+    enabled: authenticated,
+    refetchInterval: 15_000,
+    queryFn: ({ signal }) => apiFetch<import("@trading/types").SchedulerStatusView>("/dondie/scheduler", { signal }, token)
+  });
+  const tradeActivities = useQuery({
+    queryKey: ["dondie-activities", accessToken],
+    enabled: authenticated && Boolean(dondieAgent.data),
+    refetchInterval: 10_000,
+    queryFn: ({ signal }) =>
+      apiFetch<readonly import("@trading/types").TradeActivity[]>("/dondie/activities", { signal }, token)
   });
   const dondieLifestyle = useQuery({
     queryKey: ["dondie-lifestyle", accessToken],
@@ -996,10 +1011,13 @@ export default function Page(): ReactElement {
     },
     onSuccess: async (result) => {
       setAutomationRunResult(result.automation);
-      const skipReason = result.automation.reason || result.reasoning;
+      const skipReason =
+        result.automation.reasonCode
+          ? `${result.automation.reasonCode}: ${result.automation.reason || result.reasoning}`
+          : result.automation.reason || result.reasoning;
       setNotice(
         result.automation.status === "EXECUTED"
-          ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain.`
+          ? `Dondie executed ${result.automation.symbol} via ${result.brain} brain (MANUAL_FORCE_SCAN).`
           : `Dondie scanned and skipped ${result.symbol}: ${skipReason}`
       );
       await invalidateTradingData();
@@ -1724,26 +1742,35 @@ export default function Page(): ReactElement {
     </Panel>
   );
 
-  const renderPositions = (): ReactElement => (
+  const renderPositions = (): ReactElement => {
+    const rows = Array.from(
+      new Map((positions.data ?? []).map((position) => [position.symbol.toUpperCase(), position])).values()
+    );
+    return (
     <Panel title="Positions" icon={<Activity className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
       <div data-testid="positions-list" className="space-y-2">
-        {(positions.data ?? []).length === 0 ? (
+        {rows.length === 0 ? (
           <EmptyLine text="No open paper positions" />
         ) : (
-          positions.data?.map((position) => (
-            <div key={position.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-4">
+          rows.map((position) => (
+            <div key={`${position.symbol}-${position.assetId ?? position.id}`} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-4">
               <span className="font-mono text-white">{position.symbol}</span>
               <span>{formatQty(position.quantity)}</span>
-              <span className="sm:text-right">{formatCurrency(position.averagePrice)}</span>
-              <span className={`text-right ${position.unrealizedPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
-                {formatCurrency(position.unrealizedPnl)}
+              <span className="sm:text-right">{formatCurrency(position.averagePrice, { microDetail: true })}</span>
+              <span
+                className={`text-right ${position.unrealizedPnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}
+                title={formatCurrencyTooltip(position.unrealizedPnl)}
+                data-testid={`position-upnl-${position.symbol}`}
+              >
+                {formatCurrency(position.unrealizedPnl, { microDetail: true })}
               </span>
             </div>
           ))
         )}
       </div>
     </Panel>
-  );
+    );
+  };
 
   const renderTradeHistory = (): ReactElement => (
     <Panel title="Trade History" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
@@ -2215,27 +2242,124 @@ export default function Page(): ReactElement {
       {activeTab === "portfolio" ? (
         <section data-testid="portfolio-view" className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={<DollarSign />} label="Broker Cash" value={formatCurrency(primaryPortfolio?.cashBalance)} tone="violet" />
+            <MetricCard icon={<DollarSign />} label="Broker Cash" value={formatCurrency(primaryPortfolio?.cashBalance, { microDetail: true })} tone="violet" />
             <MetricCard
               icon={<WalletCards />}
-              label="Dondie Survival Wallet"
-              value={formatCurrency(dondieWallet.data?.balance ?? dondieAgent.data?.walletBalance ?? 0)}
+              label="Capital Deployed"
+              value={formatCurrency(
+                primaryPortfolio?.capitalDeployed ??
+                  Math.max(
+                    0,
+                    (primaryPortfolio?.portfolioValue ?? 0) - (primaryPortfolio?.cashBalance ?? 0) - (primaryPortfolio?.unrealizedPnl ?? 0)
+                  ),
+                { microDetail: true }
+              )}
+              tone="cyan"
+            />
+            <MetricCard
+              icon={<LineChart />}
+              label="Broker Realized P&L"
+              value={formatCurrency(primaryPortfolio?.realizedPnl, { microDetail: true })}
               tone="emerald"
             />
-            <MetricCard icon={<LineChart />} label="Broker Realized P&L" value={formatCurrency(primaryPortfolio?.realizedPnl)} tone="emerald" />
+            <MetricCard
+              icon={<Bot />}
+              label="Unrealized P&L"
+              value={formatCurrency(primaryPortfolio?.unrealizedPnl, { microDetail: true })}
+              tone="violet"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={<WalletCards />}
+              label="Equity"
+              value={formatCurrency(primaryPortfolio?.portfolioValue, { microDetail: true })}
+              tone="emerald"
+            />
+            <MetricCard
+              icon={<Bot />}
+              label="Survival Wallet"
+              value={formatCurrency(dondieWallet.data?.balance ?? dondieAgent.data?.walletBalance ?? 0)}
+              tone="cyan"
+            />
             <MetricCard
               icon={<Bot />}
               label="Brain Tier"
               value={dondieWallet.data?.tier ?? dondieAgent.data?.tier ?? "—"}
               tone="cyan"
             />
+            <MetricCard
+              icon={<Activity />}
+              label="Scheduler"
+              value={schedulerStatus.data?.status ?? "…"}
+              tone={schedulerStatus.data?.status === "RUNNING" ? "emerald" : "violet"}
+            />
           </div>
-          {(primaryPortfolio?.cashBalance ?? 0) > 0 && (primaryPortfolio?.cashBalance ?? 0) <= 50 ? (
-            <p className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
-              Micro stake mode: broker cash can stay near $10 while Dondie earns in the{" "}
-              <strong>survival wallet</strong> (weekend paper BTC). Open Office and keep hands-off on overnight.
-            </p>
-          ) : null}
+          {(() => {
+            const cash = primaryPortfolio?.cashBalance ?? 0;
+            const deployed =
+              primaryPortfolio?.capitalDeployed ??
+              Math.max(0, (primaryPortfolio?.portfolioValue ?? 0) - cash - (primaryPortfolio?.unrealizedPnl ?? 0));
+            const equity = primaryPortfolio?.portfolioValue ?? 0;
+            const survival = dondieWallet.data?.balance ?? dondieAgent.data?.walletBalance ?? 0;
+            if (deployed > 0.5 && cash < 1) {
+              return (
+                <p className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100" data-testid="micro-stake-notice">
+                  Micro account state: <strong>cash {formatCurrency(cash, { microDetail: true })}</strong> remains free,
+                  while <strong>{formatCurrency(deployed, { microDetail: true })}</strong> is invested (capital deployed),
+                  not profit. Equity {formatCurrency(equity, { microDetail: true })} · survival wallet{" "}
+                  {formatCurrency(survival)} · realized {formatCurrency(primaryPortfolio?.realizedPnl ?? 0, { microDetail: true })} ·
+                  unrealized {formatCurrency(primaryPortfolio?.unrealizedPnl ?? 0, { microDetail: true })}.
+                </p>
+              );
+            }
+            if (cash > 0 && cash <= 50 && deployed < 0.5) {
+              return (
+                <p className="rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100" data-testid="micro-stake-notice">
+                  Micro stake mode: broker cash is {formatCurrency(cash, { microDetail: true })} and mostly still free to deploy.
+                  Survival wallet {formatCurrency(survival)} is separate cognition balance — not Alpaca buying power.
+                </p>
+              );
+            }
+            return null;
+          })()}
+          <Panel title="Scheduler status" icon={<Activity className="h-5 w-5 text-emerald-300" aria-hidden="true" />} compact>
+            <div className="grid gap-2 text-sm sm:grid-cols-2" data-testid="scheduler-status-panel">
+              <p>Status: <span className="font-mono text-white">{schedulerStatus.data?.status ?? "UNKNOWN"}</span></p>
+              <p>Worker: <span className="font-mono text-white">{schedulerStatus.data?.workerId ?? "—"}</span></p>
+              <p>Last scheduled: <span className="font-mono text-white">{schedulerStatus.data?.lastScheduledScanAt ? new Date(schedulerStatus.data.lastScheduledScanAt).toLocaleString() : "—"}</span></p>
+              <p>Last manual: <span className="font-mono text-white">{schedulerStatus.data?.lastManualScanAt ? new Date(schedulerStatus.data.lastManualScanAt).toLocaleString() : "—"}</span></p>
+              <p>Next expected: <span className="font-mono text-white" data-testid="next-scheduled-scan">{schedulerStatus.data?.nextExpectedScanAt ? new Date(schedulerStatus.data.nextExpectedScanAt).toLocaleString() : "—"}</span></p>
+              <p>Env: <span className="font-mono text-white">{schedulerStatus.data?.tradingEnvironment ?? "PAPER"}</span></p>
+              <p>Symbols evaluated: <span className="font-mono text-white">{schedulerStatus.data?.lastSymbolsEvaluated ?? 0}</span></p>
+              <p>Orders filled: <span className="font-mono text-white">{schedulerStatus.data?.lastOrdersFilled ?? 0}</span></p>
+            </div>
+            {schedulerStatus.data?.status === "STOPPED" || schedulerStatus.data?.status === "DELAYED" ? (
+              <p className="mt-2 text-sm text-amber-200" data-testid="scheduler-warning">
+                Scheduler {schedulerStatus.data.status}: automatic scans may be waiting on the free-tier wake path.
+                Force scan remains optional; cron keepalive should resume scheduled runs.
+              </p>
+            ) : null}
+          </Panel>
+          <Panel title="Trade activity timeline" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
+            <ul className="space-y-2 text-sm" data-testid="trade-activity-timeline">
+              {(tradeActivities.data ?? []).length === 0 ? (
+                <EmptyLine text="No scan activity yet — scheduled scans appear here after the server runs." />
+              ) : (
+                (tradeActivities.data ?? []).slice(0, 40).map((activity) => (
+                  <li key={activity.id} className="rounded-md border border-line bg-white/[0.03] px-3 py-2">
+                    <span className="font-mono text-xs text-slate-500">
+                      {new Date(activity.occurredAt).toLocaleTimeString(undefined, { hour12: false })}
+                    </span>{" "}
+                    <span className="text-slate-100">{activity.headline}</span>
+                    {activity.reasonCode ? (
+                      <span className="ml-2 font-mono text-xs text-amber-200">{activity.reasonCode}</span>
+                    ) : null}
+                  </li>
+                ))
+              )}
+            </ul>
+          </Panel>
           <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="space-y-5">
               {renderPositions()}

@@ -56,7 +56,7 @@ describe("DondieScheduler", () => {
     runForUser.mockClear();
 
     const result = await scheduler.tickNow();
-    expect(result).toEqual({ attempted: 1, succeeded: 1, failed: 0 });
+    expect(result).toEqual({ attempted: 1, succeeded: 1, failed: 0, triggerType: "API_REQUEST" });
     expect(runForUser).toHaveBeenCalledWith("user-cron");
     scheduler.onModuleDestroy();
   });

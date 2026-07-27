@@ -1,12 +1,20 @@
+import { formatUsd, formatUsdTooltip, normalizeSignedZero } from "@trading/shared";
+
 export const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 2
 });
 
-export const formatCurrency = (value: number | undefined): string => currency.format(value ?? 0);
+export const formatCurrency = (
+  value: number | undefined,
+  options?: { readonly microDetail?: boolean }
+): string => formatUsd(value, options);
 
-export const formatPercent = (value: number | undefined): string => `${(value ?? 0).toFixed(2)}%`;
+export const formatCurrencyTooltip = (value: number | undefined): string => formatUsdTooltip(value);
+
+export const formatPercent = (value: number | undefined): string =>
+  `${normalizeSignedZero(value ?? 0).toFixed(2)}%`;
 
 /** Share qty — keep sub-cent lots visible (Alpaca paper underfunding used to show 0.00). */
 export const formatQty = (value: number | undefined): string => {

@@ -201,6 +201,10 @@ model Portfolio {
   cashBalance    Decimal  @map("cash_balance") @db.Decimal(18, 4)
   realizedPnl    Decimal  @default(0) @map("realized_pnl") @db.Decimal(18, 4)
   unrealizedPnl  Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(18, 4)
+  capitalDeployed Decimal @default(0) @map("capital_deployed") @db.Decimal(18, 4)
+  marketValue    Decimal  @default(0) @map("market_value") @db.Decimal(18, 4)
+  costBasis      Decimal  @default(0) @map("cost_basis") @db.Decimal(18, 4)
+  dailyPnl       Decimal  @default(0) @map("daily_pnl") @db.Decimal(18, 4)
   createdAt      DateTime @default(now()) @map("created_at")
   user           User     @relation(fields: [userId], references: [id])
 
@@ -315,6 +319,9 @@ model Position {
   quantity      Decimal  @db.Decimal(18, 6)
   averagePrice  Decimal  @map("average_price") @db.Decimal(18, 4)
   unrealizedPnl Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(18, 4)
+  assetId       String?  @map("asset_id")
+  costBasis     Decimal? @map("cost_basis") @db.Decimal(18, 4)
+  marketValue   Decimal? @map("market_value") @db.Decimal(18, 4)
   updatedAt     DateTime @updatedAt @map("updated_at")
   user          User     @relation(fields: [userId], references: [id])
 

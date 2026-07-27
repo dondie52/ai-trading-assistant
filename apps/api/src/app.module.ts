@@ -54,6 +54,7 @@ import { DondieWalletService } from "./dondie/dondie-wallet.service.js";
 import { DondieWeekendEarnService } from "./dondie/dondie-weekend-earn.service.js";
 import { DondieChatService } from "./dondie/dondie-chat.service.js";
 import { AutonomousBootstrapService } from "./dondie/autonomous-bootstrap.service.js";
+import { SchedulerStatusService, TradeActivityService } from "./dondie/trade-activity.service.js";
 
 @Module({
   controllers: [
@@ -108,6 +109,8 @@ import { AutonomousBootstrapService } from "./dondie/autonomous-bootstrap.servic
     DondieWeekendEarnService,
     DondieChatService,
     AutonomousBootstrapService,
+    TradeActivityService,
+    SchedulerStatusService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard

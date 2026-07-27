@@ -43,7 +43,6 @@ export function HandsOffCapitalPanel({
     !automation.emergencyStop;
   const cash = portfolio?.cashBalance ?? 0;
   const equity = portfolio?.portfolioValue ?? 0;
-  const profit = (portfolio?.realizedPnl ?? 0) + (portfolio?.unrealizedPnl ?? 0);
   const statusLabel = handsOff
     ? "Agent running"
     : brokerLoading
@@ -85,9 +84,23 @@ export function HandsOffCapitalPanel({
         </ol>
 
         <div className="grid gap-2 sm:grid-cols-3 text-sm">
-          <Stat label="Buying power" value={formatCurrency(cash)} />
+          <Stat label="Cash (buying power)" value={formatCurrency(cash)} />
           <Stat label="Equity" value={formatCurrency(equity)} />
-          <Stat label="Open P&amp;L" value={formatCurrency(profit)} />
+          <Stat
+            label="Open P&amp;L"
+            value={formatCurrency((portfolio?.unrealizedPnl ?? 0))}
+          />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3 text-sm">
+          <Stat
+            label="Capital deployed"
+            value={formatCurrency(
+              portfolio?.capitalDeployed ??
+                Math.max(0, equity - cash - (portfolio?.unrealizedPnl ?? 0))
+            )}
+          />
+          <Stat label="Realized P&amp;L" value={formatCurrency(portfolio?.realizedPnl ?? 0)} />
+          <Stat label="Unrealized P&amp;L" value={formatCurrency(portfolio?.unrealizedPnl ?? 0)} />
         </div>
 
         <div className="flex flex-wrap gap-2">

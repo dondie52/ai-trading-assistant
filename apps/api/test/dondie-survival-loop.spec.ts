@@ -25,6 +25,7 @@ import { DondieBrainLlmService } from "../src/dondie/dondie-brain-llm.service.js
 import { DondieBrainService } from "../src/dondie/dondie-brain.service.js";
 import { DondieMemoryService } from "../src/dondie/dondie-memory.service.js";
 import { DondieScheduler } from "../src/dondie/dondie.scheduler.js";
+import { SchedulerStatusService, TradeActivityService } from "../src/dondie/trade-activity.service.js";
 import { DondieWalletService } from "../src/dondie/dondie-wallet.service.js";
 import { DondieWeekendEarnService } from "../src/dondie/dondie-weekend-earn.service.js";
 import { installAlpacaFetchMock } from "./alpaca-fetch-mock.js";
@@ -99,15 +100,19 @@ const createStack = (): {
   const wallet = new DondieWalletService(store, dondieRepository);
   const memory = new DondieMemoryService(store, dondieRepository);
   const weekendEarn = new DondieWeekendEarnService(wallet, store);
+  const schedulerStatus = new SchedulerStatusService();
+  const activities = new TradeActivityService(store);
   const dondie = new DondieService(
     store,
     platform,
     dondieRepository,
     brain,
-    new DondieScheduler(),
+    new DondieScheduler(schedulerStatus),
     wallet,
     memory,
-    weekendEarn
+    weekendEarn,
+    activities,
+    schedulerStatus
   );
   return { dondie, platform, store, wallet, memory, brain, llmBrain, weekendEarn };
 };

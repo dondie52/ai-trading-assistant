@@ -50,7 +50,10 @@ import type {
   WalkForwardResult
 } from "@trading/types";
 import {
+  aggregatePositionsBySymbol,
+  buildPortfolioAccounting,
   calculateIndicators,
+  classifySkipReason,
   generateSignal,
   isUsEquityMarketOpen,
   normalizeEmail,
@@ -1046,7 +1049,32 @@ export class PlatformService implements OnModuleInit {
   }
 
   listPortfolios(userId: UUID): readonly Portfolio[] {
-    return [...this.store.portfolios.values()].filter((portfolio) => portfolio.userId === userId);
+    return [...this.store.portfolios.values()]
+      .filter((portfolio) => portfolio.userId === userId)
+      .map((portfolio) => this.enrichPortfolioAccounting(portfolio));
+  }
+
+  private enrichPortfolioAccounting(portfolio: Portfolio): Portfolio {
+    const positions = this.listPositions(portfolio.userId);
+    const costBasis = positions.reduce(
+      (sum, position) => sum + (position.costBasis ?? Math.abs(position.quantity) * position.averagePrice),
+      0
+    );
+    const marketValue = positions.reduce(
+      (sum, position) =>
+        sum + (position.marketValue ?? Math.abs(position.quantity) * position.averagePrice + position.unrealizedPnl),
+      0
+    );
+    const unrealizedPnl = positions.reduce((sum, position) => sum + position.unrealizedPnl, 0);
+    return {
+      ...portfolio,
+      realizedPnl: this.getLifetimeRealizedPnl(portfolio.userId),
+      unrealizedPnl: Number(unrealizedPnl.toFixed(6)),
+      capitalDeployed: Number(costBasis.toFixed(4)),
+      costBasis: Number(costBasis.toFixed(4)),
+      marketValue: Number(marketValue.toFixed(4)),
+      dailyPnl: Number((this.getDailyRealizedPnl(portfolio.userId) + unrealizedPnl).toFixed(6))
+    };
   }
 
   async listPortfoliosFresh(userId: UUID): Promise<readonly Portfolio[]> {
@@ -1778,8 +1806,9 @@ export class PlatformService implements OnModuleInit {
     };
 
     const skipAutomation = (reason: string, opportunitiesFound: number): AutomationRunResult => {
-      logTradeSkipped(reason);
-      steps[5] = { ...steps[5]!, status: "skipped", detail: reason };
+      const reasonCode = classifySkipReason(reason);
+      logTradeSkipped(`${reasonCode}: ${reason}`);
+      steps[5] = { ...steps[5]!, status: "skipped", detail: `${reasonCode}: ${reason}` };
       steps[6] = { ...steps[6]!, status: "skipped" };
       steps[7] = { ...steps[7]!, status: "skipped" };
       this.store.appendAudit({
@@ -1788,13 +1817,20 @@ export class PlatformService implements OnModuleInit {
         action: "AUTOMATION_SKIPPED",
         entityType: "SIGNAL",
         entityId: signal.id,
-        metadata: { symbol, timeframe, signalType: signal.signalType, confidenceScore: signal.confidenceScore, reason }
+        metadata: {
+          symbol,
+          timeframe,
+          signalType: signal.signalType,
+          confidenceScore: signal.confidenceScore,
+          reason,
+          reasonCode
+        }
       });
       this.addNotification({
         userId,
         notificationType: "SYSTEM",
         title: "Automation skipped",
-        message: reason
+        message: `${reasonCode}: ${reason}`
       });
       const skipped: AutomationRunResult = {
         status: "SKIPPED",
@@ -1803,6 +1839,7 @@ export class PlatformService implements OnModuleInit {
         symbol,
         signal,
         reason,
+        reasonCode,
         idempotencyKey,
         steps,
         summary: {
@@ -1811,7 +1848,7 @@ export class PlatformService implements OnModuleInit {
           qualifiedSignals: 0,
           tradesCreated: 0,
           signalsRejected: 1,
-          highestRejectionReason: reason
+          highestRejectionReason: `${reasonCode}: ${reason}`
         }
       };
       this.store.automationIdempotency.set(idempotencyKey, skipped);
@@ -1941,8 +1978,9 @@ export class PlatformService implements OnModuleInit {
       return executed;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Order rejected";
-      logExecutionRejected(message);
-      steps[5] = { ...steps[5]!, status: "failed", detail: message };
+      const reasonCode = classifySkipReason(message);
+      logExecutionRejected(`${reasonCode}: ${message}`);
+      steps[5] = { ...steps[5]!, status: "failed", detail: `${reasonCode}: ${message}` };
       steps[6] = { ...steps[6]!, status: "skipped" };
       steps[7] = { ...steps[7]!, status: "skipped" };
       const rejected: AutomationRunResult = {
@@ -1952,6 +1990,7 @@ export class PlatformService implements OnModuleInit {
         symbol,
         signal,
         reason: message,
+        reasonCode,
         idempotencyKey,
         steps,
         summary: {
@@ -1960,7 +1999,7 @@ export class PlatformService implements OnModuleInit {
           qualifiedSignals: 1,
           tradesCreated: 0,
           signalsRejected: 1,
-          highestRejectionReason: message
+          highestRejectionReason: `${reasonCode}: ${message}`
         }
       };
       this.store.automationIdempotency.set(idempotencyKey, rejected);
@@ -2497,38 +2536,38 @@ export class PlatformService implements OnModuleInit {
   ): Promise<{ readonly positions: readonly Position[]; readonly portfolio: Portfolio }> {
     const normalizedSymbol = symbol.toUpperCase();
     const persistence: Promise<void>[] = [];
-    for (const existing of this.listPositions(userId)) {
+    for (const existing of [...this.store.positions.values()].filter(
+      (position) => position.userId === userId && Math.abs(position.quantity) > 0.000001
+    )) {
       if (existing.symbol !== normalizedSymbol) {
         continue;
       }
       const unrealizedPnl = (marketPrice - existing.averagePrice) * existing.quantity;
+      const marketValue = marketPrice * existing.quantity;
+      const costBasis = existing.costBasis ?? Math.abs(existing.quantity) * existing.averagePrice;
       const updated: Position = {
         ...existing,
-        unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
+        unrealizedPnl: Number(unrealizedPnl.toFixed(6)),
+        marketValue: Number(marketValue.toFixed(4)),
+        costBasis: Number(costBasis.toFixed(4)),
         updatedAt: isoNow()
       };
       this.store.positions.set(updated.id, updated);
       persistence.push(this.platformRepository.persistPosition(updated));
     }
 
-    const portfolio = this.getPrimaryPortfolio(userId);
-    const initialCapital =
-      portfolio.portfolioValue - portfolio.realizedPnl - portfolio.unrealizedPnl;
-    const totalUnrealizedPnl = this.listPositions(userId)
-      .reduce((sum, position) => sum + position.unrealizedPnl, 0);
+    const enriched = this.enrichPortfolioAccounting(this.getPrimaryPortfolio(userId));
     const updatedPortfolio: Portfolio = {
-      ...portfolio,
-      unrealizedPnl: Number(totalUnrealizedPnl.toFixed(2)),
-      portfolioValue: Number(
-        (initialCapital + portfolio.realizedPnl + totalUnrealizedPnl).toFixed(2)
-      )
+      ...enriched,
+      portfolioValue: Number((enriched.cashBalance + (enriched.marketValue ?? 0)).toFixed(4))
     };
     this.store.portfolios.set(updatedPortfolio.id, updatedPortfolio);
     persistence.push(this.platformRepository.persistPortfolio(updatedPortfolio));
     await Promise.all(persistence);
+
     return {
       positions: this.listPositions(userId),
-      portfolio: updatedPortfolio
+      portfolio: this.enrichPortfolioAccounting(updatedPortfolio)
     };
   }
 
@@ -2551,9 +2590,11 @@ export class PlatformService implements OnModuleInit {
   }
 
   listPositions(userId: UUID): readonly Position[] {
-    return [...this.store.positions.values()].filter(
+    const open = [...this.store.positions.values()].filter(
       (position) => position.userId === userId && Math.abs(position.quantity) > 0.000001
     );
+    // Broker Positions view: one aggregated row per symbol (never duplicate lots).
+    return aggregatePositionsBySymbol(open);
   }
 
   getRiskRules(userId: UUID): RiskRules {
@@ -3046,39 +3087,76 @@ export class PlatformService implements OnModuleInit {
       this.alpacaBroker.getPositions(credentials)
     ]);
 
-    const portfolio = this.getPrimaryPortfolio(userId);
-    const unrealizedPnl = alpacaPositions.reduce((sum, position) => sum + position.unrealizedPnl, 0);
-    const updatedPortfolio: Portfolio = {
-      ...portfolio,
-      portfolioName: credentials.environment === "LIVE" ? "Alpaca Live Account" : "Alpaca Paper Account",
-      portfolioValue: Number(alpacaAccount.equity.toFixed(2)),
-      cashBalance: Number(alpacaAccount.cash.toFixed(2)),
-      unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
-      realizedPnl: Number((alpacaAccount.equity - alpacaAccount.cash - unrealizedPnl).toFixed(2))
-    };
-    this.store.portfolios.set(updatedPortfolio.id, updatedPortfolio);
-    await this.platformRepository.persistPortfolio(updatedPortfolio);
-
-    for (const [positionId, position] of this.store.positions.entries()) {
+    // Preserve local IDs per symbol so reconciliation updates instead of inventing duplicates.
+    const existingBySymbol = new Map<string, Position>();
+    for (const position of this.store.positions.values()) {
       if (position.userId === userId) {
+        existingBySymbol.set(position.symbol.toUpperCase(), position);
+      }
+    }
+    for (const positionId of [...this.store.positions.keys()]) {
+      const position = this.store.positions.get(positionId);
+      if (position?.userId === userId) {
         this.store.positions.delete(positionId);
       }
     }
 
     const now = isoNow();
+    const syncedSymbols = new Set<string>();
     for (const alpacaPosition of alpacaPositions) {
+      const symbol = alpacaPosition.symbol.toUpperCase();
+      syncedSymbols.add(symbol);
+      const existing = existingBySymbol.get(symbol);
+      const costBasis =
+        alpacaPosition.costBasis > 0
+          ? alpacaPosition.costBasis
+          : Math.abs(alpacaPosition.quantity) * alpacaPosition.averagePrice;
       const position: Position = {
-        id: randomUUID(),
+        id: existing?.id ?? randomUUID(),
         userId,
-        symbol: alpacaPosition.symbol,
+        symbol,
         quantity: alpacaPosition.quantity,
         averagePrice: alpacaPosition.averagePrice,
         unrealizedPnl: alpacaPosition.unrealizedPnl,
+        ...(alpacaPosition.assetId ? { assetId: alpacaPosition.assetId } : {}),
+        costBasis,
+        marketValue: alpacaPosition.marketValue,
         updatedAt: now
       };
       this.store.positions.set(position.id, position);
       await this.platformRepository.persistPosition(position);
     }
+    await this.platformRepository.deletePositionsForUserExcept(userId, [...syncedSymbols]);
+
+    const portfolio = this.getPrimaryPortfolio(userId);
+    const accounting = buildPortfolioAccounting({
+      cash: alpacaAccount.cash,
+      equity: alpacaAccount.equity,
+      lastEquity: alpacaAccount.lastEquity,
+      positions: alpacaPositions.map((position) => ({
+        quantity: position.quantity,
+        averagePrice: position.averagePrice,
+        unrealizedPnl: position.unrealizedPnl,
+        costBasis: position.costBasis,
+        marketValue: position.marketValue
+      })),
+      // Realized P&L only from closing fills — never equity - cash (that is capital deployed).
+      realizedPnlFromClosedTrades: this.getLifetimeRealizedPnl(userId)
+    });
+    const updatedPortfolio: Portfolio = {
+      ...portfolio,
+      portfolioName: credentials.environment === "LIVE" ? "Alpaca Live Account" : "Alpaca Paper Account",
+      portfolioValue: accounting.equity,
+      cashBalance: accounting.cash,
+      unrealizedPnl: accounting.unrealizedPnl,
+      realizedPnl: accounting.realizedPnl,
+      capitalDeployed: accounting.capitalDeployed,
+      marketValue: accounting.marketValue,
+      costBasis: accounting.costBasis,
+      dailyPnl: accounting.dailyPnl
+    };
+    this.store.portfolios.set(updatedPortfolio.id, updatedPortfolio);
+    await this.platformRepository.persistPortfolio(updatedPortfolio);
   }
 
   private async applyBrokerExecution(
@@ -3189,6 +3267,16 @@ export class PlatformService implements OnModuleInit {
     return this.listTrades(userId)
       .filter((trade) => trade.closedAt?.slice(0, 10) === today)
       .reduce((sum, trade) => sum + trade.pnl, 0);
+  }
+
+  /** Lifetime realized P&L from closed fills only — open positions contribute $0. */
+  private getLifetimeRealizedPnl(userId: UUID): number {
+    return Number(
+      this.listTrades(userId)
+        .filter((trade) => Boolean(trade.closedAt))
+        .reduce((sum, trade) => sum + trade.pnl, 0)
+        .toFixed(4)
+    );
   }
 
   private normalizeProtectivePrice(input: {
@@ -3436,17 +3524,29 @@ export class PlatformService implements OnModuleInit {
 
   private updatePortfolioFromTrade(portfolio: Portfolio, order: Order, trade: Trade): Portfolio {
     const cashDelta = order.side === "BUY" ? -order.price * order.quantity : order.price * order.quantity;
-    const initialCapital =
-      portfolio.portfolioValue - portfolio.realizedPnl - portfolio.unrealizedPnl;
-    const realizedPnl = Number((portfolio.realizedPnl + trade.pnl).toFixed(2));
-    const unrealizedPnl = this.listPositions(order.userId)
-      .reduce((sum, position) => sum + position.unrealizedPnl, 0);
+    const positions = this.listPositions(order.userId);
+    const realizedPnl = this.getLifetimeRealizedPnl(order.userId);
+    const unrealizedPnl = positions.reduce((sum, position) => sum + position.unrealizedPnl, 0);
+    const costBasis = positions.reduce(
+      (sum, position) => sum + (position.costBasis ?? Math.abs(position.quantity) * position.averagePrice),
+      0
+    );
+    const marketValue = positions.reduce(
+      (sum, position) =>
+        sum + (position.marketValue ?? Math.abs(position.quantity) * position.averagePrice + position.unrealizedPnl),
+      0
+    );
+    const cashBalance = Number((portfolio.cashBalance + cashDelta).toFixed(4));
     const updated: Portfolio = {
       ...portfolio,
-      cashBalance: Number((portfolio.cashBalance + cashDelta).toFixed(2)),
-      portfolioValue: Number((initialCapital + realizedPnl + unrealizedPnl).toFixed(2)),
-      realizedPnl,
-      unrealizedPnl: Number(unrealizedPnl.toFixed(2))
+      cashBalance,
+      portfolioValue: Number((cashBalance + marketValue).toFixed(4)),
+      realizedPnl: Number(realizedPnl.toFixed(4)),
+      unrealizedPnl: Number(unrealizedPnl.toFixed(4)),
+      capitalDeployed: Number(costBasis.toFixed(4)),
+      costBasis: Number(costBasis.toFixed(4)),
+      marketValue: Number(marketValue.toFixed(4)),
+      dailyPnl: Number((this.getDailyRealizedPnl(order.userId) + unrealizedPnl).toFixed(4))
     };
     this.store.portfolios.set(updated.id, updated);
     return updated;

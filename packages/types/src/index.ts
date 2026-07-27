@@ -152,6 +152,11 @@ export interface Portfolio {
   readonly cashBalance: number;
   readonly realizedPnl: number;
   readonly unrealizedPnl: number;
+  /** Sum of open-position cost bases — not profit. */
+  readonly capitalDeployed?: number;
+  readonly marketValue?: number;
+  readonly costBasis?: number;
+  readonly dailyPnl?: number;
   readonly createdAt: string;
 }
 
@@ -238,6 +243,7 @@ export interface AutomationRunResult {
   readonly symbol: string;
   readonly signal: Signal;
   readonly reason?: string;
+  readonly reasonCode?: TradeSkipReasonCode;
   readonly execution?: OrderExecutionPayload;
   readonly idempotencyKey?: string;
   readonly steps?: readonly AutomationRunStep[];
@@ -410,6 +416,10 @@ export interface DondieRunResult {
   readonly automation: AutomationRunResult;
   readonly walletBalance: number;
   readonly ranAt: string;
+  readonly scanId?: UUID;
+  readonly correlationId?: UUID;
+  readonly triggerType?: ScanTriggerType;
+  readonly reasonCode?: TradeSkipReasonCode;
 }
 
 export interface DondieMemory {
@@ -486,7 +496,117 @@ export interface Position {
   readonly quantity: number;
   readonly averagePrice: number;
   readonly unrealizedPnl: number;
+  readonly assetId?: string;
+  readonly costBasis?: number;
+  readonly marketValue?: number;
   readonly updatedAt: string;
+}
+
+export type ScanTriggerType =
+  | "SCHEDULED"
+  | "MANUAL_FORCE_SCAN"
+  | "STARTUP"
+  | "RETRY"
+  | "API_REQUEST";
+
+export type TradeActivityStage =
+  | "SCAN_STARTED"
+  | "SYMBOL_EVALUATED"
+  | "SIGNAL_GENERATED"
+  | "SIGNAL_SKIPPED"
+  | "ORDER_INTENT_CREATED"
+  | "ORDER_SUBMITTING"
+  | "ORDER_SUBMITTED"
+  | "ORDER_ACCEPTED"
+  | "ORDER_PARTIALLY_FILLED"
+  | "ORDER_FILLED"
+  | "ORDER_REJECTED"
+  | "ORDER_CANCELED"
+  | "POSITION_OPENED"
+  | "POSITION_UPDATED"
+  | "EXIT_SIGNAL_GENERATED"
+  | "CLOSE_ORDER_SUBMITTED"
+  | "POSITION_CLOSED"
+  | "RECONCILIATION_COMPLETED"
+  | "ERROR";
+
+export type TradeSkipReasonCode =
+  | "INSUFFICIENT_BUYING_POWER"
+  | "TIER_RESTRICTED"
+  | "ASSET_CLASS_DISABLED"
+  | "POSITION_ALREADY_OPEN"
+  | "ORDER_ALREADY_PENDING"
+  | "MAX_POSITIONS_REACHED"
+  | "CONFIDENCE_TOO_LOW"
+  | "MARKET_CLOSED"
+  | "MIN_NOTIONAL_NOT_MET"
+  | "COOLDOWN_ACTIVE"
+  | "SYMBOL_NOT_TRADABLE"
+  | "FRACTIONAL_NOT_SUPPORTED"
+  | "RISK_LIMIT"
+  | "DATA_STALE"
+  | "BROKER_REJECTED"
+  | "SCHEDULER_LOCKED"
+  | "SIGNAL_HOLD"
+  | "EMERGENCY_STOP"
+  | "MANUAL_MODE"
+  | "NO_OPEN_POSITION"
+  | "MISSING_MARKET_PRICE"
+  | "MAX_TRADES_PER_DAY"
+  | "UNIVERSE_UNAVAILABLE"
+  | "UNKNOWN";
+
+export type SchedulerRunStatus = "RUNNING" | "DELAYED" | "STOPPED";
+
+export interface TradeActivity {
+  readonly id: UUID;
+  readonly userId: UUID;
+  readonly agentId?: UUID;
+  readonly scanId?: UUID;
+  readonly correlationId: UUID;
+  readonly stage: TradeActivityStage;
+  readonly triggerType: ScanTriggerType;
+  readonly symbol?: string;
+  readonly signal?: string;
+  readonly confidence?: number;
+  readonly requiredThreshold?: number;
+  readonly decision?: string;
+  readonly reasonCode?: TradeSkipReasonCode;
+  readonly reason?: string;
+  readonly requestedNotional?: number;
+  readonly requestedQuantity?: number;
+  readonly brokerOrderId?: string;
+  readonly clientOrderId?: string;
+  readonly orderStatus?: string;
+  readonly filledQuantity?: number;
+  readonly filledAveragePrice?: number;
+  readonly cashBefore?: number;
+  readonly cashAfter?: number;
+  readonly buyingPowerBefore?: number;
+  readonly buyingPowerAfter?: number;
+  readonly headline: string;
+  readonly source: "scheduled" | "manual" | "broker_event" | "reconciliation" | "api";
+  readonly occurredAt: string;
+  readonly exchangeLocalAt?: string;
+}
+
+export interface SchedulerStatusView {
+  readonly status: SchedulerRunStatus;
+  readonly enabled: boolean;
+  readonly workerId: string;
+  readonly scheduleMinutes: number;
+  readonly lastScheduledScanAt?: string;
+  readonly lastManualScanAt?: string;
+  readonly nextExpectedScanAt?: string;
+  readonly lastHeartbeatAt?: string;
+  readonly lastResult?: string;
+  readonly lastDurationMs?: number;
+  readonly lastSymbolsEvaluated?: number;
+  readonly lastSignalsGenerated?: number;
+  readonly lastOrdersSubmitted?: number;
+  readonly lastOrdersFilled?: number;
+  readonly lastErrors?: readonly string[];
+  readonly tradingEnvironment: "PAPER" | "LIVE";
 }
 
 export interface RiskRules {
