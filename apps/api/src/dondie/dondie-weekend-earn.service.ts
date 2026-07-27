@@ -176,6 +176,72 @@ export class DondieWeekendEarnService {
     };
     this.store.signals.set(signal.id, signal);
 
+    const alpacaConnected = [...this.store.brokerAccounts.values()].some(
+      (account) =>
+        account.userId === userId &&
+        account.brokerName === "ALPACA" &&
+        Boolean(account.encryptedApiKey && account.encryptedSecret)
+    );
+
+    // When Alpaca owns the book, never invent local FILLED orders/trades — only credit the survival wallet.
+    if (alpacaConnected) {
+      let updatedAgent = agent;
+      if (walletCredit > 0) {
+        updatedAgent = await this.wallet.credit(
+          agent,
+          walletCredit,
+          dondieConfig.weekendEarnLedgerReason,
+          {
+            symbol,
+            side,
+            grossPnl,
+            entryPrice,
+            exitPrice,
+            weekend: true,
+            venue: "WALLET_ONLY",
+            remainingDailyCap: roundUsd(remainingDailyCap - walletCredit)
+          },
+          at
+        );
+      }
+      updatedAgent = {
+        ...updatedAgent,
+        lastRunAt: now,
+        updatedAt: now
+      };
+      this.store.dondieAgents.set(updatedAgent.id, updatedAgent);
+
+      const reasoning =
+        walletCredit > 0
+          ? `Weekend desk simulated BTCUSD ${side} for wallet +$${walletCredit.toFixed(2)} (not submitted to Alpaca).`
+          : `Weekend desk skipped Alpaca submission — wallet credit $0 this scalp.`;
+
+      return {
+        agentId: agent.id,
+        tier: updatedAgent.tier,
+        symbol,
+        brain: dondieConfig.weekendEarnBrain,
+        reasoning,
+        automation: {
+          status: "SKIPPED",
+          mode: "AUTO",
+          strategyId,
+          symbol,
+          signal,
+          reason: reasoning,
+          summary: {
+            symbolsScanned: 1,
+            opportunitiesFound: 1,
+            qualifiedSignals: 1,
+            tradesCreated: 0,
+            signalsRejected: 0
+          }
+        },
+        walletBalance: updatedAgent.walletBalance,
+        ranAt: now
+      };
+    }
+
     const order: Order = {
       id: randomUUID(),
       userId,
