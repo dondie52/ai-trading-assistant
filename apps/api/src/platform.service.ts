@@ -1173,6 +1173,7 @@ export class PlatformService implements OnModuleInit {
       }
     });
     if (brokerName === "ALPACA") {
+      await this.purgeLocalPaperTradingBook(userId);
       await this.syncAlpacaState(userId);
     }
     return this.sanitizeBrokerAccount(account);
@@ -2130,7 +2131,8 @@ export class PlatformService implements OnModuleInit {
   }
 
   listOrders(userId: UUID): readonly Order[] {
-    return [...this.store.orders.values()].filter((order) => order.userId === userId);
+    const orders = [...this.store.orders.values()].filter((order) => order.userId === userId);
+    return this.filterToAlpacaBookWhenConnected(userId, orders);
   }
 
   listOrderStatusHistory(userId: UUID, orderId: UUID): readonly OrderStatusEvent[] {
@@ -2245,6 +2247,12 @@ export class PlatformService implements OnModuleInit {
       };
     }
     const executionTarget = this.resolveExecutionBroker(userId, { preferPaper: preferInternalPaper });
+    if (this.usesAlpacaExecution(userId) && executionTarget.adapter.name !== "ALPACA") {
+      throw new UnprocessableEntityException({
+        code: "BROKER_ROUTE_MISMATCH",
+        message: "Alpaca is connected — refusing to fill on the internal paper broker."
+      });
+    }
     logExecutionAttempting({ symbol, side, quantity });
     const baseOrder = {
       id: randomUUID(),
@@ -2586,7 +2594,18 @@ export class PlatformService implements OnModuleInit {
   }
 
   listTrades(userId: UUID): readonly Trade[] {
-    return [...this.store.trades.values()].filter((trade) => trade.userId === userId);
+    const trades = [...this.store.trades.values()].filter((trade) => trade.userId === userId);
+    if (!this.usesAlpacaExecution(userId)) {
+      return trades;
+    }
+    const alpacaAccountId = this.getAlpacaBrokerAccount(userId)?.id;
+    if (!alpacaAccountId) {
+      return trades;
+    }
+    return trades.filter((trade) => {
+      const order = this.store.orders.get(trade.orderId);
+      return order?.brokerAccountId === alpacaAccountId;
+    });
   }
 
   listPositions(userId: UUID): readonly Position[] {
@@ -2981,6 +3000,53 @@ export class PlatformService implements OnModuleInit {
     return Boolean(account?.encryptedApiKey && account.encryptedSecret);
   }
 
+  private filterToAlpacaBookWhenConnected<T extends { readonly brokerAccountId: UUID }>(
+    userId: UUID,
+    rows: readonly T[]
+  ): readonly T[] {
+    if (!this.usesAlpacaExecution(userId)) {
+      return rows;
+    }
+    const alpacaAccountId = this.getAlpacaBrokerAccount(userId)?.id;
+    if (!alpacaAccountId) {
+      return rows;
+    }
+    return rows.filter((row) => row.brokerAccountId === alpacaAccountId);
+  }
+
+  /**
+   * Remove internal PAPER broker orders/trades from memory + DB.
+   * Keeps Alpaca-linked rows so Trade History matches the broker dashboard.
+   */
+  async purgeLocalPaperTradingBook(userId: UUID): Promise<void> {
+    const paperAccountIds = this.listBrokerAccountRecords(userId)
+      .filter((account) => account.brokerName === "PAPER")
+      .map((account) => account.id);
+    if (paperAccountIds.length === 0) {
+      return;
+    }
+    const paperIdSet = new Set(paperAccountIds);
+    const orderIds: UUID[] = [];
+    for (const [orderId, order] of this.store.orders.entries()) {
+      if (order.userId === userId && paperIdSet.has(order.brokerAccountId)) {
+        orderIds.push(orderId);
+        this.store.orders.delete(orderId);
+      }
+    }
+    const orderIdSet = new Set(orderIds);
+    for (const [tradeId, trade] of this.store.trades.entries()) {
+      if (trade.userId === userId && orderIdSet.has(trade.orderId)) {
+        this.store.trades.delete(tradeId);
+      }
+    }
+    for (const [eventId, event] of this.store.orderStatusEvents.entries()) {
+      if (event.userId === userId && orderIdSet.has(event.orderId)) {
+        this.store.orderStatusEvents.delete(eventId);
+      }
+    }
+    await this.platformRepository.deleteOrdersByBrokerAccountIds(paperAccountIds);
+  }
+
   /**
    * Ensure an internal PAPER broker exists. Optionally seed demo cash when Alpaca is absent
    * so risk sizing and paper fills can run end-to-end.
@@ -3076,6 +3142,9 @@ export class PlatformService implements OnModuleInit {
     if (!account?.encryptedApiKey || !account.encryptedSecret) {
       return;
     }
+    // Drop simulated paper fills so Trade History cannot contradict Alpaca.
+    await this.purgeLocalPaperTradingBook(userId);
+
     const credentials: BrokerCredentials = {
       apiKey: this.brokerCredentials.decrypt(account.encryptedApiKey),
       secret: this.brokerCredentials.decrypt(account.encryptedSecret),

@@ -319,4 +319,45 @@ describe("Dondie weekend paper BTC desk", () => {
     expect(platform.listTrades(user.id).length).toBeGreaterThan(before);
     expect(platform.listTrades(user.id).some((trade) => trade.symbol === "BTCUSD")).toBe(true);
   });
+
+  it("does not invent Trade History rows when Alpaca credentials are connected", async () => {
+    const { weekendEarn, store, wallet } = createStack();
+    const user = store.createUser({
+      email: `alpaca-weekend-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+      firstName: "Alpaca",
+      lastName: "Weekend",
+      role: "TRADER"
+    });
+    fundMicroStake(store, user.id, 10);
+    store.brokerAccounts.set(randomUUID(), {
+      id: randomUUID(),
+      userId: user.id,
+      brokerName: "ALPACA",
+      accountId: "PA123",
+      status: "CONNECTED",
+      encryptedApiKey: "enc-key",
+      encryptedSecret: "enc-secret",
+      environment: "PAPER",
+      createdAt: new Date().toISOString()
+    });
+    const agent: DondieAgent = {
+      id: randomUUID(),
+      userId: user.id,
+      status: "ACTIVE",
+      tier: "FREE",
+      walletBalance: 1,
+      scheduleMinutes: 60,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    store.dondieAgents.set(agent.id, agent);
+
+    const result = await weekendEarn.runWeekendGig(user.id, agent, saturday);
+    expect(result.automation.status).toBe("SKIPPED");
+    expect(result.automation.summary?.tradesCreated).toBe(0);
+    expect([...store.trades.values()].filter((trade) => trade.userId === user.id)).toHaveLength(0);
+    expect([...store.orders.values()].filter((order) => order.userId === user.id)).toHaveLength(0);
+    expect(wallet.listLedger(agent.id).length).toBeGreaterThanOrEqual(0);
+  });
 });

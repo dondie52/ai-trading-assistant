@@ -1776,7 +1776,7 @@ export default function Page(): ReactElement {
     <Panel title="Trade History" icon={<History className="h-5 w-5 text-amber-300" aria-hidden="true" />}>
       <div data-testid="trade-history" className="space-y-2">
         {(trades.data ?? []).length === 0 ? (
-          <EmptyLine text="No trades yet" />
+          <EmptyLine text={alpacaConnected ? "No Alpaca trades yet" : "No trades yet"} />
         ) : (
           trades.data?.slice(-8).reverse().map((trade) => (
             <div key={trade.id} className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-5">

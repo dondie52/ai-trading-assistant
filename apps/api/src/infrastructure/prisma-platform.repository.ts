@@ -411,6 +411,25 @@ export class PrismaPlatformRepository {
     await this.prisma.client().brokerAccount.deleteMany({ where: { id } });
   }
 
+  /** Remove local paper book rows so Alpaca-connected UIs cannot show simulated fills. */
+  async deleteOrdersByBrokerAccountIds(brokerAccountIds: readonly UUID[]): Promise<void> {
+    if (!this.isEnabled() || brokerAccountIds.length === 0) {
+      return;
+    }
+    const client = this.prisma.client();
+    const orders = await client.order.findMany({
+      where: { brokerAccountId: { in: [...brokerAccountIds] } },
+      select: { id: true }
+    });
+    const orderIds = orders.map((order) => order.id);
+    if (orderIds.length === 0) {
+      return;
+    }
+    await client.trade.deleteMany({ where: { orderId: { in: orderIds } } });
+    await client.orderStatusEvent.deleteMany({ where: { orderId: { in: orderIds } } });
+    await client.order.deleteMany({ where: { id: { in: orderIds } } });
+  }
+
   async persistPortfolio(portfolio: Portfolio): Promise<void> {
     if (!this.isEnabled()) {
       return;
