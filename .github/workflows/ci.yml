@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - develop
+  # Lets a branch be validated without opening a pull request first.
+  workflow_dispatch:
 
 jobs:
   validate:

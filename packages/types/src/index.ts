@@ -44,7 +44,12 @@ export type RiskRejectionCode =
   | "MAX_RISK_PER_TRADE_EXCEEDED"
   | "MAX_POSITION_SIZE_EXCEEDED"
   | "DAILY_LOSS_LIMIT_REACHED"
+  | "WEEKLY_LOSS_LIMIT_REACHED"
   | "MAX_DRAWDOWN_REACHED"
+  | "MAX_CONCURRENT_POSITIONS"
+  | "CONSECUTIVE_LOSS_LOCK"
+  | "AVERAGING_DOWN_BLOCKED"
+  | "DUPLICATE_OPEN_ORDER"
   | "INSUFFICIENT_CASH";
 
 export interface PaginatedResult<T> {
@@ -201,6 +206,13 @@ export interface Order {
   readonly status: OrderStatus;
   readonly submittedAt: string;
   readonly riskDecision: RiskDecision;
+  /** Broker-assigned order id, required to reconcile working orders after a restart. */
+  readonly brokerOrderId?: string;
+  /** Deterministic key sent to the broker so a retried submission cannot double-fill. */
+  readonly clientOrderId?: string;
+  readonly filledQuantity?: number;
+  readonly filledAveragePrice?: number;
+  readonly lastReconciledAt?: string;
 }
 
 export interface OrderStatusEvent {
@@ -617,6 +629,12 @@ export interface RiskRules {
   readonly maxDrawdownPercent: number;
   readonly maxPositionSizePercent: number;
   readonly stopTrading: boolean;
+  /** Hard cap on simultaneously open symbols. Omitted means "use the engine default". */
+  readonly maxConcurrentPositions?: number;
+  /** Trading halts for the rest of the session after this many losing trades in a row. */
+  readonly maxConsecutiveLosses?: number;
+  /** Rolling 7-day realized loss ceiling, as a percent of equity. */
+  readonly maxWeeklyLossPercent?: number;
   readonly updatedAt: string;
 }
 

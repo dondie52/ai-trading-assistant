@@ -22,7 +22,20 @@ export interface RiskContext {
   readonly currentDrawdownPercent: number;
   readonly existingPositionValue: number;
   readonly existingPositionQuantity?: number;
+  /** Rolling 7-day realized P&L. Negative values count against the weekly loss ceiling. */
+  readonly weeklyRealizedPnl?: number;
+  /** Open symbols right now, used for the concurrent-position cap. */
+  readonly openPositionCount?: number;
+  /** Losing trades since the last winner. */
+  readonly consecutiveLosses?: number;
+  /** Average entry of the existing position, used to detect averaging down. */
+  readonly existingAveragePrice?: number;
 }
+
+/** Engine defaults applied when a rule is not configured on the account. */
+export const DEFAULT_MAX_CONCURRENT_POSITIONS = 5;
+export const DEFAULT_MAX_CONSECUTIVE_LOSSES = 4;
+export const DEFAULT_MAX_WEEKLY_LOSS_PERCENT = 10;
 
 const round = (value: number, precision = 6): number => Number(value.toFixed(precision));
 
@@ -359,6 +372,86 @@ export const validateTradeRisk = (
         }
       )
     );
+  }
+
+  const weeklyLossLimit = round(
+    context.equity * ((rules.maxWeeklyLossPercent ?? DEFAULT_MAX_WEEKLY_LOSS_PERCENT) / 100),
+    2
+  );
+  const weeklyLoss = Math.abs(Math.min(context.weeklyRealizedPnl ?? 0, 0));
+  if (!reducesExposure && weeklyLossLimit > 0 && weeklyLoss >= weeklyLossLimit) {
+    rejections.push(
+      rejection(
+        "WEEKLY_LOSS_LIMIT_REACHED",
+        "Weekly loss limit reached",
+        `Realized losses over the last 7 days have reached the $${weeklyLossLimit.toFixed(2)} weekly limit.`,
+        {
+          currentValue: weeklyLoss,
+          limit: weeklyLossLimit,
+          fixHint: "Wait for the rolling week to roll off or raise the weekly limit after review."
+        }
+      )
+    );
+  }
+
+  const consecutiveLossLimit = rules.maxConsecutiveLosses ?? DEFAULT_MAX_CONSECUTIVE_LOSSES;
+  if (!reducesExposure && consecutiveLossLimit > 0 && (context.consecutiveLosses ?? 0) >= consecutiveLossLimit) {
+    rejections.push(
+      rejection(
+        "CONSECUTIVE_LOSS_LOCK",
+        "Consecutive loss circuit breaker",
+        `${context.consecutiveLosses} losing trades in a row reached the ${consecutiveLossLimit}-loss circuit breaker.`,
+        {
+          currentValue: context.consecutiveLosses ?? 0,
+          limit: consecutiveLossLimit,
+          fixHint: "Review the strategy before re-enabling; the breaker clears after the next winning trade."
+        }
+      )
+    );
+  }
+
+  // Opening a brand-new symbol is what counts against the cap; adding to or exiting an
+  // existing position does not increase the number of things that can go wrong at once.
+  const opensNewSymbol = existingQuantity === 0 && quantity > 0;
+  const concurrentLimit = rules.maxConcurrentPositions ?? DEFAULT_MAX_CONCURRENT_POSITIONS;
+  if (opensNewSymbol && concurrentLimit > 0 && (context.openPositionCount ?? 0) >= concurrentLimit) {
+    rejections.push(
+      rejection(
+        "MAX_CONCURRENT_POSITIONS",
+        "Too many open positions",
+        `${context.openPositionCount} positions are already open, at the ${concurrentLimit}-position limit.`,
+        {
+          currentValue: context.openPositionCount ?? 0,
+          limit: concurrentLimit,
+          fixHint: "Close an existing position or raise the concurrent-position limit."
+        }
+      )
+    );
+  }
+
+  // Never average down: adding to a position that is already underwater turns a bounded
+  // loss into an unbounded one, which is the single fastest way to lose the account.
+  const addsToExisting =
+    existingQuantity !== 0 && quantity > 0 && Math.sign(existingQuantity) === Math.sign(signedQuantity);
+  if (addsToExisting && context.existingAveragePrice !== undefined && context.existingAveragePrice > 0) {
+    const underwater =
+      existingQuantity > 0
+        ? intent.price < context.existingAveragePrice
+        : intent.price > context.existingAveragePrice;
+    if (underwater) {
+      rejections.push(
+        rejection(
+          "AVERAGING_DOWN_BLOCKED",
+          "Averaging down is not allowed",
+          `${intent.symbol} is already open at ${context.existingAveragePrice.toFixed(2)} and is underwater at ${intent.price.toFixed(2)}; adding to a losing position is blocked.`,
+          {
+            currentValue: intent.price,
+            limit: context.existingAveragePrice,
+            fixHint: "Exit or let the stop work instead of increasing size against the position."
+          }
+        )
+      );
+    }
   }
 
   if (intent.side === "BUY" && !reducesExposure && quantity > 0 && proposedPositionValue > context.cashBalance) {

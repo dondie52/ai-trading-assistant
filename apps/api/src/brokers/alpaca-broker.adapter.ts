@@ -4,12 +4,17 @@ import {
   cancelAlpacaOrder,
   fetchAlpacaAccount,
   fetchAlpacaBars,
+  fetchAlpacaFillActivities,
   fetchAlpacaLatestQuote,
+  fetchAlpacaOpenOrders,
+  fetchAlpacaOrder,
   fetchAlpacaPositions,
   resolveEnvAlpacaCredentials,
   submitAlpacaOrder,
   validateAlpacaConnection,
   type AlpacaAccount,
+  type AlpacaFillActivity,
+  type AlpacaOrderSnapshot,
   type AlpacaPosition
 } from "./alpaca-client.js";
 import type {
@@ -89,8 +94,39 @@ export class AlpacaBrokerAdapter implements BrokerAdapter {
       brokerOrderId: result.brokerOrderId as UUID,
       status: result.status,
       filledQuantity: result.filledQuantity,
-      filledAveragePrice: result.filledAveragePrice
+      filledAveragePrice: result.filledAveragePrice,
+      ...(result.clientOrderId ? { clientOrderId: result.clientOrderId } : {})
     };
+  }
+
+  async getOrder(
+    brokerOrderId: string,
+    credentials?: BrokerCredentials
+  ): Promise<AlpacaOrderSnapshot | undefined> {
+    const resolved = this.resolveCredentials(credentials);
+    if (!resolved) {
+      return undefined;
+    }
+    return fetchAlpacaOrder(resolved, brokerOrderId);
+  }
+
+  async getOpenOrders(credentials?: BrokerCredentials): Promise<readonly AlpacaOrderSnapshot[]> {
+    const resolved = this.resolveCredentials(credentials);
+    if (!resolved) {
+      return [];
+    }
+    return fetchAlpacaOpenOrders(resolved);
+  }
+
+  async getFillActivities(
+    credentials?: BrokerCredentials,
+    options: { readonly after?: string } = {}
+  ): Promise<readonly AlpacaFillActivity[]> {
+    const resolved = this.resolveCredentials(credentials);
+    if (!resolved) {
+      return [];
+    }
+    return fetchAlpacaFillActivities(resolved, options);
   }
 
   async cancelOrder(orderId: UUID, credentials?: BrokerCredentials): Promise<OrderStatus> {

@@ -266,6 +266,11 @@ model Order {
   status          OrderStatus
   riskDecision    Json               @map("risk_decision_json")
   submittedAt     DateTime           @default(now()) @map("submitted_at")
+  brokerOrderId      String?         @map("broker_order_id")
+  clientOrderId      String?         @map("client_order_id")
+  filledQuantity     Decimal?        @map("filled_quantity") @db.Decimal(18, 6)
+  filledAveragePrice Decimal?        @map("filled_average_price") @db.Decimal(18, 4)
+  lastReconciledAt   DateTime?       @map("last_reconciled_at")
   user            User               @relation(fields: [userId], references: [id])
   brokerAccount   BrokerAccount      @relation(fields: [brokerAccountId], references: [id])
   strategy        Strategy?          @relation(fields: [strategyId], references: [id])
@@ -273,8 +278,11 @@ model Order {
   trades          Trade[]
   statusEvents    OrderStatusEvent[]
 
+  @@unique([userId, clientOrderId], name: "orders_user_client_order_id_key")
   @@index([userId])
   @@index([status])
+  @@index([userId, status, symbol])
+  @@index([brokerOrderId])
   @@map("orders")
 }
 
@@ -337,6 +345,9 @@ model RiskRule {
   maxDrawdownPercent     Decimal  @map("max_drawdown") @db.Decimal(8, 4)
   maxPositionSizePercent Decimal  @map("max_position_size") @db.Decimal(8, 4)
   stopTrading            Boolean  @default(false) @map("stop_trading")
+  maxConcurrentPositions Int?     @map("max_concurrent_positions")
+  maxConsecutiveLosses   Int?     @map("max_consecutive_losses")
+  maxWeeklyLossPercent   Decimal? @map("max_weekly_loss") @db.Decimal(8, 4)
   updatedAt              DateTime @updatedAt @map("updated_at")
   user                   User     @relation(fields: [userId], references: [id])
 
