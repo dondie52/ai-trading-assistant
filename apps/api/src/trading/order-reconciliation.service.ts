@@ -28,7 +28,8 @@ const readSeconds = (name: string, fallback: number): number => {
  */
 @Injectable()
 export class OrderReconciliationService implements OnModuleInit, OnModuleDestroy {
-  private timer?: NodeJS.Timeout;
+  // Explicit `| undefined` so the timer can be cleared under exactOptionalPropertyTypes.
+  private timer: NodeJS.Timeout | undefined;
   private running = false;
   private lastRunAt?: string;
   private lastResult?: ReconciliationCycleResult;
