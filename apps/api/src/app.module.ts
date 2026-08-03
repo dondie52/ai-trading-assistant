@@ -37,6 +37,7 @@ import { RealtimeGateway } from "./realtime/realtime.gateway.js";
 import { PlatformStore } from "./store/platform.store.js";
 import { StrategiesController } from "./strategies/strategies.controller.js";
 import { AnalyticsController } from "./analytics/analytics.controller.js";
+import { OrderReconciliationService } from "./trading/order-reconciliation.service.js";
 import { OrdersController } from "./trading/orders.controller.js";
 import { PositionsController } from "./trading/positions.controller.js";
 import { TradesController } from "./trading/trades.controller.js";
@@ -88,6 +89,7 @@ import { SchedulerStatusService, TradeActivityService } from "./dondie/trade-act
     PlatformStore,
     MfaService,
     OperationalMetricsService,
+    OrderReconciliationService,
     PrismaAuditSink,
     PrismaPlatformRepository,
     PrismaService,

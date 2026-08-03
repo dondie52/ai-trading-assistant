@@ -54,6 +54,8 @@ import {
   buildPortfolioAccounting,
   calculateIndicators,
   classifySkipReason,
+  computeRealizedPnlFifo,
+  countConsecutiveLosses,
   generateSignal,
   isUsEquityMarketOpen,
   normalizeEmail,
@@ -61,10 +63,12 @@ import {
   runHistoricalBacktest,
   runWalkForwardBacktest,
   summarizePerformance,
+  sumRealizedPnlSince,
   validateEmail,
   validateLogin,
   validatePassword,
-  validateTradeRisk
+  validateTradeRisk,
+  type RealizedLot
 } from "@trading/shared";
 import { isAgentManagedStrategy } from "./dondie/agent-strategy-catalog.js";
 import { PaperBrokerAdapter } from "./brokers/paper-broker.adapter.js";
@@ -1073,7 +1077,9 @@ export class PlatformService implements OnModuleInit {
       capitalDeployed: Number(costBasis.toFixed(4)),
       costBasis: Number(costBasis.toFixed(4)),
       marketValue: Number(marketValue.toFixed(4)),
-      dailyPnl: Number((this.getDailyRealizedPnl(portfolio.userId) + unrealizedPnl).toFixed(6))
+      // dailyPnl comes from the broker's equity-vs-last_equity on sync. Recomputing it as
+      // "realized today + all unrealized" counted P&L accrued on earlier days as today's.
+      dailyPnl: Number((portfolio.dailyPnl ?? this.getDailyRealizedPnl(portfolio.userId)).toFixed(6))
     };
   }
 
@@ -1485,10 +1491,7 @@ export class PlatformService implements OnModuleInit {
           message: "Connect Alpaca or configure ALPACA_API_KEY and ALPACA_SECRET_KEY."
         });
       }
-      // Enough history for default walk-forward (train 45 + test 20) with spare windows.
-      const simulated = generateHistoricalPrices(normalizedSymbol, 220, 185, timeframe);
-      this.store.marketData.set(key, simulated);
-      return simulated;
+      return this.simulateMarketData(normalizedSymbol, timeframe, key);
     }
     let candles: readonly MarketCandle[] = [];
     try {
@@ -1496,17 +1499,16 @@ export class PlatformService implements OnModuleInit {
     } catch {
       candles = [];
     }
-    // Paper accounts often see empty/denied feeds on weekends or free-tier delays.
-    // Keep the autonomous agent runnable with simulated history in PAPER only.
-    if (candles.length === 0 && (credentials.environment ?? "PAPER") === "PAPER") {
-      candles = generateHistoricalPrices(normalizedSymbol, 220, 185, timeframe);
-      this.store.marketData.set(key, candles);
-      return candles;
-    }
     if (candles.length === 0) {
+      // A simulated random walk must never reach signal generation or order pricing while
+      // real orders are routed to a broker — paper included, because paper fills are real
+      // fills against real prices. Simulation stays an explicit, non-production opt-in.
+      if (this.allowSimulatedMarketData()) {
+        return this.simulateMarketData(normalizedSymbol, timeframe, key);
+      }
       throw new NotFoundException({
         code: "MARKET_DATA_UNAVAILABLE",
-        message: `Market data is unavailable for ${normalizedSymbol}.`
+        message: `Market data is unavailable for ${normalizedSymbol}. Refusing to trade on simulated prices.`
       });
     }
     this.store.marketData.set(key, candles);
@@ -1593,7 +1595,9 @@ export class PlatformService implements OnModuleInit {
             ? Number((((latest.close - previousClose) / previousClose) * 100).toFixed(2))
             : 0,
         timestamp: latest.timestamp,
-        source: (credentials.environment ?? "PAPER") === "PAPER" ? "SIMULATED" : "ALPACA"
+        // The bars behind this fallback came from Alpaca (listMarketData refuses to
+        // fabricate them), so label the source honestly instead of crying SIMULATED.
+        source: this.allowSimulatedMarketData() ? "SIMULATED" : "ALPACA"
       };
     }
   }
@@ -1897,6 +1901,17 @@ export class PlatformService implements OnModuleInit {
       }
     }
 
+    // An order that is accepted but not yet filled leaves no position behind, so a
+    // position-only check lets the next scan submit the same trade again. That is how a
+    // $10 account ended up with six overlapping buys across three symbols.
+    const working = this.listWorkingOrders(userId, symbol)[0];
+    if (working) {
+      return skipAutomation(
+        `Order already pending — ${symbol} has a ${working.status} order at the broker since ${working.submittedAt}.`,
+        1
+      );
+    }
+
     const existingPosition = this.listPositions(userId).find((position) => position.symbol === symbol);
     const side = signal.signalType;
     if (side === "BUY" && existingPosition && existingPosition.quantity > 0) {
@@ -2153,9 +2168,33 @@ export class PlatformService implements OnModuleInit {
     if (existing.status === "FILLED") {
       throw new BadRequestException({ code: "ORDER_FILLED", message: "Filled orders cannot be cancelled." });
     }
+    // Marking an order cancelled locally while it is still working at the broker is how a
+    // "cancelled" order comes back as a surprise fill. Cancel at the broker first, and
+    // only give up on it if the broker no longer has the order at all.
+    if (existing.brokerOrderId && this.usesAlpacaExecution(userId)) {
+      const credentials = this.resolveAlpacaCredentials(userId);
+      try {
+        await this.alpacaBroker.cancelOrder(existing.brokerOrderId as UUID, credentials);
+      } catch (error) {
+        const snapshot = await this.alpacaBroker.getOrder(existing.brokerOrderId, credentials);
+        if (snapshot && (snapshot.status === "FILLED" || snapshot.status === "PARTIALLY_FILLED")) {
+          throw new ConflictException({
+            code: "ORDER_ALREADY_FILLED",
+            message: `${existing.symbol} order filled at the broker before the cancel landed.`
+          });
+        }
+        if (snapshot) {
+          throw new UnprocessableEntityException({
+            code: "BROKER_CANCEL_FAILED",
+            message: error instanceof Error ? error.message : "Broker rejected the cancel request."
+          });
+        }
+      }
+    }
     const updated: Order = {
       ...existing,
-      status: "CANCELLED"
+      status: "CANCELLED",
+      lastReconciledAt: isoNow()
     };
     this.store.orders.set(orderId, updated);
     await this.platformRepository.persistOrder(updated);
@@ -2166,7 +2205,7 @@ export class PlatformService implements OnModuleInit {
       action: "ORDER_CANCELLED",
       entityType: "ORDER",
       entityId: orderId,
-      metadata: { symbol: existing.symbol, side: existing.side }
+      metadata: { symbol: existing.symbol, side: existing.side, brokerOrderId: existing.brokerOrderId ?? null }
     });
     return updated;
   }
@@ -2222,6 +2261,16 @@ export class PlatformService implements OnModuleInit {
       this.requireSignal(userId, signalId);
     }
 
+    // Defence in depth: even a direct API caller must not stack orders on one symbol.
+    const workingOrder = this.listWorkingOrders(userId, symbol)[0];
+    if (workingOrder) {
+      throw new ConflictException({
+        code: "DUPLICATE_OPEN_ORDER",
+        message: `Order already pending for ${symbol} (${workingOrder.status} since ${workingOrder.submittedAt}). Cancel it before submitting another.`,
+        details: { orderId: workingOrder.id, status: workingOrder.status }
+      });
+    }
+
     const portfolio = this.getPrimaryPortfolio(userId);
     const existingPosition = this.listPositions(userId).find((position) => position.symbol === symbol);
     let riskDecision = this.evaluateOrderRisk({
@@ -2254,8 +2303,10 @@ export class PlatformService implements OnModuleInit {
       });
     }
     logExecutionAttempting({ symbol, side, quantity });
+    const orderId = randomUUID();
     const baseOrder = {
-      id: randomUUID(),
+      id: orderId,
+      clientOrderId: orderId,
       userId,
       brokerAccountId: executionTarget.account.id,
       symbol,
@@ -2653,8 +2704,29 @@ export class PlatformService implements OnModuleInit {
           ? existing.maxPositionSizePercent
           : readNumber(body, "maxPositionSizePercent", { min: 0.01 }),
       stopTrading: typeof body.stopTrading === "boolean" ? body.stopTrading : existing.stopTrading,
+      ...(body.maxConcurrentPositions === undefined
+        ? existing.maxConcurrentPositions === undefined
+          ? {}
+          : { maxConcurrentPositions: existing.maxConcurrentPositions }
+        : { maxConcurrentPositions: readNumber(body, "maxConcurrentPositions", { min: 1 }) }),
+      ...(body.maxConsecutiveLosses === undefined
+        ? existing.maxConsecutiveLosses === undefined
+          ? {}
+          : { maxConsecutiveLosses: existing.maxConsecutiveLosses }
+        : { maxConsecutiveLosses: readNumber(body, "maxConsecutiveLosses", { min: 1 }) }),
+      ...(body.maxWeeklyLossPercent === undefined
+        ? existing.maxWeeklyLossPercent === undefined
+          ? {}
+          : { maxWeeklyLossPercent: existing.maxWeeklyLossPercent }
+        : { maxWeeklyLossPercent: readNumber(body, "maxWeeklyLossPercent", { min: 0.01 }) }),
       updatedAt: isoNow()
     };
+    if (updated.maxWeeklyLossPercent !== undefined && updated.maxWeeklyLossPercent > 100) {
+      throw new BadRequestException({
+        code: "VALIDATION_ERROR",
+        message: "maxWeeklyLossPercent cannot exceed 100%."
+      });
+    }
     if (updated.maxRiskPerTradePercent > 2) {
       throw new BadRequestException({
         code: "VALIDATION_ERROR",
@@ -2982,8 +3054,31 @@ export class PlatformService implements OnModuleInit {
     return resolveEnvAlpacaCredentials();
   }
 
+  /**
+   * Simulated candles are a test/E2E affordance only. Production never gets them: an
+   * autonomous agent that signals off a random walk while submitting real broker orders
+   * is the most expensive bug this codebase can have.
+   */
   private allowSimulatedMarketData(): boolean {
-    return process.env.ENABLE_E2E_SEED === "true" || process.env.NODE_ENV === "test";
+    if (process.env.NODE_ENV === "production") {
+      return false;
+    }
+    return (
+      process.env.ENABLE_E2E_SEED === "true" ||
+      process.env.NODE_ENV === "test" ||
+      process.env.ALLOW_SIMULATED_MARKET_DATA === "true"
+    );
+  }
+
+  /** Enough history for default walk-forward (train 45 + test 20) with spare windows. */
+  private simulateMarketData(
+    symbol: string,
+    timeframe: MarketTimeframe,
+    key: string
+  ): readonly MarketCandle[] {
+    const simulated = generateHistoricalPrices(symbol, 220, 185, timeframe);
+    this.store.marketData.set(key, simulated);
+    return simulated;
   }
 
   private getAlpacaBrokerAccount(userId: UUID): BrokerAccount | undefined {
@@ -3151,6 +3246,9 @@ export class PlatformService implements OnModuleInit {
       environment: account.environment ?? "PAPER"
     };
 
+    // Both calls must succeed before anything local is replaced. Deleting positions first
+    // and then failing to refetch them would report a flat book while the broker is still
+    // holding real exposure — and would unblock the duplicate-position guard.
     const [alpacaAccount, alpacaPositions] = await Promise.all([
       this.alpacaBroker.getAccount(credentials),
       this.alpacaBroker.getPositions(credentials)
@@ -3196,6 +3294,7 @@ export class PlatformService implements OnModuleInit {
       await this.platformRepository.persistPosition(position);
     }
     await this.platformRepository.deletePositionsForUserExcept(userId, [...syncedSymbols]);
+    await this.refreshRealizedLedger(userId, credentials);
 
     const portfolio = this.getPrimaryPortfolio(userId);
     const accounting = buildPortfolioAccounting({
@@ -3228,6 +3327,194 @@ export class PlatformService implements OnModuleInit {
     await this.platformRepository.persistPortfolio(updatedPortfolio);
   }
 
+  /**
+   * Rebuild realized P&L from the broker's own fill history.
+   *
+   * Alpaca has no lifetime realized-P&L field, so the number can only match the broker
+   * dashboard by replaying fills FIFO. Deriving it from the local trade table instead is
+   * what let a purge of local rows silently change reported profit.
+   */
+  private async refreshRealizedLedger(userId: UUID, credentials: BrokerCredentials): Promise<void> {
+    try {
+      const fills = await this.alpacaBroker.getFillActivities(credentials);
+      if (fills.length === 0) {
+        // No fills at the broker is a real answer only when we got a real response.
+        this.store.realizedLedger.set(userId, { lots: [], total: 0, refreshedAt: isoNow() });
+        return;
+      }
+      const summary = computeRealizedPnlFifo(
+        fills.map((fill) => ({
+          symbol: fill.symbol,
+          side: fill.side,
+          quantity: fill.quantity,
+          price: fill.price,
+          filledAt: fill.filledAt
+        }))
+      );
+      this.store.realizedLedger.set(userId, {
+        lots: summary.lots,
+        total: summary.total,
+        refreshedAt: isoNow()
+      });
+    } catch {
+      // Keep the previous ledger rather than reporting $0 realized on a transient failure.
+    }
+  }
+
+  /**
+   * Bring every working order for a user back in line with the broker.
+   *
+   * Terminal broker states are written through to the local order, fills produce trade
+   * rows, and an order the broker has never heard of (or one that has outlived
+   * ORDER_STALE_MINUTES with no broker id) is closed out as CANCELLED so it cannot block
+   * the symbol forever. Safe to call concurrently with trading: it only ever moves an
+   * order from a non-terminal state to the state the broker reports.
+   */
+  async reconcileWorkingOrders(userId: UUID): Promise<{
+    readonly checked: number;
+    readonly updated: number;
+    readonly abandoned: number;
+    readonly errors: readonly string[];
+  }> {
+    const working = this.listWorkingOrders(userId);
+    if (working.length === 0) {
+      return { checked: 0, updated: 0, abandoned: 0, errors: [] };
+    }
+    const account = this.getAlpacaBrokerAccount(userId);
+    if (!account?.encryptedApiKey || !account.encryptedSecret) {
+      return { checked: working.length, updated: 0, abandoned: 0, errors: [] };
+    }
+    const credentials: BrokerCredentials = {
+      apiKey: this.brokerCredentials.decrypt(account.encryptedApiKey),
+      secret: this.brokerCredentials.decrypt(account.encryptedSecret),
+      environment: account.environment ?? "PAPER"
+    };
+
+    const staleAfterMs = Math.max(1, Number(process.env.ORDER_STALE_MINUTES ?? 30)) * 60_000;
+    const errors: string[] = [];
+    let updated = 0;
+    let abandoned = 0;
+    let sawFill = false;
+
+    for (const order of working) {
+      try {
+        const snapshot = order.brokerOrderId
+          ? await this.alpacaBroker.getOrder(order.brokerOrderId, credentials)
+          : undefined;
+
+        if (!snapshot) {
+          const ageMs = Date.now() - Date.parse(order.submittedAt);
+          if (Number.isFinite(ageMs) && ageMs >= staleAfterMs) {
+            await this.abandonStaleOrder(order, order.brokerOrderId ? "broker_unknown" : "no_broker_id");
+            abandoned += 1;
+          }
+          continue;
+        }
+
+        const statusChanged = snapshot.status !== order.status;
+        const quantityChanged = snapshot.filledQuantity > (order.filledQuantity ?? 0);
+        if (!statusChanged && !quantityChanged) {
+          continue;
+        }
+
+        const filled = snapshot.filledQuantity > 0;
+        const reconciled: Order = {
+          ...order,
+          status: snapshot.status,
+          quantity: filled ? snapshot.filledQuantity : order.quantity,
+          price: filled && snapshot.filledAveragePrice > 0 ? snapshot.filledAveragePrice : order.price,
+          ...(filled
+            ? { filledQuantity: snapshot.filledQuantity, filledAveragePrice: snapshot.filledAveragePrice }
+            : {}),
+          lastReconciledAt: isoNow()
+        };
+        this.store.orders.set(reconciled.id, reconciled);
+        await this.platformRepository.persistOrder(reconciled);
+        await this.trackOrderStatus(reconciled, {
+          source: "reconciliation",
+          broker: "ALPACA",
+          brokerOrderId: snapshot.brokerOrderId,
+          filledQuantity: snapshot.filledQuantity,
+          filledAveragePrice: snapshot.filledAveragePrice
+        });
+        updated += 1;
+
+        if (
+          (reconciled.status === "FILLED" || reconciled.status === "PARTIALLY_FILLED") &&
+          !this.hasTradeForOrder(reconciled.id)
+        ) {
+          const existingPosition = this.listPositions(userId).find(
+            (candidate) => candidate.symbol === reconciled.symbol
+          );
+          const trade = this.recordFilledTrade(reconciled, existingPosition);
+          await this.platformRepository.persistTrade(trade);
+          sawFill = true;
+          this.store.appendAudit({
+            userId,
+            actorUserId: userId,
+            action: "ORDER_RECONCILED",
+            entityType: "ORDER",
+            entityId: reconciled.id,
+            metadata: {
+              symbol: reconciled.symbol,
+              status: reconciled.status,
+              filledQuantity: snapshot.filledQuantity,
+              filledAveragePrice: snapshot.filledAveragePrice
+            }
+          });
+          this.realtime.publish({
+            userId,
+            type: "trade.executed",
+            data: { order: reconciled, trade }
+          });
+        }
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `reconcile failed for order ${order.id}`);
+      }
+    }
+
+    if (sawFill) {
+      try {
+        await this.syncAlpacaState(userId);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : "post-reconciliation sync failed");
+      }
+    }
+
+    return { checked: working.length, updated, abandoned, errors };
+  }
+
+  private hasTradeForOrder(orderId: UUID): boolean {
+    for (const trade of this.store.trades.values()) {
+      if (trade.orderId === orderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Close out an order the broker cannot account for so it stops blocking its symbol. */
+  private async abandonStaleOrder(order: Order, reason: string): Promise<void> {
+    const cancelled: Order = { ...order, status: "CANCELLED", lastReconciledAt: isoNow() };
+    this.store.orders.set(cancelled.id, cancelled);
+    await this.platformRepository.persistOrder(cancelled);
+    await this.trackOrderStatus(cancelled, { source: "reconciliation", reason });
+    this.store.appendAudit({
+      userId: order.userId,
+      actorUserId: order.userId,
+      action: "ORDER_ABANDONED",
+      entityType: "ORDER",
+      entityId: order.id,
+      metadata: { symbol: order.symbol, reason, submittedAt: order.submittedAt }
+    });
+    this.addNotification({
+      userId: order.userId,
+      notificationType: "SYSTEM",
+      title: "Stale order cleared",
+      message: `${order.symbol} order from ${order.submittedAt} was cleared during reconciliation (${reason}).`
+    });
+  }
+
   private async applyBrokerExecution(
     submittedOrder: Order,
     execution: BrokerExecutionResult,
@@ -3236,11 +3523,20 @@ export class PlatformService implements OnModuleInit {
     const existingPosition = this.listPositions(submittedOrder.userId).find(
       (candidate) => candidate.symbol === submittedOrder.symbol
     );
+    const filled = execution.filledQuantity > 0;
     const executedOrder: Order = {
       ...submittedOrder,
-      quantity: execution.filledQuantity || submittedOrder.quantity,
-      price: execution.filledAveragePrice || submittedOrder.price,
-      status: execution.status
+      // Only overwrite the working quantity/price once the broker reports a real fill;
+      // otherwise the order keeps the values it was submitted with.
+      quantity: filled ? execution.filledQuantity : submittedOrder.quantity,
+      price: filled && execution.filledAveragePrice > 0 ? execution.filledAveragePrice : submittedOrder.price,
+      status: execution.status,
+      ...(execution.brokerOrderId ? { brokerOrderId: execution.brokerOrderId } : {}),
+      ...(execution.clientOrderId ? { clientOrderId: execution.clientOrderId } : {}),
+      ...(filled
+        ? { filledQuantity: execution.filledQuantity, filledAveragePrice: execution.filledAveragePrice }
+        : {}),
+      lastReconciledAt: isoNow()
     };
     this.store.orders.set(executedOrder.id, executedOrder);
     await this.platformRepository.persistOrder(executedOrder);
@@ -3258,7 +3554,22 @@ export class PlatformService implements OnModuleInit {
       await this.platformRepository.persistTrade(trade);
     }
 
-    await this.syncAlpacaState(executedOrder.userId);
+    // The fill already happened. If the follow-up sync fails, surfacing that as a thrown
+    // error would report a real broker position as a rejected order — the caller would
+    // then be free to submit it again. Log it and let reconciliation catch up instead.
+    try {
+      await this.syncAlpacaState(executedOrder.userId);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "broker sync failed";
+      this.store.appendAudit({
+        userId: executedOrder.userId,
+        actorUserId: executedOrder.userId,
+        action: "BROKER_SYNC_DEFERRED",
+        entityType: "ORDER",
+        entityId: executedOrder.id,
+        metadata: { broker: brokerName, reason: detail, orderStatus: executedOrder.status }
+      });
+    }
     const portfolio = this.getPrimaryPortfolio(executedOrder.userId);
     const position = this.listPositions(executedOrder.userId).find(
       (candidate) => candidate.symbol === executedOrder.symbol
@@ -3331,20 +3642,60 @@ export class PlatformService implements OnModuleInit {
     };
   }
 
-  private getDailyRealizedPnl(userId: UUID): number {
-    const today = isoNow().slice(0, 10);
+  /**
+   * Closed lots, oldest first. Broker fill activities win when we have them: the local
+   * trade table is derived state that broker reconciliation can legitimately rewrite,
+   * so it must never be the authority for realized P&L.
+   */
+  private getRealizedLots(userId: UUID): readonly RealizedLot[] {
+    const cached = this.store.realizedLedger.get(userId);
+    if (cached) {
+      return cached.lots;
+    }
     return this.listTrades(userId)
-      .filter((trade) => trade.closedAt?.slice(0, 10) === today)
-      .reduce((sum, trade) => sum + trade.pnl, 0);
+      .filter((trade): trade is Trade & { closedAt: string } => Boolean(trade.closedAt))
+      .sort((left, right) => left.closedAt.localeCompare(right.closedAt))
+      .map((trade) => ({
+        symbol: trade.symbol,
+        quantity: trade.quantity,
+        entryPrice: trade.entryPrice,
+        exitPrice: trade.exitPrice ?? trade.entryPrice,
+        pnl: trade.pnl,
+        closedAt: trade.closedAt
+      }));
+  }
+
+  private getDailyRealizedPnl(userId: UUID): number {
+    const startOfDay = `${isoNow().slice(0, 10)}T00:00:00.000Z`;
+    return sumRealizedPnlSince(this.getRealizedLots(userId), startOfDay);
   }
 
   /** Lifetime realized P&L from closed fills only — open positions contribute $0. */
   private getLifetimeRealizedPnl(userId: UUID): number {
+    const cached = this.store.realizedLedger.get(userId);
+    if (cached) {
+      return cached.total;
+    }
     return Number(
-      this.listTrades(userId)
-        .filter((trade) => Boolean(trade.closedAt))
-        .reduce((sum, trade) => sum + trade.pnl, 0)
+      this.getRealizedLots(userId)
+        .reduce((sum, lot) => sum + lot.pnl, 0)
         .toFixed(4)
+    );
+  }
+
+  /** Orders still working at the broker; a symbol with one must not get another. */
+  private listWorkingOrders(userId: UUID, symbol?: string): readonly Order[] {
+    const normalized = symbol?.toUpperCase();
+    return this.filterToAlpacaBookWhenConnected(
+      userId,
+      [...this.store.orders.values()].filter(
+        (order) =>
+          order.userId === userId &&
+          (order.status === "PENDING" ||
+            order.status === "SUBMITTED" ||
+            order.status === "PARTIALLY_FILLED") &&
+          (normalized === undefined || order.symbol === normalized)
+      )
     );
   }
 
@@ -3404,6 +3755,7 @@ export class PlatformService implements OnModuleInit {
     const existingPositionValue = input.existingPosition
       ? input.existingPosition.averagePrice * Math.abs(input.existingPosition.quantity)
       : 0;
+    const closedLots = this.getRealizedLots(input.userId);
     return validateTradeRisk(
       this.getRiskRules(input.userId),
       {
@@ -3412,7 +3764,16 @@ export class PlatformService implements OnModuleInit {
         dailyRealizedPnl: this.getDailyRealizedPnl(input.userId),
         currentDrawdownPercent: this.getPerformance(input.userId).maxDrawdown,
         existingPositionValue,
-        existingPositionQuantity: input.existingPosition?.quantity ?? 0
+        existingPositionQuantity: input.existingPosition?.quantity ?? 0,
+        weeklyRealizedPnl: sumRealizedPnlSince(
+          closedLots,
+          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        ),
+        openPositionCount: this.listPositions(input.userId).length,
+        consecutiveLosses: countConsecutiveLosses(closedLots),
+        ...(input.existingPosition && input.existingPosition.averagePrice > 0
+          ? { existingAveragePrice: input.existingPosition.averagePrice }
+          : {})
       },
       {
         symbol: input.symbol,

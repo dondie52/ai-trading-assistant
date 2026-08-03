@@ -3,8 +3,11 @@ import {
   aggregatePositionsBySymbol,
   buildPortfolioAccounting,
   classifySkipReason,
+  computeRealizedPnlFifo,
+  countConsecutiveLosses,
   formatUsd,
-  normalizeSignedZero
+  normalizeSignedZero,
+  sumRealizedPnlSince
 } from "@trading/shared";
 
 describe("portfolio accounting", () => {
@@ -96,5 +99,78 @@ describe("micro money format", () => {
     expect(formatUsd(-0.0004, { microDetail: true })).toBe("-$0.0004");
     expect(formatUsd(-0)).toBe("$0.00");
     expect(normalizeSignedZero(-0)).toBe(0);
+  });
+});
+
+describe("FIFO realized P&L from broker fills", () => {
+  it("returns zero while a position is still open", () => {
+    const summary = computeRealizedPnlFifo([
+      { symbol: "SPY", side: "BUY", quantity: 2, price: 100, filledAt: "2026-01-02T15:00:00.000Z" }
+    ]);
+
+    expect(summary.total).toBe(0);
+    expect(summary.lots).toHaveLength(0);
+  });
+
+  it("realizes P&L lot by lot in FIFO order", () => {
+    const summary = computeRealizedPnlFifo([
+      { symbol: "SPY", side: "BUY", quantity: 1, price: 100, filledAt: "2026-01-02T15:00:00.000Z" },
+      { symbol: "SPY", side: "BUY", quantity: 1, price: 110, filledAt: "2026-01-03T15:00:00.000Z" },
+      { symbol: "SPY", side: "SELL", quantity: 2, price: 120, filledAt: "2026-01-04T15:00:00.000Z" }
+    ]);
+
+    // 20 from the first lot + 10 from the second.
+    expect(summary.total).toBe(30);
+    expect(summary.lots).toHaveLength(2);
+    expect(summary.lots[0]?.entryPrice).toBe(100);
+    expect(summary.lots[1]?.entryPrice).toBe(110);
+  });
+
+  it("handles fractional micro-stake lots", () => {
+    const summary = computeRealizedPnlFifo([
+      { symbol: "NVDA", side: "BUY", quantity: 0.0433, price: 196.26, filledAt: "2026-01-02T15:00:00.000Z" },
+      { symbol: "NVDA", side: "SELL", quantity: 0.0433, price: 199, filledAt: "2026-01-02T18:00:00.000Z" }
+    ]);
+
+    expect(summary.total).toBeCloseTo(0.1187, 3);
+  });
+
+  it("closes the old side before opening the new one when a fill crosses through flat", () => {
+    const summary = computeRealizedPnlFifo([
+      { symbol: "QQQ", side: "BUY", quantity: 1, price: 100, filledAt: "2026-01-02T15:00:00.000Z" },
+      { symbol: "QQQ", side: "SELL", quantity: 3, price: 105, filledAt: "2026-01-03T15:00:00.000Z" },
+      { symbol: "QQQ", side: "BUY", quantity: 2, price: 100, filledAt: "2026-01-04T15:00:00.000Z" }
+    ]);
+
+    // +5 closing the long, then +10 closing the 2-share short at 105 -> 100.
+    expect(summary.total).toBe(15);
+  });
+
+  it("keeps symbols independent", () => {
+    const summary = computeRealizedPnlFifo([
+      { symbol: "SPY", side: "BUY", quantity: 1, price: 100, filledAt: "2026-01-02T15:00:00.000Z" },
+      { symbol: "QQQ", side: "SELL", quantity: 1, price: 200, filledAt: "2026-01-02T16:00:00.000Z" }
+    ]);
+
+    expect(summary.total).toBe(0);
+    expect(summary.lots).toHaveLength(0);
+  });
+
+  it("windows realized P&L by close time", () => {
+    const summary = computeRealizedPnlFifo([
+      { symbol: "SPY", side: "BUY", quantity: 1, price: 100, filledAt: "2026-01-01T15:00:00.000Z" },
+      { symbol: "SPY", side: "SELL", quantity: 1, price: 90, filledAt: "2026-01-02T15:00:00.000Z" },
+      { symbol: "SPY", side: "BUY", quantity: 1, price: 100, filledAt: "2026-01-09T15:00:00.000Z" },
+      { symbol: "SPY", side: "SELL", quantity: 1, price: 105, filledAt: "2026-01-10T15:00:00.000Z" }
+    ]);
+
+    expect(summary.total).toBe(-5);
+    expect(sumRealizedPnlSince(summary.lots, "2026-01-09T00:00:00.000Z")).toBe(5);
+  });
+
+  it("counts the losing streak back to the last winner", () => {
+    expect(countConsecutiveLosses([{ pnl: 5 }, { pnl: -1 }, { pnl: -2 }])).toBe(2);
+    expect(countConsecutiveLosses([{ pnl: -1 }, { pnl: 4 }])).toBe(0);
+    expect(countConsecutiveLosses([])).toBe(0);
   });
 });

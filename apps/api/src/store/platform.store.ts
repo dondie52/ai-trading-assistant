@@ -24,6 +24,7 @@ import type {
   UserStatus,
   UUID
 } from "@trading/types";
+import type { RealizedLot } from "@trading/shared";
 import type { AuditSink } from "../audit/audit-sink.js";
 
 export interface UserRecord extends PublicUser {
@@ -70,6 +71,13 @@ export interface PasswordResetTokenRecord {
   readonly expiresAt: string;
   readonly createdAt: string;
   usedAt?: string;
+}
+
+export interface BrokerRealizedLedger {
+  /** Oldest-first closed lots derived from broker fills. */
+  readonly lots: readonly RealizedLot[];
+  readonly total: number;
+  readonly refreshedAt: string;
 }
 
 const isoNow = (): string => new Date().toISOString();
@@ -124,6 +132,11 @@ export class PlatformStore {
   readonly dondieChatThreads = new Map<UUID, DondieChatThread>();
   readonly automationSettings = new Map<UUID, import("@trading/types").AutomationSettings>();
   readonly automationIdempotency = new Map<string, import("@trading/types").AutomationRunResult>();
+  /**
+   * Broker-derived realized P&L lots, per user, refreshed on every broker sync.
+   * Cached because risk validation is synchronous but the source is an HTTP call.
+   */
+  readonly realizedLedger = new Map<UUID, BrokerRealizedLedger>();
   readonly auditLogs: AuditLog[] = [];
   private auditSink?: AuditSink;
 

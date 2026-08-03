@@ -11,6 +11,8 @@ export interface BrokerExecutionResult {
   readonly status: OrderStatus;
   readonly filledQuantity: number;
   readonly filledAveragePrice: number;
+  /** Idempotency key echoed back by the broker, when it supports one. */
+  readonly clientOrderId?: string;
 }
 
 export interface BrokerAdapter {

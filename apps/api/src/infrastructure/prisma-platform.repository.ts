@@ -208,7 +208,15 @@ export class PrismaPlatformRepository {
         takeProfit: Number(order.takeProfit),
         status: order.status,
         submittedAt: order.submittedAt.toISOString(),
-        riskDecision: order.riskDecision as unknown as Order["riskDecision"]
+        riskDecision: order.riskDecision as unknown as Order["riskDecision"],
+        // Reconciliation after a restart needs the broker id and the last known fill.
+        ...(order.brokerOrderId ? { brokerOrderId: order.brokerOrderId } : {}),
+        ...(order.clientOrderId ? { clientOrderId: order.clientOrderId } : {}),
+        ...(order.filledQuantity === null ? {} : { filledQuantity: Number(order.filledQuantity) }),
+        ...(order.filledAveragePrice === null
+          ? {}
+          : { filledAveragePrice: Number(order.filledAveragePrice) }),
+        ...(order.lastReconciledAt ? { lastReconciledAt: order.lastReconciledAt.toISOString() } : {})
       });
     }
 
@@ -269,6 +277,15 @@ export class PrismaPlatformRepository {
         maxDrawdownPercent: Number(rules.maxDrawdownPercent),
         maxPositionSizePercent: Number(rules.maxPositionSizePercent),
         stopTrading: rules.stopTrading,
+        ...(rules.maxConcurrentPositions === null
+          ? {}
+          : { maxConcurrentPositions: Number(rules.maxConcurrentPositions) }),
+        ...(rules.maxConsecutiveLosses === null
+          ? {}
+          : { maxConsecutiveLosses: Number(rules.maxConsecutiveLosses) }),
+        ...(rules.maxWeeklyLossPercent === null
+          ? {}
+          : { maxWeeklyLossPercent: Number(rules.maxWeeklyLossPercent) }),
         updatedAt: rules.updatedAt.toISOString()
       });
     }
@@ -520,11 +537,25 @@ export class PrismaPlatformRepository {
         takeProfit: order.takeProfit,
         status: order.status,
         riskDecision: order.riskDecision as unknown as Prisma.InputJsonValue,
-        submittedAt: toDate(order.submittedAt)
+        submittedAt: toDate(order.submittedAt),
+        brokerOrderId: order.brokerOrderId ?? null,
+        clientOrderId: order.clientOrderId ?? null,
+        filledQuantity: order.filledQuantity ?? null,
+        filledAveragePrice: order.filledAveragePrice ?? null,
+        lastReconciledAt: order.lastReconciledAt ? toDate(order.lastReconciledAt) : null
       },
       update: {
         status: order.status,
-        riskDecision: order.riskDecision as unknown as Prisma.InputJsonValue
+        riskDecision: order.riskDecision as unknown as Prisma.InputJsonValue,
+        // Fills change quantity and price. Persisting only status left the database
+        // holding the requested size forever, so a restart rehydrated pre-fill numbers.
+        quantity: order.quantity,
+        price: order.price,
+        brokerOrderId: order.brokerOrderId ?? null,
+        clientOrderId: order.clientOrderId ?? null,
+        filledQuantity: order.filledQuantity ?? null,
+        filledAveragePrice: order.filledAveragePrice ?? null,
+        lastReconciledAt: order.lastReconciledAt ? toDate(order.lastReconciledAt) : null
       }
     });
   }
@@ -804,6 +835,9 @@ export class PrismaPlatformRepository {
         maxDrawdownPercent: rules.maxDrawdownPercent,
         maxPositionSizePercent: rules.maxPositionSizePercent,
         stopTrading: rules.stopTrading,
+        maxConcurrentPositions: rules.maxConcurrentPositions ?? null,
+        maxConsecutiveLosses: rules.maxConsecutiveLosses ?? null,
+        maxWeeklyLossPercent: rules.maxWeeklyLossPercent ?? null,
         updatedAt: toDate(rules.updatedAt)
       },
       update: {
@@ -812,6 +846,9 @@ export class PrismaPlatformRepository {
         maxDrawdownPercent: rules.maxDrawdownPercent,
         maxPositionSizePercent: rules.maxPositionSizePercent,
         stopTrading: rules.stopTrading,
+        maxConcurrentPositions: rules.maxConcurrentPositions ?? null,
+        maxConsecutiveLosses: rules.maxConsecutiveLosses ?? null,
+        maxWeeklyLossPercent: rules.maxWeeklyLossPercent ?? null,
         updatedAt: toDate(rules.updatedAt)
       }
     });

@@ -67,45 +67,90 @@ const authHeaders = (credentials: BrokerCredentials): Record<string, string> => 
   "APCA-API-SECRET-KEY": credentials.secret
 });
 
+/** Transient at the broker or the network — safe to retry an idempotent request. */
+const isRetryableStatus = (status: number): boolean => status === 429 || status >= 500;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/**
+ * Retries are only applied to requests the caller marks idempotent. Order submission
+ * is never retried here: a POST that timed out may still have reached the matching
+ * engine, and a blind retry is how you get a double fill.
+ */
+const alpacaFetch = async <T>(
+  label: string,
+  baseUrl: string,
+  credentials: BrokerCredentials,
+  path: string,
+  init?: RequestInit,
+  options: { readonly retries?: number } = {}
+): Promise<T> => {
+  const retries = options.retries ?? 0;
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        ...init,
+        headers: {
+          ...authHeaders(credentials),
+          ...(init?.headers ?? {})
+        },
+        signal: AbortSignal.timeout(10_000)
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(`Alpaca ${label} request failed for ${path}`);
+      if (attempt < retries) {
+        await sleep(250 * 2 ** attempt);
+        continue;
+      }
+      throw lastError;
+    }
+    if (response.ok) {
+      return (await response.json()) as T;
+    }
+    lastError = new Error(`Alpaca ${label} API request failed (${response.status}) for ${path}`);
+    if (attempt < retries && isRetryableStatus(response.status)) {
+      await sleep(250 * 2 ** attempt);
+      continue;
+    }
+    throw lastError;
+  }
+  throw lastError ?? new Error(`Alpaca ${label} API request failed for ${path}`);
+};
+
 const tradingFetch = async <T>(
   credentials: BrokerCredentials,
   path: string,
-  init?: RequestInit
-): Promise<T> => {
-  const baseUrl = resolveAlpacaTradingBaseUrl(credentials.environment ?? "PAPER");
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...authHeaders(credentials),
-      ...(init?.headers ?? {})
-    },
-    signal: AbortSignal.timeout(10_000)
-  });
-  if (!response.ok) {
-    throw new Error(`Alpaca trading API request failed (${response.status}) for ${path}`);
-  }
-  return (await response.json()) as T;
-};
+  init?: RequestInit,
+  options: { readonly retries?: number } = {}
+): Promise<T> =>
+  alpacaFetch<T>(
+    "trading",
+    resolveAlpacaTradingBaseUrl(credentials.environment ?? "PAPER"),
+    credentials,
+    path,
+    init,
+    options
+  );
 
 const dataFetch = async <T>(
   credentials: BrokerCredentials,
   path: string,
-  init?: RequestInit
-): Promise<T> => {
-  const baseUrl = resolveAlpacaDataBaseUrl(credentials.environment ?? "PAPER");
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...authHeaders(credentials),
-      ...(init?.headers ?? {})
-    },
-    signal: AbortSignal.timeout(10_000)
-  });
-  if (!response.ok) {
-    throw new Error(`Alpaca data API request failed (${response.status}) for ${path}`);
-  }
-  return (await response.json()) as T;
-};
+  init?: RequestInit,
+  options: { readonly retries?: number } = {}
+): Promise<T> =>
+  alpacaFetch<T>(
+    "data",
+    resolveAlpacaDataBaseUrl(credentials.environment ?? "PAPER"),
+    credentials,
+    path,
+    init,
+    options
+  );
 
 export const fetchAlpacaAccount = async (credentials: BrokerCredentials): Promise<AlpacaAccount> => {
   const payload = await tradingFetch<Record<string, unknown>>(credentials, "/v2/account");
@@ -296,17 +341,45 @@ const mapAlpacaOrderStatus = (status: unknown): Order["status"] => {
   }
 };
 
+export interface AlpacaOrderSnapshot {
+  readonly brokerOrderId: string;
+  readonly clientOrderId: string;
+  readonly symbol: string;
+  readonly status: Order["status"];
+  readonly filledQuantity: number;
+  readonly filledAveragePrice: number;
+}
+
+const mapAlpacaOrderSnapshot = (payload: Record<string, unknown>): AlpacaOrderSnapshot => ({
+  brokerOrderId: String(payload.id ?? ""),
+  clientOrderId: String(payload.client_order_id ?? ""),
+  symbol: String(payload.symbol ?? "").toUpperCase(),
+  status: mapAlpacaOrderStatus(payload.status),
+  filledQuantity: parseNumber(payload.filled_qty),
+  filledAveragePrice: parseNumber(payload.filled_avg_price)
+});
+
 export const submitAlpacaOrder = async (
   credentials: BrokerCredentials,
   order: Order,
   marketPrice?: number
-): Promise<{ readonly brokerOrderId: string; readonly status: Order["status"]; readonly filledQuantity: number; readonly filledAveragePrice: number }> => {
+): Promise<{
+  readonly brokerOrderId: string;
+  readonly clientOrderId: string;
+  readonly status: Order["status"];
+  readonly filledQuantity: number;
+  readonly filledAveragePrice: number;
+}> => {
+  // The local order id doubles as the broker idempotency key: if this submission is ever
+  // replayed, Alpaca rejects the duplicate instead of opening a second position.
+  const clientOrderId = order.clientOrderId ?? order.id;
   const body: Record<string, string> = {
     symbol: order.symbol,
     qty: String(order.quantity),
     side: mapOrderSide(order.side),
     type: mapOrderType(order.orderType),
-    time_in_force: "day"
+    time_in_force: "day",
+    client_order_id: clientOrderId
   };
   if (order.orderType === "LIMIT") {
     body.limit_price = String(order.price);
@@ -315,37 +388,120 @@ export const submitAlpacaOrder = async (
     body.stop_price = String(order.price);
   }
 
+  // No retries on submission — a POST that times out may still have reached the
+  // matching engine, so a retry here is exactly how double fills happen. The
+  // reconciliation worker picks up any order whose response we never saw.
   const created = await tradingFetch<Record<string, unknown>>(credentials, "/v2/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
 
-  const brokerOrderId = String(created.id ?? "");
-  let status = mapAlpacaOrderStatus(created.status);
-  let filledQuantity = parseNumber(created.filled_qty);
-  let filledAveragePrice = parseNumber(created.filled_avg_price);
+  const snapshot = mapAlpacaOrderSnapshot(created);
+  let status = snapshot.status;
+  let filledQuantity = snapshot.filledQuantity;
+  let filledAveragePrice = snapshot.filledAveragePrice;
 
-  if (order.orderType === "MARKET" && status === "SUBMITTED" && brokerOrderId) {
-    const settled = await tradingFetch<Record<string, unknown>>(credentials, `/v2/orders/${brokerOrderId}`);
-    status = mapAlpacaOrderStatus(settled.status);
-    filledQuantity = parseNumber(settled.filled_qty);
-    filledAveragePrice = parseNumber(settled.filled_avg_price) || marketPrice || order.price;
+  if (order.orderType === "MARKET" && status === "SUBMITTED" && snapshot.brokerOrderId) {
+    const settled = await fetchAlpacaOrder(credentials, snapshot.brokerOrderId);
+    if (settled) {
+      status = settled.status;
+      filledQuantity = settled.filledQuantity;
+      // Only fall back to a reference price when the broker actually reports a fill.
+      // Stamping a price on an unfilled order invents a trade that does not exist.
+      filledAveragePrice =
+        settled.filledAveragePrice ||
+        (settled.filledQuantity > 0 ? marketPrice || order.price : 0);
+    }
   }
 
   return {
-    brokerOrderId,
+    brokerOrderId: snapshot.brokerOrderId,
+    clientOrderId: snapshot.clientOrderId || clientOrderId,
     status,
     filledQuantity,
     filledAveragePrice
   };
 };
 
+/** Single order snapshot. Returns undefined when the broker no longer knows the id. */
+export const fetchAlpacaOrder = async (
+  credentials: BrokerCredentials,
+  brokerOrderId: string
+): Promise<AlpacaOrderSnapshot | undefined> => {
+  try {
+    const payload = await tradingFetch<Record<string, unknown>>(
+      credentials,
+      `/v2/orders/${encodeURIComponent(brokerOrderId)}`,
+      { method: "GET" },
+      { retries: 2 }
+    );
+    return mapAlpacaOrderSnapshot(payload);
+  } catch {
+    return undefined;
+  }
+};
+
+/** Orders still working at the broker (accepted / new / partially filled). */
+export const fetchAlpacaOpenOrders = async (
+  credentials: BrokerCredentials
+): Promise<readonly AlpacaOrderSnapshot[]> => {
+  const payload = await tradingFetch<readonly Record<string, unknown>[]>(
+    credentials,
+    "/v2/orders?status=open&limit=500&nested=false",
+    { method: "GET" },
+    { retries: 2 }
+  );
+  return payload.map(mapAlpacaOrderSnapshot);
+};
+
+export interface AlpacaFillActivity {
+  readonly id: string;
+  readonly symbol: string;
+  readonly side: "BUY" | "SELL";
+  readonly quantity: number;
+  readonly price: number;
+  readonly filledAt: string;
+}
+
+/**
+ * Fill activities are the broker's own record of what actually traded. They are the only
+ * source that can produce a realized P&L number matching the Alpaca dashboard.
+ */
+export const fetchAlpacaFillActivities = async (
+  credentials: BrokerCredentials,
+  options: { readonly after?: string; readonly pageSize?: number } = {}
+): Promise<readonly AlpacaFillActivity[]> => {
+  const query = new URLSearchParams({
+    page_size: String(Math.min(Math.max(options.pageSize ?? 500, 1), 500)),
+    direction: "asc"
+  });
+  if (options.after) {
+    query.set("after", options.after);
+  }
+  const payload = await tradingFetch<readonly Record<string, unknown>[]>(
+    credentials,
+    `/v2/account/activities/FILL?${query.toString()}`,
+    { method: "GET" },
+    { retries: 2 }
+  );
+  return payload
+    .map((activity) => ({
+      id: String(activity.id ?? ""),
+      symbol: String(activity.symbol ?? "").toUpperCase(),
+      side: String(activity.side ?? "").toLowerCase() === "sell" ? ("SELL" as const) : ("BUY" as const),
+      quantity: parseNumber(activity.qty),
+      price: parseNumber(activity.price),
+      filledAt: String(activity.transaction_time ?? activity.date ?? "")
+    }))
+    .filter((activity) => activity.symbol !== "" && activity.quantity > 0 && activity.filledAt !== "");
+};
+
 export const cancelAlpacaOrder = async (
   credentials: BrokerCredentials,
   brokerOrderId: string
 ): Promise<Order["status"]> => {
-  await tradingFetch(credentials, `/v2/orders/${brokerOrderId}`, { method: "DELETE" });
+  await tradingFetch(credentials, `/v2/orders/${encodeURIComponent(brokerOrderId)}`, { method: "DELETE" });
   return "CANCELLED";
 };
 

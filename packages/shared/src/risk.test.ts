@@ -266,3 +266,106 @@ describe("risk engine", () => {
     expect(suggestedQuantity).toBeLessThanOrEqual(10);
   });
 });
+
+describe("portfolio-level risk controls", () => {
+  const baseContext = {
+    equity: 10_000,
+    cashBalance: 10_000,
+    dailyRealizedPnl: 0,
+    currentDrawdownPercent: 0,
+    existingPositionValue: 0
+  };
+  const baseIntent = {
+    symbol: "AAPL",
+    side: "BUY" as const,
+    price: 100,
+    stopLoss: 95,
+    takeProfit: 110,
+    requestedQuantity: 10
+  };
+
+  it("blocks a new symbol once the concurrent-position cap is reached", () => {
+    const decision = validateTradeRisk(
+      { ...rules, maxConcurrentPositions: 3 },
+      { ...baseContext, openPositionCount: 3 },
+      baseIntent
+    );
+
+    expect(decision.approved).toBe(false);
+    expect(decision.rejections?.map((item) => item.code)).toContain("MAX_CONCURRENT_POSITIONS");
+  });
+
+  it("still allows exiting when the concurrent-position cap is reached", () => {
+    const decision = validateTradeRisk(
+      { ...rules, maxConcurrentPositions: 3 },
+      {
+        ...baseContext,
+        openPositionCount: 3,
+        existingPositionQuantity: 10,
+        existingPositionValue: 1_000
+      },
+      { ...baseIntent, side: "SELL", stopLoss: 105, takeProfit: 90 }
+    );
+
+    expect(decision.rejections?.map((item) => item.code)).not.toContain("MAX_CONCURRENT_POSITIONS");
+  });
+
+  it("halts new exposure after the consecutive-loss circuit breaker trips", () => {
+    const decision = validateTradeRisk(
+      { ...rules, maxConsecutiveLosses: 3 },
+      { ...baseContext, consecutiveLosses: 3 },
+      baseIntent
+    );
+
+    expect(decision.approved).toBe(false);
+    expect(decision.rejections?.map((item) => item.code)).toContain("CONSECUTIVE_LOSS_LOCK");
+  });
+
+  it("halts new exposure once the rolling weekly loss ceiling is hit", () => {
+    const decision = validateTradeRisk(
+      { ...rules, maxWeeklyLossPercent: 5 },
+      { ...baseContext, weeklyRealizedPnl: -600 },
+      baseIntent
+    );
+
+    expect(decision.approved).toBe(false);
+    const weekly = decision.rejections?.find((item) => item.code === "WEEKLY_LOSS_LIMIT_REACHED");
+    expect(weekly?.limit).toBe(500);
+  });
+
+  it("refuses to add to a losing long position", () => {
+    const decision = validateTradeRisk(
+      rules,
+      {
+        ...baseContext,
+        existingPositionQuantity: 10,
+        existingPositionValue: 1_100,
+        existingAveragePrice: 110
+      },
+      { ...baseIntent, requestedQuantity: 5 }
+    );
+
+    expect(decision.approved).toBe(false);
+    expect(decision.rejections?.map((item) => item.code)).toContain("AVERAGING_DOWN_BLOCKED");
+  });
+
+  it("allows adding to a winning long position", () => {
+    const decision = validateTradeRisk(
+      rules,
+      {
+        ...baseContext,
+        existingPositionQuantity: 10,
+        existingPositionValue: 900,
+        existingAveragePrice: 90
+      },
+      { ...baseIntent, requestedQuantity: 5 }
+    );
+
+    expect(decision.rejections?.map((item) => item.code)).not.toContain("AVERAGING_DOWN_BLOCKED");
+  });
+
+  it("keeps legacy accounts working when the new rules are unset", () => {
+    const decision = validateTradeRisk(rules, baseContext, baseIntent);
+    expect(decision.approved).toBe(true);
+  });
+});

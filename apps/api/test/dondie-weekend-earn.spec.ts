@@ -344,10 +344,12 @@ describe("Dondie weekend paper BTC desk", () => {
     const agent: DondieAgent = {
       id: randomUUID(),
       userId: user.id,
+      name: "test-agent",
       status: "ACTIVE",
       tier: "FREE",
       walletBalance: 1,
       scheduleMinutes: 60,
+      symbolUniverse: ["AAPL", "MSFT"],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };

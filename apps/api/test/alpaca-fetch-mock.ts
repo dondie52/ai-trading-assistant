@@ -14,8 +14,27 @@ const buildBars = (base = 180): readonly Record<string, unknown>[] =>
     };
   });
 
-export const installAlpacaFetchMock = (): ReturnType<typeof vi.fn> => {
+export interface AlpacaFetchMockOptions {
+  /** Fill activities returned by /v2/account/activities/FILL. */
+  readonly fills?: readonly Record<string, unknown>[];
+  /** Positions returned by /v2/positions. */
+  readonly positions?: readonly Record<string, unknown>[];
+  /** Status reported for newly submitted orders. Defaults to an immediate fill. */
+  readonly submitStatus?: string;
+  /** Snapshot returned by GET /v2/orders/{id}. Defaults to a fill. */
+  readonly orderSnapshot?: Record<string, unknown>;
+  /** Historical bars. Pass [] to simulate an empty feed. */
+  readonly bars?: readonly Record<string, unknown>[];
+}
+
+export const installAlpacaFetchMock = (
+  options: AlpacaFetchMockOptions = {}
+): ReturnType<typeof vi.fn> => {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    // Must precede the /v2/account match: the activities path is a sub-route of it.
+    if (url.includes("/v2/account/activities")) {
+      return { ok: true, json: async () => options.fills ?? [] };
+    }
     if (url.includes("/v2/account")) {
       return {
         ok: true,
@@ -31,10 +50,10 @@ export const installAlpacaFetchMock = (): ReturnType<typeof vi.fn> => {
       };
     }
     if (url.includes("/v2/positions")) {
-      return { ok: true, json: async () => [] };
+      return { ok: true, json: async () => options.positions ?? [] };
     }
     if (url.includes("/bars")) {
-      return { ok: true, json: async () => ({ bars: buildBars() }) };
+      return { ok: true, json: async () => ({ bars: options.bars ?? buildBars() }) };
     }
     if (url.includes("/quotes/latest")) {
       return {
@@ -54,25 +73,33 @@ export const installAlpacaFetchMock = (): ReturnType<typeof vi.fn> => {
     }
     if (url.includes("/v2/orders") && init?.method === "POST") {
       const body = JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>;
+      const status = options.submitStatus ?? "filled";
+      const filled = status === "filled" || status === "partially_filled";
       return {
         ok: true,
         json: async () => ({
           id: randomUUID(),
-          status: "filled",
-          filled_qty: String(body.qty ?? "1"),
-          filled_avg_price: "185.6"
+          client_order_id: String(body.client_order_id ?? ""),
+          symbol: String(body.symbol ?? ""),
+          status,
+          filled_qty: filled ? String(body.qty ?? "1") : "0",
+          filled_avg_price: filled ? "185.6" : ""
         })
       };
+    }
+    if (url.includes("/v2/orders?") && init?.method === "GET") {
+      return { ok: true, json: async () => [] };
     }
     if (url.includes("/v2/orders/") && init?.method === "GET") {
       return {
         ok: true,
-        json: async () => ({
-          id: randomUUID(),
-          status: "filled",
-          filled_qty: "1",
-          filled_avg_price: "185.6"
-        })
+        json: async () =>
+          options.orderSnapshot ?? {
+            id: url.split("/v2/orders/")[1] ?? randomUUID(),
+            status: "filled",
+            filled_qty: "1",
+            filled_avg_price: "185.6"
+          }
       };
     }
     if (url.includes("/v2/orders/") && init?.method === "DELETE") {
