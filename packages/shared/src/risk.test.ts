@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { RiskRules } from "@trading/types";
-import { calculatePositionSize, validateTradeRisk } from "./risk.js";
+import {
+  calculatePositionSize,
+  estimateNetEdgeBps,
+  estimateRoundTripCostBps,
+  validateTradeRisk
+} from "./risk.js";
 
 const rules: RiskRules = {
   id: "risk-1",
@@ -367,5 +372,30 @@ describe("portfolio-level risk controls", () => {
   it("keeps legacy accounts working when the new rules are unset", () => {
     const decision = validateTradeRisk(rules, baseContext, baseIntent);
     expect(decision.approved).toBe(true);
+  });
+});
+
+describe("trade cost efficiency", () => {
+  it("charges slippage on both the entry and exit fill", () => {
+    expect(estimateRoundTripCostBps(10_000, { feePerTrade: 0, slippagePercent: 0.05 })).toBe(10);
+  });
+
+  it("folds a flat per-trade fee into basis points using notional size", () => {
+    // $1 fee each way on a $1,000 order = 2 * (1 / 1000) * 10,000 = 20 bps, plus 10 bps slippage.
+    expect(estimateRoundTripCostBps(1_000, { feePerTrade: 1, slippagePercent: 0.05 })).toBe(30);
+  });
+
+  it("treats an unsized order as costless rather than dividing by zero", () => {
+    expect(estimateRoundTripCostBps(0, { feePerTrade: 1, slippagePercent: 0.05 })).toBe(0);
+  });
+
+  it("nets the expected move against round-trip costs", () => {
+    const netEdge = estimateNetEdgeBps(300, 10_000, { feePerTrade: 0, slippagePercent: 0.05 });
+    expect(netEdge).toBe(290);
+  });
+
+  it("can go negative when costs outweigh the expected move", () => {
+    const netEdge = estimateNetEdgeBps(5, 10_000, { feePerTrade: 0, slippagePercent: 0.05 });
+    expect(netEdge).toBe(-5);
   });
 });

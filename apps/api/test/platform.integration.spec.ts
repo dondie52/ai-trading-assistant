@@ -507,6 +507,32 @@ describe("platform integration", () => {
     expect(actions).toContain("AUTOMATION_EXECUTED");
   });
 
+  it("skips automated execution when the expected move cannot clear fees and slippage", async () => {
+    const { platform, store } = createPlatform();
+    const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });
+    const strategy = platform.createStrategy(userId, {
+      name: "Thin Edge Guard",
+      description: "Take-profit too tight to survive round-trip costs",
+      status: "ACTIVE",
+      configuration: {
+        confidenceThreshold: 0,
+        stopLossPercent: 15,
+        takeProfitPercent: 0.05,
+        slippagePercent: 1,
+        minNetEdgeBps: 50
+      }
+    });
+
+    const result = await platform.runAutomation(userId, {
+      strategyId: strategy.id,
+      symbol: "AAPL"
+    });
+
+    expect(result.status).toBe("SKIPPED");
+    expect(result.reasonCode).toBe("NET_EDGE_TOO_LOW");
+    expect(result.reason).toContain("Net edge");
+  });
+
   it("runs audited historical backtests with trading costs", async () => {
     const { platform, store } = createPlatform();
     const { userId } = await provisionAndLogin(platform, store, { fundPaper: 100_000 });

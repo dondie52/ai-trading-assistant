@@ -99,6 +99,40 @@ export const calculatePositionSize = (
   return round(riskAmount / stopLossDistance, 4);
 };
 
+export interface TradeCostAssumptions {
+  /** Flat cost charged per fill, in account currency. */
+  readonly feePerTrade: number;
+  /** Expected slippage per fill, as a percent of price (e.g. 0.05 = 0.05%). */
+  readonly slippagePercent: number;
+}
+
+/**
+ * Round-trip trading cost in basis points. Slippage and the flat fee are each paid
+ * twice — once entering the position, once exiting it.
+ */
+export const estimateRoundTripCostBps = (
+  notionalUsd: number,
+  costs: TradeCostAssumptions
+): number => {
+  if (notionalUsd <= 0) {
+    return 0;
+  }
+  const slippageBps = Math.max(0, costs.slippagePercent) * 100 * 2;
+  const feeBps = (Math.max(0, costs.feePerTrade) * 2 * 10_000) / notionalUsd;
+  return round(slippageBps + feeBps, 2);
+};
+
+/**
+ * Expected profit distance minus round-trip trading costs, in basis points. A trade
+ * whose net edge is negative or too thin cannot clear its own fees and slippage even
+ * if the signal is directionally correct.
+ */
+export const estimateNetEdgeBps = (
+  expectedMoveBps: number,
+  notionalUsd: number,
+  costs: TradeCostAssumptions
+): number => round(expectedMoveBps - estimateRoundTripCostBps(notionalUsd, costs), 2);
+
 const suggestSafeQuantity = (
   rules: RiskRules,
   context: RiskContext,

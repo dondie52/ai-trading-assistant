@@ -165,6 +165,16 @@ export function AutomationModesPanel({
               />
             </label>
             <label className="text-sm text-slate-300">
+              Min net edge (bps)
+              <input
+                type="number"
+                min={0}
+                className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-white"
+                value={settings.minNetEdgeBps}
+                onChange={(event) => onSettingsPatch({ minNetEdgeBps: Number(event.target.value) })}
+              />
+            </label>
+            <label className="text-sm text-slate-300">
               Cooldown (seconds)
               <input
                 type="number"

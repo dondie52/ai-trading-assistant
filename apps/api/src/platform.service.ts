@@ -53,9 +53,11 @@ import {
   aggregatePositionsBySymbol,
   buildPortfolioAccounting,
   calculateIndicators,
+  calculatePositionSize,
   classifySkipReason,
   computeRealizedPnlFifo,
   countConsecutiveLosses,
+  estimateNetEdgeBps,
   generateSignal,
   isUsEquityMarketOpen,
   normalizeEmail,
@@ -1933,6 +1935,30 @@ export class PlatformService implements OnModuleInit {
     const takeProfit =
       side === "BUY" ? price * (1 + takeProfitPercent / 100) : price * (1 - takeProfitPercent / 100);
 
+    // Skip trades whose expected profit cannot clear its own round-trip fees and slippage —
+    // being directionally right is not enough if the edge doesn't survive execution costs.
+    const minNetEdgeBps = Math.max(
+      0,
+      typeof body.minNetEdgeBps === "number"
+        ? body.minNetEdgeBps
+        : readConfigNumber(strategy.configuration, "minNetEdgeBps", settings.minNetEdgeBps)
+    );
+    const estimatedNotional =
+      calculatePositionSize(accountPortfolio?.portfolioValue ?? 0, settings.riskPerTradePercent, price, stopLoss) *
+      price;
+    if (estimatedNotional > 0) {
+      const netEdgeBps = estimateNetEdgeBps(takeProfitPercent * 100, estimatedNotional, {
+        feePerTrade: readConfigNumber(strategy.configuration, "feePerTrade", 0),
+        slippagePercent: readConfigNumber(strategy.configuration, "slippagePercent", 0.05)
+      });
+      if (netEdgeBps < minNetEdgeBps) {
+        return skipAutomation(
+          `Net edge ${netEdgeBps.toFixed(1)} bps after fees/slippage is below the ${minNetEdgeBps} bps minimum required.`,
+          1
+        );
+      }
+    }
+
     steps[5] = { ...steps[5]!, status: "running" };
     this.store.appendAudit({
       userId,
@@ -2044,6 +2070,7 @@ export class PlatformService implements OnModuleInit {
       marketHoursOnly: !isMicroAccount, // Allow extended hours for micro accounts to catch more moves
       minimumConfidence: isMicroAccount ? 50 : handsOff ? 65 : 60, // Lower confidence for micro accounts
       maxTradesPerDay: isMicroAccount ? 12 : 5, // More trades per day for micro accounts
+      minNetEdgeBps: isMicroAccount ? 15 : 25, // Expected move must clear fees + slippage by this much
       riskPerTradePercent: risk.maxRiskPerTradePercent,
       maxPositionSizePercent: risk.maxPositionSizePercent,
       dailyLossLimitPercent: risk.maxDailyLossPercent,
@@ -2094,6 +2121,8 @@ export class PlatformService implements OnModuleInit {
         typeof body.minimumConfidence === "number" ? body.minimumConfidence : current.minimumConfidence,
       maxTradesPerDay:
         typeof body.maxTradesPerDay === "number" ? Math.max(0, Math.floor(body.maxTradesPerDay)) : current.maxTradesPerDay,
+      minNetEdgeBps:
+        typeof body.minNetEdgeBps === "number" ? Math.max(0, body.minNetEdgeBps) : current.minNetEdgeBps,
       riskPerTradePercent:
         typeof body.riskPerTradePercent === "number" ? body.riskPerTradePercent : current.riskPerTradePercent,
       maxPositionSizePercent:
