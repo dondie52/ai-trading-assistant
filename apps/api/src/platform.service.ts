@@ -1761,8 +1761,11 @@ export class PlatformService implements OnModuleInit {
     await this.ensurePaperBrokerAccount(userId, { fundIfEmpty: !this.usesAlpacaExecution(userId) });
 
     const confidenceThreshold = readPercentSetting(body, strategy.configuration, "confidenceThreshold", settings.minimumConfidence);
-    const stopLossPercent = readPercentSetting(body, strategy.configuration, "stopLossPercent", 5);
-    const takeProfitPercent = readPercentSetting(body, strategy.configuration, "takeProfitPercent", 8);
+    // Get portfolio for micro-account optimization
+    const accountPortfolio = [...this.store.portfolios.values()].find((p) => p.userId === userId);
+    const isMicroAcc = !accountPortfolio || accountPortfolio.portfolioValue < 50;
+    const stopLossPercent = readPercentSetting(body, strategy.configuration, "stopLossPercent", isMicroAcc ? 2 : 5);
+    const takeProfitPercent = readPercentSetting(body, strategy.configuration, "takeProfitPercent", isMicroAcc ? 3 : 8);
 
     const steps: Array<{
       id: string;
@@ -2032,18 +2035,21 @@ export class PlatformService implements OnModuleInit {
     const risk = this.getRiskRules(userId);
     // Hands-off agents survive API restarts: restore AUTOPILOT from persisted agent+strategy.
     const handsOff = this.hasHandsOffAgent(userId) && !risk.stopTrading;
+    // Get portfolio for micro-account optimization
+    const portfolio = [...this.store.portfolios.values()].find((p) => p.userId === userId);
+    const isMicroAccount = !portfolio || portfolio.portfolioValue < 50;
     const defaults: import("@trading/types").AutomationSettings = {
       mode: handsOff ? "AUTOPILOT" : "ASSISTED",
       watchlist: [...watchlist],
-      marketHoursOnly: true,
-      minimumConfidence: handsOff ? 65 : 60,
-      maxTradesPerDay: 5,
+      marketHoursOnly: !isMicroAccount, // Allow extended hours for micro accounts to catch more moves
+      minimumConfidence: isMicroAccount ? 50 : handsOff ? 65 : 60, // Lower confidence for micro accounts
+      maxTradesPerDay: isMicroAccount ? 12 : 5, // More trades per day for micro accounts
       riskPerTradePercent: risk.maxRiskPerTradePercent,
       maxPositionSizePercent: risk.maxPositionSizePercent,
       dailyLossLimitPercent: risk.maxDailyLossPercent,
       maxDrawdownPercent: risk.maxDrawdownPercent,
       allowedAssetTypes: ["stock"],
-      cooldownSeconds: 60,
+      cooldownSeconds: isMicroAccount ? 30 : 60, // Faster trading for micro accounts
       requireConfirmationAboveValue: handsOff ? 1_000_000_000 : 2_500,
       emergencyStop: risk.stopTrading,
       runtimeState: risk.stopTrading ? "RISK_LOCK" : handsOff ? "RUNNING" : "IDLE",

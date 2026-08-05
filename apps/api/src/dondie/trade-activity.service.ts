@@ -178,12 +178,18 @@ export class SchedulerStatusService {
   private lockHolder: string | undefined;
   private readonly orderIdempotency = new Set<string>();
   private readonly fillIdempotency = new Set<string>();
+  private schedulerInitialized = false;
 
   heartbeat(nextExpectedScanAt?: string): void {
     this.lastHeartbeatAt = isoNow();
+    this.schedulerInitialized = true;
     if (nextExpectedScanAt) {
       this.nextExpectedScanAt = nextExpectedScanAt;
     }
+  }
+
+  markInitialized(): void {
+    this.schedulerInitialized = true;
   }
 
   tryAcquireScanLock(holder: string): boolean {
@@ -276,6 +282,9 @@ export class SchedulerStatusService {
     if (enabled) {
       if (Number.isFinite(heartbeatMs) && now - heartbeatMs <= scheduleMinutes * 60_000 * 2.5) {
         status = Number.isFinite(nextMs) && now > nextMs + 60_000 ? "DELAYED" : "RUNNING";
+      } else if (this.schedulerInitialized && !this.lastHeartbeatAt) {
+        // Scheduler initialized but no heartbeat yet (just started)
+        status = "RUNNING";
       } else if (!this.lastHeartbeatAt) {
         status = "DELAYED";
       } else {
