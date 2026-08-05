@@ -32,6 +32,7 @@ export class DondieScheduler implements OnModuleDestroy {
     this.runForUser = runForUser;
     this.listUserIds = listUserIds;
     const intervalMs = Math.max(60_000, dondieConfig.defaultScheduleMinutes * 60_000);
+    this.schedulerStatus.markInitialized();
     this.schedulerStatus.heartbeat(new Date(Date.now() + intervalMs).toISOString());
     // Catch up immediately after boot/wake — do not wait a full interval.
     void this.tick("STARTUP");
