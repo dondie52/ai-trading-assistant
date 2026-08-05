@@ -268,6 +268,8 @@ export interface AutomationSettings {
   readonly marketHoursOnly: boolean;
   readonly minimumConfidence: number;
   readonly maxTradesPerDay: number;
+  /** Minimum expected profit, net of fees and slippage, required before an order is submitted. */
+  readonly minNetEdgeBps: number;
   readonly riskPerTradePercent: number;
   readonly maxPositionSizePercent: number;
   readonly dailyLossLimitPercent: number;
@@ -553,6 +555,7 @@ export type TradeSkipReasonCode =
   | "MARKET_CLOSED"
   | "MIN_NOTIONAL_NOT_MET"
   | "COOLDOWN_ACTIVE"
+  | "NET_EDGE_TOO_LOW"
   | "SYMBOL_NOT_TRADABLE"
   | "FRACTIONAL_NOT_SUPPORTED"
   | "RISK_LIMIT"

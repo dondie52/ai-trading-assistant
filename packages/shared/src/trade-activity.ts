@@ -10,6 +10,7 @@ export type TradeSkipReasonCode =
   | "MARKET_CLOSED"
   | "MIN_NOTIONAL_NOT_MET"
   | "COOLDOWN_ACTIVE"
+  | "NET_EDGE_TOO_LOW"
   | "SYMBOL_NOT_TRADABLE"
   | "FRACTIONAL_NOT_SUPPORTED"
   | "RISK_LIMIT"
@@ -65,6 +66,7 @@ const SKIP_PATTERNS: readonly { readonly code: TradeSkipReasonCode; readonly pat
   { code: "CONFIDENCE_TOO_LOW", pattern: /below threshold|confidence .* below|minimum confidence/i },
   { code: "MARKET_CLOSED", pattern: /market closed|cash session/i },
   { code: "COOLDOWN_ACTIVE", pattern: /cooldown active/i },
+  { code: "NET_EDGE_TOO_LOW", pattern: /net edge/i },
   { code: "SIGNAL_HOLD", pattern: /signal was hold|sees hold/i },
   { code: "EMERGENCY_STOP", pattern: /emergency stop/i },
   { code: "MANUAL_MODE", pattern: /automation mode is manual|manual — orders/i },
