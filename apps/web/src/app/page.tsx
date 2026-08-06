@@ -20,6 +20,7 @@ import {
   ListFilter,
   Lock,
   LogOut,
+  Play,
   Plus,
   Save,
   Settings2,
@@ -2241,6 +2242,33 @@ export default function Page(): ReactElement {
 
       {activeTab === "portfolio" ? (
         <section data-testid="portfolio-view" className="space-y-5">
+          {automationSettings.data && (automationSettings.data.mode !== "AUTOPILOT" || automationSettings.data.emergencyStop) ? (
+            <div
+              data-testid="automation-paused-banner"
+              className="flex flex-col gap-3 rounded-md border border-rose-400/30 bg-rose-400/10 px-3 py-3 text-sm text-rose-100 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <p>
+                  <strong>Nothing is trading.</strong>{" "}
+                  {automationSettings.data.emergencyStop
+                    ? "Emergency stop is active"
+                    : `Automation mode is ${automationSettings.data.mode}`}{" "}
+                  — Dondie will not scan or place orders until Autopilot is resumed.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="resume-autopilot"
+                disabled={updateAutomationSettingsMutation.isPending}
+                onClick={() => updateAutomationSettingsMutation.mutate({ mode: "AUTOPILOT", emergencyStop: false })}
+                className="flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 disabled:opacity-40"
+              >
+                <Play className="h-4 w-4" aria-hidden="true" />
+                Resume Autopilot
+              </button>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard icon={<DollarSign />} label="Broker Cash" value={formatCurrency(primaryPortfolio?.cashBalance, { microDetail: true })} tone="violet" />
             <MetricCard
