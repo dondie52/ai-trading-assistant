@@ -24,7 +24,9 @@ export const DEFAULT_AUTONOMOUS_UNIVERSE = [
   "META",
   "TSLA",
   "SPY",
-  "QQQ"
+  "QQQ",
+  // Gold exposure via SPDR Gold Shares — Alpaca trades it like any other equity/ETF.
+  "GLD"
 ] as const;
 
 export const AGENT_STRATEGY_TEMPLATES: readonly AgentStrategyTemplate[] = [
