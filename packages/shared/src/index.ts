@@ -3,6 +3,7 @@ export * from "./analytics.js";
 export * from "./auth.js";
 export * from "./backtest.js";
 export * from "./dondie-lifestyle.js";
+export * from "./gold-playbook.js";
 export * from "./indicators.js";
 export * from "./market-hours.js";
 export * from "./money-format.js";

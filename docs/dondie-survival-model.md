@@ -139,6 +139,18 @@ Payrolls release — the first Friday of the month, 8:30am America/New_York:
 * The window width is configurable via `DONDIE_NFP_WINDOW_MINUTES_BEFORE` / `DONDIE_NFP_WINDOW_MINUTES_AFTER` (default `15` / `120`)
 * Set `DONDIE_NFP_ONLY=false` to return to trading on every qualifying signal, any day
 
+### Gold trading knowledge
+
+Dondie's LLM brain (`DondieBrainLlmService`) is primed with a gold-specific briefing
+(`@trading/shared` → `gold-playbook.ts`) whenever the traded symbol is gold-exposed (`GLD`,
+`IAU`, `SGOL`, `GLDM`, `XAUUSD`/`XAU/USD`/`XAU`/`GOLD`). There is no fine-tuning pipeline here —
+the briefing is injected as prompt context, distilled from StoneX/FOREX.com's "How To Trade
+Gold" white paper: gold's inverse correlation to USD strength and real interest rates, its
+safe-haven behavior around inflation/geopolitical risk, correlated markets to weigh (DXY, US10Y
+real yields, silver/XAG, gold miners, JPY/CHF, AUD/CAD), and a technical toolkit suited to gold's
+trending behavior (moving averages/trendlines, RSI/MACD, ATR-based stops). The free brain (no
+LLM) is purely technical-signal driven and does not use this briefing.
+
 ---
 
 ## Implementation Status

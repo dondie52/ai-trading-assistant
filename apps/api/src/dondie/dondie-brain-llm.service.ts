@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import type { DondieBrainPlan, DondieTier, MarketTimeframe, Signal, UUID } from "@trading/types";
+import { buildGoldAwarePrompt } from "@trading/shared";
 import { dondieConfig } from "./dondie.config.js";
 
 interface LlmDecision {
@@ -30,12 +31,15 @@ export class DondieBrainLlmService {
     }
 
     const model = tier === "PRO" ? dondieConfig.llmProModel : dondieConfig.llmStandardModel;
-    const prompt = [
-      "You are Dondie, an autonomous trading agent.",
-      `Tier: ${tier}. Symbol: ${symbol}. Timeframe: ${timeframe}.`,
-      `Baseline signal: ${signal.signalType} at ${signal.confidenceScore}% (${signal.modelVersion}).`,
-      "Respond with JSON only: {\"action\":\"EXECUTE\"|\"SKIP\",\"side\":\"BUY\"|\"SELL\",\"reasoning\":\"...\",\"confidence\":0-100}."
-    ].join(" ");
+    const prompt = buildGoldAwarePrompt(
+      [
+        "You are Dondie, an autonomous trading agent.",
+        `Tier: ${tier}. Symbol: ${symbol}. Timeframe: ${timeframe}.`,
+        `Baseline signal: ${signal.signalType} at ${signal.confidenceScore}% (${signal.modelVersion}).`,
+        "Respond with JSON only: {\"action\":\"EXECUTE\"|\"SKIP\",\"side\":\"BUY\"|\"SELL\",\"reasoning\":\"...\",\"confidence\":0-100}."
+      ].join(" "),
+      symbol
+    );
 
     const response = await fetch(`${dondieConfig.llmApiUrl}/chat/completions`, {
       method: "POST",
