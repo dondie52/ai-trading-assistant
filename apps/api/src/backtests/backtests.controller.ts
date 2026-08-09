@@ -13,6 +13,15 @@ export class BacktestsController {
     return ok(await this.platform.runBacktest(user.sub, body));
   }
 
+  /** Backtests the actual signal logic Dondie's brains trade with, not the fixed SMA crossover `run` replays. */
+  @Post("run-signal")
+  async runSignal(
+    @CurrentUser() user: AuthenticatedPrincipal,
+    @Body() body: unknown
+  ): Promise<ReturnType<typeof ok>> {
+    return ok(await this.platform.runSignalBacktest(user.sub, body));
+  }
+
   @Post("walk-forward")
   async walkForward(
     @CurrentUser() user: AuthenticatedPrincipal,

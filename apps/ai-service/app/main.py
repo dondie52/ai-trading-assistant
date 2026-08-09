@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import FastAPI
@@ -83,6 +84,33 @@ def clamp_confidence(value: float) -> int:
     return max(0, min(100, round(value)))
 
 
+# Gold-specific rule tuning, mirrored from @trading/shared's gold-playbook.ts. Gold trends more
+# persistently than typical equities, so trend/momentum confirmation is weighted higher and RSI
+# overbought/oversold bounds are widened rather than fading a strong trend early. Elevated
+# volatility (relative to price) flags event-driven moves (NFP/CPI/FOMC) and tempers confidence.
+GOLD_SYMBOLS = {"GLD", "IAU", "SGOL", "GLDM", "XAUUSD", "XAU/USD", "XAU", "GOLD"}
+GOLD_TREND_WEIGHT = 24
+GOLD_COUNTER_TREND_WEIGHT = -10
+GOLD_RSI_OVERBOUGHT = 78
+GOLD_RSI_OVERSOLD = 22
+GOLD_VOLATILITY_PERCENT_THRESHOLD = 2.5
+GOLD_VOLATILITY_PENALTY = 6
+
+# Average historical monthly gold return (%), Jan-Dec, from the Lex van Dam gold course
+# workbook's seasonality study (since 1968). Index 0 = January. Used as a minor tiebreaker,
+# never a primary signal.
+GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT = [0.6, -0.5, -0.1, 0.5, -0.2, -1.0, 0.5, 1.5, 2.0, -0.8, 1.5, -0.5]
+GOLD_SEASONALITY_TILT = 3
+
+
+def is_gold_symbol(symbol: str) -> bool:
+    return symbol.strip().upper() in GOLD_SYMBOLS
+
+
+def gold_seasonality_bias_percent(at: datetime) -> float:
+    return GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[at.month - 1]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "modelVersion": os.getenv("MODEL_VERSION", "mvp-baseline-1.0.0")}
@@ -98,20 +126,44 @@ def generate_signal(payload: SignalRequest) -> SignalResponse:
     rsi14 = rsi(closes)
     histogram = macd_histogram(closes)
     above_trend = latest_close > ema20 if ema20 is not None else False
+    gold_aware = is_gold_symbol(payload.symbol)
+
+    rsi_overbought = GOLD_RSI_OVERBOUGHT if gold_aware else 72
+    rsi_oversold = GOLD_RSI_OVERSOLD if gold_aware else 28
 
     signal_type: SignalType = "HOLD"
-    if (above_trend and momentum > 0 and (rsi14 or 50) < 72) or histogram > 0.15:
+    if (above_trend and momentum > 0 and (rsi14 or 50) < rsi_overbought) or histogram > 0.15:
         signal_type = "BUY"
-    elif ((not above_trend) and momentum < 0 and (rsi14 or 50) > 28) or histogram < -0.15:
+    elif ((not above_trend) and momentum < 0 and (rsi14 or 50) > rsi_oversold) or histogram < -0.15:
         signal_type = "SELL"
 
-    trend_score = 18 if above_trend else -8
+    if gold_aware:
+        trend_score = GOLD_TREND_WEIGHT if above_trend else GOLD_COUNTER_TREND_WEIGHT
+    else:
+        trend_score = 18 if above_trend else -8
     momentum_score = max(-12, min(12, momentum * 8))
     rsi_score = (70 - (rsi14 or 50)) if signal_type == "BUY" else ((rsi14 or 50) - 30)
+
+    volatility = round(math.sqrt(sum((value - latest_close) ** 2 for value in closes[-20:]) / min(20, len(closes))), 4)
+    volatility_percent = round((volatility / latest_close) * 100, 4) if latest_close else None
+    volatility_penalty = (
+        GOLD_VOLATILITY_PENALTY
+        if gold_aware and volatility_percent is not None and volatility_percent > GOLD_VOLATILITY_PERCENT_THRESHOLD
+        else 0
+    )
+
+    seasonal_bias_percent = gold_seasonality_bias_percent(datetime.now(timezone.utc)) if gold_aware else None
+    seasonal_tilt = 0
+    if gold_aware and seasonal_bias_percent is not None and signal_type != "HOLD":
+        sign = 1 if seasonal_bias_percent > 0 else -1 if seasonal_bias_percent < 0 else 0
+        seasonal_tilt = (sign if signal_type == "BUY" else -sign) * GOLD_SEASONALITY_TILT
+
     confidence = (
-        clamp_confidence(48 + abs(momentum_score))
+        clamp_confidence(48 + abs(momentum_score) - volatility_penalty)
         if signal_type == "HOLD"
-        else clamp_confidence(58 + trend_score + momentum_score + max(0, rsi_score / 3))
+        else clamp_confidence(
+            58 + trend_score + momentum_score + max(0, rsi_score / 3) - volatility_penalty + seasonal_tilt
+        )
     )
 
     return SignalResponse(
@@ -127,7 +179,11 @@ def generate_signal(payload: SignalRequest) -> SignalResponse:
             "ema20": ema20,
             "rsi14": rsi14,
             "macdHistogram": histogram,
-            "volatility": round(math.sqrt(sum((value - latest_close) ** 2 for value in closes[-20:]) / min(20, len(closes))), 4),
+            "volatility": volatility,
+            "volatilityPercent": volatility_percent,
+            "goldAware": gold_aware,
+            "seasonalBiasPercent": seasonal_bias_percent,
+            "seasonalTilt": seasonal_tilt,
         },
     )
 

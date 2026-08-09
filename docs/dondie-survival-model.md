@@ -139,6 +139,33 @@ Payrolls release — the first Friday of the month, 8:30am America/New_York:
 * The window width is configurable via `DONDIE_NFP_WINDOW_MINUTES_BEFORE` / `DONDIE_NFP_WINDOW_MINUTES_AFTER` (default `15` / `120`)
 * Set `DONDIE_NFP_ONLY=false` to return to trading on every qualifying signal, any day
 
+### Gold trading knowledge
+
+Gold-specific domain knowledge — distilled from StoneX/FOREX.com's "How To Trade Gold" white
+paper and Lex van Dam Financial Education's "5-Step Trading" gold course workbook — reaches both
+brain tiers via `@trading/shared` → `gold-playbook.ts`, applied whenever the traded symbol is
+gold-exposed (`GLD`, `IAU`, `SGOL`, `GLDM`, `XAUUSD`/`XAU/USD`/`XAU`/`GOLD`):
+
+* **LLM brain (standard/pro):** `DondieBrainLlmService` is primed with `GOLD_TRADING_BRIEFING` —
+  gold's inverse correlation to USD strength and real interest rates, its safe-haven behavior
+  around inflation/geopolitical risk, correlated markets to weigh (DXY, US10Y real yields,
+  silver/XAG, gold miners, JPY/CHF, AUD/CAD), a technical toolkit suited to gold's trending
+  behavior (trade with the trend, only fade at range extremes/Fibonacci levels), futures
+  positioning/sentiment extremes as contrarian signals, a seasonal tendency as a minor
+  tiebreaker, and a leverage/volatility risk caution. There is no fine-tuning pipeline, so this
+  is injected as prompt context.
+* **Free brain (rule-based, no LLM):** `generateSignal` (`@trading/shared` → `signal.ts`) applies
+  `GOLD_SIGNAL_TUNING` over the same indicator features (EMA/RSI/MACD/ATR) — gold trends more
+  persistently than typical equities, so trend/momentum confirmation is weighted higher and RSI
+  overbought/oversold bounds are widened rather than fading a strong trend early; elevated ATR
+  (relative to price) signals event-driven volatility and tempers confidence. It also applies a
+  small `GOLD_SEASONALITY_TILT` (±3 confidence points) from `GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT`
+  — historical average monthly gold returns — as a tiebreaker when the calendar month's bias
+  agrees or disagrees with the signal direction; this never overrides the technical signal
+  itself. The Python AI service (`apps/ai-service/app/main.py`), which the free/standard brains
+  call when `AI_SERVICE_URL` is set, mirrors the same tuning (trend/RSI/volatility/seasonality)
+  so the behavior is consistent regardless of which signal path is active.
+
 ---
 
 ## Implementation Status

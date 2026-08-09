@@ -63,6 +63,7 @@ import {
   normalizeEmail,
   generateHistoricalPrices,
   runHistoricalBacktest,
+  runSignalBacktest,
   runWalkForwardBacktest,
   summarizePerformance,
   sumRealizedPnlSince,
@@ -1334,6 +1335,76 @@ export class PlatformService implements OnModuleInit {
       notificationType: "SYSTEM",
       title: "Backtest completed",
       message: `${symbol} ${timeframe} replay produced ${backtest.totalTrades} trades.`
+    });
+
+    return backtest;
+  }
+
+  /**
+   * Backtests the actual signal logic Dondie's brains trade with (generateSignal, including its
+   * gold-aware tuning), as opposed to runBacktest's fixed SMA crossover. Reads market data via
+   * listMarketData, so results are only as real as the connected broker's feed — with no broker
+   * connected this replays synthetic candles, which proves the mechanics work but says nothing
+   * about real-world edge.
+   */
+  async runSignalBacktest(userId: UUID, bodyValue: unknown): Promise<BacktestResult> {
+    const body = asRecord(bodyValue);
+    const symbol = readString(body, "symbol", { required: true, max: 16 }).toUpperCase();
+    const strategyId = readString(body, "strategyId");
+    const timeframe = normalizeMarketTimeframe(body.timeframe);
+    const strategy = strategyId ? this.requireStrategy(userId, strategyId) : undefined;
+    const configuration = strategy?.configuration ?? {};
+    const portfolioEquity = this.getPrimaryPortfolio(userId).portfolioValue;
+    const readSetting = (key: string, fallback: number, min: number): number =>
+      body[key] === undefined ? readConfigNumber(configuration, key, fallback) : readNumber(body, key, { min });
+
+    let result: BacktestResult;
+    try {
+      result = runSignalBacktest(await this.listMarketData(userId, symbol, timeframe), {
+        symbol,
+        timeframe,
+        startingEquity: readSetting("startingEquity", portfolioEquity > 0 ? portfolioEquity : 1, 1),
+        warmupBars: readSetting("warmupBars", 60, 27),
+        maxPositionPercent: readSetting("maxPositionPercent", 20, 0.01),
+        feePerTrade: readSetting("feePerTrade", 0, 0),
+        slippagePercent: readSetting("slippagePercent", 0.05, 0),
+        confidenceThreshold: readSetting("confidenceThreshold", 0, 0)
+      });
+    } catch (error) {
+      throw new BadRequestException({
+        code: "VALIDATION_ERROR",
+        message: error instanceof Error ? error.message : "Signal backtest settings are invalid."
+      });
+    }
+    const backtestId = randomUUID();
+    const backtest: BacktestResult = {
+      ...result,
+      id: backtestId,
+      userId,
+      ...(strategy ? { strategyId: strategy.id } : {})
+    };
+
+    this.store.appendAudit({
+      userId,
+      actorUserId: userId,
+      action: "BACKTEST_RUN",
+      entityType: "BACKTEST",
+      entityId: backtestId,
+      metadata: {
+        symbol,
+        timeframe,
+        strategyId: strategy?.id ?? null,
+        totalTrades: backtest.totalTrades,
+        totalReturn: backtest.performance.totalReturn,
+        maxDrawdown: backtest.performance.maxDrawdown,
+        engine: "signal"
+      }
+    });
+    this.addNotification({
+      userId,
+      notificationType: "SYSTEM",
+      title: "Signal backtest completed",
+      message: `${symbol} ${timeframe} signal replay produced ${backtest.totalTrades} trades.`
     });
 
     return backtest;

@@ -1,4 +1,5 @@
 import type { JsonObject, MarketCandle, SignalType } from "@trading/types";
+import { GOLD_SEASONALITY_TILT, GOLD_SIGNAL_TUNING, goldSeasonalityBiasPercent, isGoldSymbol } from "./gold-playbook.js";
 import { calculateIndicators } from "./indicators.js";
 
 export interface GeneratedSignal {
@@ -14,7 +15,8 @@ const clampConfidence = (value: number): number => Math.max(0, Math.min(100, Mat
 export const generateSignal = (
   symbol: string,
   candles: readonly MarketCandle[],
-  modelVersion = "mvp-baseline-1.0.0"
+  modelVersion = "mvp-baseline-1.0.0",
+  now: Date = new Date()
 ): GeneratedSignal => {
   const indicators = calculateIndicators(candles);
   const latest = candles[candles.length - 1];
@@ -25,21 +27,54 @@ export const generateSignal = (
   const rsiValue = indicators.rsi ?? 50;
   const macdHistogram = indicators.macd.histogram ?? 0;
   const aboveTrend = indicators.ema === null ? false : latestClose > indicators.ema;
+  const goldAware = isGoldSymbol(symbol);
+
+  // Gold trends more persistently than typical equities, so oscillators are allowed to run
+  // further before they're read as a reversal signal.
+  const rsiOverbought = goldAware ? GOLD_SIGNAL_TUNING.rsiOverbought : 72;
+  const rsiOversold = goldAware ? GOLD_SIGNAL_TUNING.rsiOversold : 28;
 
   let signalType: SignalType = "HOLD";
-  if ((aboveTrend && momentum > 0 && rsiValue < 72) || macdHistogram > 0.15) {
+  if ((aboveTrend && momentum > 0 && rsiValue < rsiOverbought) || macdHistogram > 0.15) {
     signalType = "BUY";
-  } else if ((!aboveTrend && momentum < 0 && rsiValue > 28) || macdHistogram < -0.15) {
+  } else if ((!aboveTrend && momentum < 0 && rsiValue > rsiOversold) || macdHistogram < -0.15) {
     signalType = "SELL";
   }
 
-  const trendScore = aboveTrend ? 18 : -8;
+  // Trend/momentum confirmation counts for more on gold; a plain equity weighting would
+  // underreact to its cleaner directional moves.
+  const trendScore = aboveTrend
+    ? goldAware
+      ? GOLD_SIGNAL_TUNING.trendWeight
+      : 18
+    : goldAware
+      ? GOLD_SIGNAL_TUNING.counterTrendWeight
+      : -8;
   const momentumScore = Math.max(-12, Math.min(12, momentum * 8));
   const rsiScore = signalType === "BUY" ? 70 - rsiValue : rsiValue - 30;
+
+  // Elevated ATR relative to price flags event-driven volatility (NFP/CPI/FOMC) — temper
+  // conviction rather than treating gold's swings like an equity's.
+  const atrPercent = indicators.atr !== null && latestClose > 0 ? (indicators.atr / latestClose) * 100 : null;
+  const volatilityPenalty =
+    goldAware && atrPercent !== null && atrPercent > GOLD_SIGNAL_TUNING.atrVolatilityPercentThreshold
+      ? GOLD_SIGNAL_TUNING.atrVolatilityPenalty
+      : 0;
+
+  // Seasonal tendency is a minor tiebreaker, not a primary signal: nudge confidence when the
+  // calendar-month historical bias agrees with the signal direction, and pull it back when it
+  // disagrees.
+  const seasonalBiasPercent = goldAware ? goldSeasonalityBiasPercent(now) : null;
+  const seasonalTilt =
+    goldAware && seasonalBiasPercent !== null && signalType !== "HOLD"
+      ? (signalType === "BUY" ? Math.sign(seasonalBiasPercent) : -Math.sign(seasonalBiasPercent)) *
+        GOLD_SEASONALITY_TILT
+      : 0;
+
   const confidenceScore =
     signalType === "HOLD"
-      ? clampConfidence(48 + Math.abs(momentumScore))
-      : clampConfidence(58 + trendScore + momentumScore + Math.max(0, rsiScore / 3));
+      ? clampConfidence(48 + Math.abs(momentumScore) - volatilityPenalty)
+      : clampConfidence(58 + trendScore + momentumScore + Math.max(0, rsiScore / 3) - volatilityPenalty + seasonalTilt);
 
   return {
     symbol: symbol.toUpperCase(),
@@ -60,10 +95,14 @@ export const generateSignal = (
       bollingerMiddle: indicators.bollingerBands.middle,
       bollingerLower: indicators.bollingerBands.lower,
       atr14: indicators.atr,
+      atrPercent,
       volumeLatest: indicators.volume.latest,
       volumeSma20: indicators.volume.sma,
       volumeChangePercent: indicators.volume.changePercent,
-      timeframe: latest?.timeframe ?? "1m"
+      timeframe: latest?.timeframe ?? "1m",
+      goldAware,
+      seasonalBiasPercent,
+      seasonalTilt
     }
   };
 };

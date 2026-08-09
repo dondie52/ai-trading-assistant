@@ -49,4 +49,35 @@ describe("Dondie phase 3 LLM brain", () => {
     expect(plan.side).toBe("BUY");
     expect(plan.reasoning).toContain("Momentum");
   });
+
+  it("primes the prompt with gold-specific context for gold symbols", async () => {
+    process.env.DONDIE_LLM_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                action: "EXECUTE",
+                side: "BUY",
+                reasoning: "Dollar weakness supports gold.",
+                confidence: 74
+              })
+            }
+          }
+        ]
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const brain = new DondieBrainLlmService();
+    const signal = { ...sampleSignal(), symbol: "GLD" };
+    await brain.plan("STANDARD", signal, "GLD", "1h", "user-1");
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const userMessage = requestBody.messages.find((message: { role: string }) => message.role === "user");
+    expect(userMessage.content).toContain("safe-haven");
+    expect(userMessage.content).toContain("DXY");
+  });
 });
