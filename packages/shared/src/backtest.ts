@@ -8,6 +8,7 @@ import type {
   WalkForwardWindow
 } from "@trading/types";
 import { summarizePerformance } from "./analytics.js";
+import { generateSignal } from "./signal.js";
 
 const round = (value: number, precision = 4): number => Number(value.toFixed(precision));
 
@@ -295,6 +296,153 @@ export const runWalkForwardBacktest = (
       aggregateTrades.map((trade) => ({ pnl: trade.pnl }))
     ),
     windows,
+    generatedAt: new Date().toISOString()
+  };
+};
+
+export interface SignalBacktestOptions {
+  readonly symbol: string;
+  readonly timeframe?: MarketTimeframe;
+  readonly startingEquity?: number;
+  /** Bars of history generateSignal sees before the first trade decision — must cover its longest indicator lookback (MACD's 26). */
+  readonly warmupBars?: number;
+  readonly maxPositionPercent?: number;
+  readonly feePerTrade?: number;
+  readonly slippagePercent?: number;
+  /** Minimum signal confidence (0-100) required to act on a BUY/SELL — mirrors the platform's automation gate. */
+  readonly confidenceThreshold?: number;
+}
+
+/**
+ * Backtests the actual signal logic Dondie's brains trade with (`generateSignal`, including its
+ * gold-aware tuning and seasonality tilt) — unlike `runHistoricalBacktest`, which replays a fixed
+ * SMA crossover unrelated to what the platform's automation actually decides. Walks candles
+ * bar-by-bar, feeding `generateSignal` only the data available up to and including that bar (no
+ * lookahead), and the bar's own historical date so gold's seasonality tilt reflects the simulated
+ * period rather than the real current month. Long-only: enters on BUY, exits on SELL, holds
+ * through HOLD, closing any open position on the final bar.
+ */
+export const runSignalBacktest = (
+  candles: readonly MarketCandle[],
+  options: SignalBacktestOptions
+): BacktestResult => {
+  validateCandles(candles);
+
+  const symbol = options.symbol.toUpperCase();
+  const timeframe = options.timeframe ?? candles[0]?.timeframe ?? "1m";
+  const startingEquity = options.startingEquity ?? 100_000;
+  const warmupBars = options.warmupBars ?? 60;
+  const lookbackBars = Math.max(warmupBars, 100);
+  const maxPositionPercent = options.maxPositionPercent ?? 20;
+  const feePerTrade = options.feePerTrade ?? 0;
+  const slippagePercent = options.slippagePercent ?? 0.05;
+  const slippageRate = slippagePercent / 100;
+  const confidenceThreshold = options.confidenceThreshold ?? 0;
+
+  if (candles.length < warmupBars + 2) {
+    throw new Error("At least warmupBars + 2 candles are required for a signal backtest.");
+  }
+  if (
+    startingEquity <= 0 ||
+    maxPositionPercent <= 0 ||
+    feePerTrade < 0 ||
+    slippagePercent < 0 ||
+    confidenceThreshold < 0 ||
+    confidenceThreshold > 100
+  ) {
+    throw new Error("Signal backtest numeric settings are invalid.");
+  }
+
+  let equity = startingEquity;
+  let position:
+    | {
+        readonly quantity: number;
+        readonly entryPrice: number;
+        readonly openedAt: string;
+        readonly entryFee: number;
+        readonly entrySlippage: number;
+      }
+    | undefined;
+  const trades: BacktestTrade[] = [];
+
+  for (let index = warmupBars; index < candles.length; index += 1) {
+    const candle = candles[index];
+    if (!candle) {
+      continue;
+    }
+
+    // Only a trailing window up to and including this bar is visible — the same constraint the
+    // live platform is under when it evaluates a signal against its most recent market data page,
+    // and it keeps each generateSignal call bounded instead of re-scanning all prior history.
+    const visibleCandles = candles.slice(Math.max(0, index + 1 - lookbackBars), index + 1);
+    const signal = generateSignal(symbol, visibleCandles, "backtest-signal", new Date(candle.timestamp));
+    const actionable = signal.confidenceScore >= confidenceThreshold;
+
+    if (!position && signal.signalType === "BUY" && actionable) {
+      const entryPrice = round(candle.close * (1 + slippageRate), 4);
+      const positionValue = equity * (maxPositionPercent / 100);
+      const quantity = round(positionValue / entryPrice, 4);
+      position = {
+        quantity,
+        entryPrice,
+        openedAt: candle.timestamp,
+        entryFee: feePerTrade,
+        entrySlippage: round((entryPrice - candle.close) * quantity, 4)
+      };
+    } else if (position && signal.signalType === "SELL" && actionable) {
+      const exitPrice = round(candle.close * (1 - slippageRate), 4);
+      const exitSlippage = round((candle.close - exitPrice) * position.quantity, 4);
+      const fees = round(position.entryFee + feePerTrade, 4);
+      const pnl = round((exitPrice - position.entryPrice) * position.quantity - fees, 4);
+      equity = round(equity + pnl, 4);
+      trades.push({
+        symbol,
+        side: "BUY",
+        quantity: position.quantity,
+        entryPrice: position.entryPrice,
+        exitPrice,
+        pnl,
+        openedAt: position.openedAt,
+        closedAt: candle.timestamp,
+        fees,
+        slippage: round(position.entrySlippage + exitSlippage, 4)
+      });
+      position = undefined;
+    }
+  }
+
+  const lastCandle = candles[candles.length - 1];
+  if (position && lastCandle) {
+    const exitPrice = round(lastCandle.close * (1 - slippageRate), 4);
+    const exitSlippage = round((lastCandle.close - exitPrice) * position.quantity, 4);
+    const fees = round(position.entryFee + feePerTrade, 4);
+    const pnl = round((exitPrice - position.entryPrice) * position.quantity - fees, 4);
+    equity = round(equity + pnl, 4);
+    trades.push({
+      symbol,
+      side: "BUY",
+      quantity: position.quantity,
+      entryPrice: position.entryPrice,
+      exitPrice,
+      pnl,
+      openedAt: position.openedAt,
+      closedAt: lastCandle.timestamp,
+      fees,
+      slippage: round(position.entrySlippage + exitSlippage, 4)
+    });
+  }
+
+  const performanceTrades: readonly Pick<Trade, "pnl">[] = trades.map((trade) => ({ pnl: trade.pnl }));
+  return {
+    symbol,
+    timeframe,
+    startingEquity,
+    endingEquity: round(equity, 2),
+    totalTrades: trades.length,
+    fees: round(trades.reduce((sum, trade) => sum + trade.fees, 0), 4),
+    slippagePercent,
+    performance: summarizePerformance(startingEquity, performanceTrades),
+    trades,
     generatedAt: new Date().toISOString()
   };
 };

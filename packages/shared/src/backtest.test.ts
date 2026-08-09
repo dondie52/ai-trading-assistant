@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MarketCandle } from "@trading/types";
-import { runHistoricalBacktest, runWalkForwardBacktest } from "./backtest.js";
+import { runHistoricalBacktest, runSignalBacktest, runWalkForwardBacktest } from "./backtest.js";
+import { generateHistoricalPrices } from "./indicators.js";
 
 const makeCandles = (closes: readonly number[]): readonly MarketCandle[] =>
   closes.map((close, index) => ({
@@ -101,5 +102,53 @@ describe("historical backtesting", () => {
         testSize: 10
       })
     ).toThrow(/one full train\/test window/);
+  });
+});
+
+describe("signal backtesting", () => {
+  it("replays generateSignal decisions without lookahead", () => {
+    const candles = generateHistoricalPrices("GLD", 150, 185, "1h");
+
+    const result = runSignalBacktest(candles, {
+      symbol: "gld",
+      timeframe: "1h",
+      startingEquity: 50_000,
+      warmupBars: 60,
+      maxPositionPercent: 20,
+      feePerTrade: 1,
+      slippagePercent: 0.05
+    });
+
+    expect(result.symbol).toBe("GLD");
+    expect(result.timeframe).toBe("1h");
+    expect(result.performance.equityCurve.length).toBe(result.totalTrades + 1);
+    // No trade can be decided before the warmup window has filled.
+    const firstTrade = result.trades[0];
+    if (firstTrade) {
+      expect(firstTrade.openedAt >= candles[60]!.timestamp).toBe(true);
+    }
+  });
+
+  it("only acts on signals meeting the confidence threshold", () => {
+    const candles = generateHistoricalPrices("AAPL", 150, 185, "1h");
+
+    const permissive = runSignalBacktest(candles, { symbol: "AAPL", confidenceThreshold: 0 });
+    const strict = runSignalBacktest(candles, { symbol: "AAPL", confidenceThreshold: 100 });
+
+    expect(strict.totalTrades).toBeLessThanOrEqual(permissive.totalTrades);
+  });
+
+  it("rejects too few candles for the warmup window", () => {
+    const candles = generateHistoricalPrices("AAPL", 40, 185, "1h");
+    expect(() => runSignalBacktest(candles, { symbol: "AAPL", warmupBars: 60 })).toThrow(
+      /warmupBars \+ 2 candles/
+    );
+  });
+
+  it("rejects invalid numeric settings", () => {
+    const candles = generateHistoricalPrices("AAPL", 100, 185, "1h");
+    expect(() => runSignalBacktest(candles, { symbol: "AAPL", confidenceThreshold: 150 })).toThrow(
+      /invalid/
+    );
   });
 });

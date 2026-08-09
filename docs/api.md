@@ -73,7 +73,8 @@ Survival config: `apps/api/src/dondie/dondie.config.ts` and `.env` (see `docs/do
 
 ## Simulation Lab
 
-- `POST /backtests/run`
+- `POST /backtests/run` — replays a fixed SMA crossover strategy (fastPeriod/slowPeriod), independent of Dondie's actual signal logic
+- `POST /backtests/run-signal` — replays `generateSignal` itself (the logic Dondie's free/standard/pro brains trade with, including gold-aware tuning and seasonality), bar-by-bar with no lookahead
 - `POST /backtests/walk-forward`
 
 ## Broker
