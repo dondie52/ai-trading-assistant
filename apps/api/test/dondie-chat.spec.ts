@@ -120,6 +120,7 @@ describe("DondieChatService", () => {
     vi.useRealTimers();
     delete process.env.DONDIE_LLM_API_KEY;
     delete process.env.DONDIE_WEEKEND_EARN_ENABLED;
+    delete process.env.DONDIE_NFP_ONLY;
   });
 
   const createChat = (): {
@@ -128,6 +129,9 @@ describe("DondieChatService", () => {
     readonly userId: string;
   } => {
     process.env.DONDIE_SCHEDULER_ENABLED = "false";
+    // Weekend-earn mode never overlaps the NFP-only window (see dondie-weekend-earn.service.ts),
+    // so this suite's weekend-mode assertions need NFP-only mode off.
+    process.env.DONDIE_NFP_ONLY = "false";
     delete process.env.DONDIE_LLM_API_KEY;
     const store = new PlatformStore();
     const prisma = new PrismaService();
