@@ -13,7 +13,7 @@ import type {
   UUID
 } from "@trading/types";
 import { PlatformStore } from "../store/platform.store.js";
-import { dondieConfig } from "./dondie.config.js";
+import { dondieConfig, isDondieNfpOnly } from "./dondie.config.js";
 import { DondieWalletService } from "./dondie-wallet.service.js";
 
 const roundUsd = (value: number): number => Number(value.toFixed(4));
@@ -49,7 +49,8 @@ export class DondieWeekendEarnService {
   isWeekendEarnWindow(at: Date = new Date()): boolean {
     // Prefer live env so tests can toggle without module reload.
     const enabled = process.env.DONDIE_WEEKEND_EARN_ENABLED !== "false";
-    return enabled && isUsEquityWeekend(at);
+    // NFP-only mode restricts Dondie to the NFP release window, which never falls on a weekend.
+    return enabled && !isDondieNfpOnly() && isUsEquityWeekend(at);
   }
 
   creditedToday(agentId: UUID, dayKey: string = new Date().toISOString().slice(0, 10)): number {

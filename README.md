@@ -56,6 +56,8 @@ Dondie survival economics (optional — defaults in `dondie.config.ts`):
 - `DONDIE_WEEKEND_EARN_BASE_USD` / `DONDIE_WEEKEND_EARN_MAX_PER_DAY_USD`
 - `DONDIE_LLM_API_URL` / `DONDIE_LLM_API_KEY`
 - `DONDIE_LLM_STANDARD_MODEL` / `DONDIE_LLM_PRO_MODEL`
+- `DONDIE_NFP_ONLY` (default `true` — Dondie only submits orders around the monthly US Non-Farm Payrolls release; set to `false` to trade on every scan)
+- `DONDIE_NFP_WINDOW_MINUTES_BEFORE` / `DONDIE_NFP_WINDOW_MINUTES_AFTER` (default `15` / `120` — minutes around the 8:30am ET NFP print during which execution is allowed)
 
 Broker (required for market data and order routing — connect in Settings or set env):
 

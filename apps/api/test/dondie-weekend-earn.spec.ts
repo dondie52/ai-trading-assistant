@@ -54,6 +54,7 @@ const createStack = (): {
   process.env.AUTH_PROVIDER = "legacy";
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
   delete process.env.DONDIE_WEEKEND_EARN_ENABLED;
+  process.env.DONDIE_NFP_ONLY = "false";
   const prisma = new PrismaService();
   const store = new PlatformStore();
   const repository = new PrismaPlatformRepository(prisma);

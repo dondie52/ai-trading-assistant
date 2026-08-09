@@ -127,6 +127,17 @@ US cash equities are closed Saturday and Sunday. Instead of idling, ACTIVE agent
 * Win rate is intentionally modest (~52–58% by tier) — not a guaranteed binary bot
 * Does **not** hit a live crypto venue yet (bridge until real crypto brokerage lands)
 * Surfaces in the office as activity `SIDE_HUSTLE` with animated desks
+* Disabled while NFP-only mode is on (`DONDIE_NFP_ONLY`, default `true`) — weekends never fall inside the NFP window
+
+### NFP-only mode
+
+By default (`DONDIE_NFP_ONLY=true`), Dondie only submits orders around the monthly US Non-Farm
+Payrolls release — the first Friday of the month, 8:30am America/New_York:
+
+* Scans still run on schedule; the brain still evaluates symbols and generates signals
+* Execution is skipped outside the release window with reason code `OUTSIDE_NFP_WINDOW`
+* The window width is configurable via `DONDIE_NFP_WINDOW_MINUTES_BEFORE` / `DONDIE_NFP_WINDOW_MINUTES_AFTER` (default `15` / `120`)
+* Set `DONDIE_NFP_ONLY=false` to return to trading on every qualifying signal, any day
 
 ---
 
@@ -142,5 +153,6 @@ US cash equities are closed Saturday and Sunday. Instead of idling, ACTIVE agent
 | Tier auto-upgrade/downgrade | Implemented |
 | Run memory + symbol universe | Implemented |
 | Weekend crypto desk earn | Implemented (wallet stipend; no live crypto broker yet) |
+| NFP-only trading window | Implemented (`DONDIE_NFP_ONLY`, default on) |
 
 See `docs/architecture.md` and `docs/api.md` for technical integration details.

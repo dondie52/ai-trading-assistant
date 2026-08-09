@@ -67,6 +67,7 @@ const createDondie = (): {
 } => {
   process.env.AUTH_PROVIDER = "legacy";
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
+  process.env.DONDIE_NFP_ONLY = "false";
   const prisma = new PrismaService();
   const store = new PlatformStore();
   const repository = new PrismaPlatformRepository(prisma);
@@ -189,6 +190,115 @@ describe("Dondie survival loop", () => {
     expect(platform.listTrades(user.id).length).toBeGreaterThan(0);
     expect(platform.listPositions(user.id).some((position) => position.symbol === "AAPL")).toBe(true);
     expect(platform.getPrimaryPortfolio(user.id).cashBalance).toBeLessThan(100_000);
+  });
+
+  it("skips execution outside the NFP window when NFP-only mode is on", async () => {
+    installAlpacaFetchMock();
+    const { dondie, platform, store } = createDondie();
+    process.env.DONDIE_NFP_ONLY = "true";
+    // Wednesday 2026-08-05 15:00 UTC ≈ 11:00 ET — not an NFP release day.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T15:00:00.000Z"));
+    try {
+      const user = store.createUser({
+        email: `dondie-nfp-off-${randomUUID()}@example.com`,
+        passwordHash: "hash",
+        firstName: "Dondie",
+        lastName: "Trader",
+        role: "TRADER"
+      });
+      const strategy = platform.createStrategy(user.id, {
+        name: "NFP Gate Strategy",
+        description: "Must not fill outside the NFP window",
+        version: "1.0.0",
+        status: "ACTIVE",
+        configuration: { confidenceThreshold: 1, stopLossPercent: 5, takeProfitPercent: 8 }
+      });
+      await dondie.activate(user.id, { strategyId: strategy.id });
+      platform.updateAutomationSettings(user.id, {
+        mode: "AUTOPILOT",
+        emergencyStop: false,
+        minimumConfidence: 1,
+        marketHoursOnly: false,
+        cooldownSeconds: 0
+      });
+
+      const signal = {
+        id: randomUUID(),
+        userId: user.id,
+        strategyId: strategy.id,
+        symbol: "AAPL",
+        signalType: "BUY" as const,
+        confidenceScore: 88,
+        modelVersion: "mvp-baseline-1.0.0",
+        features: { latestClose: 190 },
+        generatedAt: new Date().toISOString()
+      };
+      store.signals.set(signal.id, signal);
+      vi.spyOn(platform, "generateTradingSignal").mockResolvedValue(signal);
+
+      const result = await dondie.run(user.id, { symbol: "AAPL" });
+      expect(result.automation.status).toBe("SKIPPED");
+      expect(result.automation.reasonCode).toBe("OUTSIDE_NFP_WINDOW");
+      expect(platform.listTrades(user.id).length).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      delete process.env.DONDIE_NFP_ONLY;
+    }
+  });
+
+  it("executes inside the NFP window when NFP-only mode is on", async () => {
+    installAlpacaFetchMock();
+    const { dondie, platform, store } = createDondie();
+    process.env.DONDIE_NFP_ONLY = "true";
+    // Friday 2026-08-07 13:00 UTC ≈ 09:00 ET — inside the default NFP release window.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-07T13:00:00.000Z"));
+    try {
+      const user = store.createUser({
+        email: `dondie-nfp-on-${randomUUID()}@example.com`,
+        passwordHash: "hash",
+        firstName: "Dondie",
+        lastName: "Trader",
+        role: "TRADER"
+      });
+      const strategy = platform.createStrategy(user.id, {
+        name: "NFP Gate Strategy",
+        description: "Must fill inside the NFP window",
+        version: "1.0.0",
+        status: "ACTIVE",
+        configuration: { confidenceThreshold: 1, stopLossPercent: 5, takeProfitPercent: 8 }
+      });
+      await dondie.activate(user.id, { strategyId: strategy.id });
+      platform.updateAutomationSettings(user.id, {
+        mode: "AUTOPILOT",
+        emergencyStop: false,
+        minimumConfidence: 1,
+        marketHoursOnly: false,
+        cooldownSeconds: 0
+      });
+
+      const signal = {
+        id: randomUUID(),
+        userId: user.id,
+        strategyId: strategy.id,
+        symbol: "AAPL",
+        signalType: "BUY" as const,
+        confidenceScore: 88,
+        modelVersion: "mvp-baseline-1.0.0",
+        features: { latestClose: 190 },
+        generatedAt: new Date().toISOString()
+      };
+      store.signals.set(signal.id, signal);
+      vi.spyOn(platform, "generateTradingSignal").mockResolvedValue(signal);
+
+      const result = await dondie.run(user.id, { symbol: "AAPL" });
+      expect(result.automation.status).toBe("EXECUTED");
+      expect(platform.listTrades(user.id).length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+      delete process.env.DONDIE_NFP_ONLY;
+    }
   });
 
   it("exposes wallet ledger after credits", async () => {
