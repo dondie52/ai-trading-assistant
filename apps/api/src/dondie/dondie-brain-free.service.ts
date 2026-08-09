@@ -1,7 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { DondieBrainPlan, MarketTimeframe, Signal, UUID } from "@trading/types";
+import { isGoldSymbol } from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { logSignal } from "../trading/execution-log.js";
+
+const goldSuffix = (symbol: string): string =>
+  isGoldSymbol(symbol) ? " Gold-aware tuning applied (trend-weighted, ATR-adjusted confidence)." : "";
 
 export interface DondieFreeBrainResult {
   readonly plan: DondieBrainPlan;
@@ -31,7 +35,7 @@ export class DondieBrainFreeService {
         plan: {
           symbol,
           action: "SKIP",
-          reasoning: `Free brain sees HOLD on ${symbol} (confidence ${signal.confidenceScore}%).`,
+          reasoning: `Free brain sees HOLD on ${symbol} (confidence ${signal.confidenceScore}%).${goldSuffix(symbol)}`,
           confidence: signal.confidenceScore
         }
       };
@@ -43,7 +47,7 @@ export class DondieBrainFreeService {
         symbol,
         action: "EXECUTE",
         side: signal.signalType,
-        reasoning: `Free brain signals ${signal.signalType} on ${symbol} with ${signal.confidenceScore}% confidence using ${signal.modelVersion}.`,
+        reasoning: `Free brain signals ${signal.signalType} on ${symbol} with ${signal.confidenceScore}% confidence using ${signal.modelVersion}.${goldSuffix(symbol)}`,
         confidence: signal.confidenceScore
       }
     };

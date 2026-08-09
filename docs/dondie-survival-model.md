@@ -141,15 +141,23 @@ Payrolls release — the first Friday of the month, 8:30am America/New_York:
 
 ### Gold trading knowledge
 
-Dondie's LLM brain (`DondieBrainLlmService`) is primed with a gold-specific briefing
-(`@trading/shared` → `gold-playbook.ts`) whenever the traded symbol is gold-exposed (`GLD`,
-`IAU`, `SGOL`, `GLDM`, `XAUUSD`/`XAU/USD`/`XAU`/`GOLD`). There is no fine-tuning pipeline here —
-the briefing is injected as prompt context, distilled from StoneX/FOREX.com's "How To Trade
-Gold" white paper: gold's inverse correlation to USD strength and real interest rates, its
-safe-haven behavior around inflation/geopolitical risk, correlated markets to weigh (DXY, US10Y
-real yields, silver/XAG, gold miners, JPY/CHF, AUD/CAD), and a technical toolkit suited to gold's
-trending behavior (moving averages/trendlines, RSI/MACD, ATR-based stops). The free brain (no
-LLM) is purely technical-signal driven and does not use this briefing.
+Gold-specific domain knowledge (distilled from StoneX/FOREX.com's "How To Trade Gold" white
+paper) reaches both brain tiers via `@trading/shared` → `gold-playbook.ts`, applied whenever the
+traded symbol is gold-exposed (`GLD`, `IAU`, `SGOL`, `GLDM`, `XAUUSD`/`XAU/USD`/`XAU`/`GOLD`):
+
+* **LLM brain (standard/pro):** `DondieBrainLlmService` is primed with `GOLD_TRADING_BRIEFING` —
+  gold's inverse correlation to USD strength and real interest rates, its safe-haven behavior
+  around inflation/geopolitical risk, correlated markets to weigh (DXY, US10Y real yields,
+  silver/XAG, gold miners, JPY/CHF, AUD/CAD), and a technical toolkit suited to gold's trending
+  behavior. There is no fine-tuning pipeline, so this is injected as prompt context.
+* **Free brain (rule-based, no LLM):** `generateSignal` (`@trading/shared` → `signal.ts`) applies
+  `GOLD_SIGNAL_TUNING` over the same indicator features (EMA/RSI/MACD/ATR) — gold trends more
+  persistently than typical equities, so trend/momentum confirmation is weighted higher and RSI
+  overbought/oversold bounds are widened rather than fading a strong trend early; elevated ATR
+  (relative to price) signals event-driven volatility and tempers confidence. The Python AI
+  service (`apps/ai-service/app/main.py`), which the free/standard brains call when
+  `AI_SERVICE_URL` is set, mirrors the same tuning so the behavior is consistent regardless of
+  which signal path is active.
 
 ---
 

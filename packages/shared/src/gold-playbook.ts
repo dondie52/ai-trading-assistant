@@ -24,3 +24,21 @@ export const GOLD_TRADING_BRIEFING =
 
 export const buildGoldAwarePrompt = (basePrompt: string, symbol: string): string =>
   isGoldSymbol(symbol) ? `${basePrompt} ${GOLD_TRADING_BRIEFING}` : basePrompt;
+
+/**
+ * Rule-based tuning for the free (non-LLM) brain, translating the white paper's technical
+ * guidance into adjustments over the baseline indicator-driven signal — no macro data feed
+ * required. Gold trends more persistently than typical equities, so trend/momentum
+ * confirmation is weighted higher and RSI overbought/oversold bounds are widened rather than
+ * fading a strong trend early. Elevated ATR (relative to price) signals event-driven
+ * volatility — e.g. around NFP/CPI/FOMC — and tempers confidence per the paper's risk
+ * management guidance.
+ */
+export const GOLD_SIGNAL_TUNING = {
+  trendWeight: 24,
+  counterTrendWeight: -10,
+  rsiOverbought: 78,
+  rsiOversold: 22,
+  atrVolatilityPercentThreshold: 2.5,
+  atrVolatilityPenalty: 6
+} as const;
