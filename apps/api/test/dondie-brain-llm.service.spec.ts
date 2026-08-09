@@ -75,9 +75,11 @@ describe("Dondie phase 3 LLM brain", () => {
     const signal = { ...sampleSignal(), symbol: "GLD" };
     await brain.plan("STANDARD", signal, "GLD", "1h", "user-1");
 
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const userMessage = requestBody.messages.find((message: { role: string }) => message.role === "user");
-    expect(userMessage.content).toContain("safe-haven");
-    expect(userMessage.content).toContain("DXY");
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as {
+      readonly messages: readonly { readonly role: string; readonly content: string }[];
+    };
+    const userMessage = requestBody.messages.find((message) => message.role === "user");
+    expect(userMessage?.content).toContain("safe-haven");
+    expect(userMessage?.content).toContain("DXY");
   });
 });
