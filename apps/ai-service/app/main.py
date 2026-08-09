@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import FastAPI
@@ -95,9 +96,19 @@ GOLD_RSI_OVERSOLD = 22
 GOLD_VOLATILITY_PERCENT_THRESHOLD = 2.5
 GOLD_VOLATILITY_PENALTY = 6
 
+# Average historical monthly gold return (%), Jan-Dec, from the Lex van Dam gold course
+# workbook's seasonality study (since 1968). Index 0 = January. Used as a minor tiebreaker,
+# never a primary signal.
+GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT = [0.6, -0.5, -0.1, 0.5, -0.2, -1.0, 0.5, 1.5, 2.0, -0.8, 1.5, -0.5]
+GOLD_SEASONALITY_TILT = 3
+
 
 def is_gold_symbol(symbol: str) -> bool:
     return symbol.strip().upper() in GOLD_SYMBOLS
+
+
+def gold_seasonality_bias_percent(at: datetime) -> float:
+    return GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[at.month - 1]
 
 
 @app.get("/health")
@@ -141,10 +152,18 @@ def generate_signal(payload: SignalRequest) -> SignalResponse:
         else 0
     )
 
+    seasonal_bias_percent = gold_seasonality_bias_percent(datetime.now(timezone.utc)) if gold_aware else None
+    seasonal_tilt = 0
+    if gold_aware and seasonal_bias_percent is not None and signal_type != "HOLD":
+        sign = 1 if seasonal_bias_percent > 0 else -1 if seasonal_bias_percent < 0 else 0
+        seasonal_tilt = (sign if signal_type == "BUY" else -sign) * GOLD_SEASONALITY_TILT
+
     confidence = (
         clamp_confidence(48 + abs(momentum_score) - volatility_penalty)
         if signal_type == "HOLD"
-        else clamp_confidence(58 + trend_score + momentum_score + max(0, rsi_score / 3) - volatility_penalty)
+        else clamp_confidence(
+            58 + trend_score + momentum_score + max(0, rsi_score / 3) - volatility_penalty + seasonal_tilt
+        )
     )
 
     return SignalResponse(
@@ -163,6 +182,8 @@ def generate_signal(payload: SignalRequest) -> SignalResponse:
             "volatility": volatility,
             "volatilityPercent": volatility_percent,
             "goldAware": gold_aware,
+            "seasonalBiasPercent": seasonal_bias_percent,
+            "seasonalTilt": seasonal_tilt,
         },
     )
 

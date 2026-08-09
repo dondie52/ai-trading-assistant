@@ -5,7 +5,9 @@ import { PlatformService } from "../platform.service.js";
 import { logSignal } from "../trading/execution-log.js";
 
 const goldSuffix = (symbol: string): string =>
-  isGoldSymbol(symbol) ? " Gold-aware tuning applied (trend-weighted, ATR-adjusted confidence)." : "";
+  isGoldSymbol(symbol)
+    ? " Gold-aware tuning applied (trend-weighted, ATR-adjusted, seasonally tilted confidence)."
+    : "";
 
 export interface DondieFreeBrainResult {
   readonly plan: DondieBrainPlan;

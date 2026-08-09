@@ -1,5 +1,5 @@
 import type { JsonObject, MarketCandle, SignalType } from "@trading/types";
-import { GOLD_SIGNAL_TUNING, isGoldSymbol } from "./gold-playbook.js";
+import { GOLD_SEASONALITY_TILT, GOLD_SIGNAL_TUNING, goldSeasonalityBiasPercent, isGoldSymbol } from "./gold-playbook.js";
 import { calculateIndicators } from "./indicators.js";
 
 export interface GeneratedSignal {
@@ -15,7 +15,8 @@ const clampConfidence = (value: number): number => Math.max(0, Math.min(100, Mat
 export const generateSignal = (
   symbol: string,
   candles: readonly MarketCandle[],
-  modelVersion = "mvp-baseline-1.0.0"
+  modelVersion = "mvp-baseline-1.0.0",
+  now: Date = new Date()
 ): GeneratedSignal => {
   const indicators = calculateIndicators(candles);
   const latest = candles[candles.length - 1];
@@ -60,10 +61,20 @@ export const generateSignal = (
       ? GOLD_SIGNAL_TUNING.atrVolatilityPenalty
       : 0;
 
+  // Seasonal tendency is a minor tiebreaker, not a primary signal: nudge confidence when the
+  // calendar-month historical bias agrees with the signal direction, and pull it back when it
+  // disagrees.
+  const seasonalBiasPercent = goldAware ? goldSeasonalityBiasPercent(now) : null;
+  const seasonalTilt =
+    goldAware && seasonalBiasPercent !== null && signalType !== "HOLD"
+      ? (signalType === "BUY" ? Math.sign(seasonalBiasPercent) : -Math.sign(seasonalBiasPercent)) *
+        GOLD_SEASONALITY_TILT
+      : 0;
+
   const confidenceScore =
     signalType === "HOLD"
       ? clampConfidence(48 + Math.abs(momentumScore) - volatilityPenalty)
-      : clampConfidence(58 + trendScore + momentumScore + Math.max(0, rsiScore / 3) - volatilityPenalty);
+      : clampConfidence(58 + trendScore + momentumScore + Math.max(0, rsiScore / 3) - volatilityPenalty + seasonalTilt);
 
   return {
     symbol: symbol.toUpperCase(),
@@ -89,7 +100,9 @@ export const generateSignal = (
       volumeSma20: indicators.volume.sma,
       volumeChangePercent: indicators.volume.changePercent,
       timeframe: latest?.timeframe ?? "1m",
-      goldAware
+      goldAware,
+      seasonalBiasPercent,
+      seasonalTilt
     }
   };
 };

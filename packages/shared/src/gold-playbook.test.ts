@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { GOLD_TRADING_BRIEFING, buildGoldAwarePrompt, isGoldSymbol } from "./gold-playbook.js";
+import {
+  GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT,
+  GOLD_TRADING_BRIEFING,
+  buildGoldAwarePrompt,
+  goldSeasonalityBiasPercent,
+  isGoldSymbol
+} from "./gold-playbook.js";
 
 describe("isGoldSymbol", () => {
   it("recognizes gold ETFs and spot tickers", () => {
@@ -23,5 +29,23 @@ describe("buildGoldAwarePrompt", () => {
 
   it("leaves non-gold prompts untouched", () => {
     expect(buildGoldAwarePrompt("Base prompt.", "AAPL")).toBe("Base prompt.");
+  });
+});
+
+describe("goldSeasonalityBiasPercent", () => {
+  it("returns the historical average for the calendar month, Jan-indexed at 0", () => {
+    expect(goldSeasonalityBiasPercent(new Date("2024-01-15T00:00:00Z"))).toBe(
+      GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[0]
+    );
+    expect(goldSeasonalityBiasPercent(new Date("2024-09-15T00:00:00Z"))).toBe(
+      GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[8]
+    );
+    expect(goldSeasonalityBiasPercent(new Date("2024-12-15T00:00:00Z"))).toBe(
+      GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[11]
+    );
+  });
+
+  it("has twelve months of data", () => {
+    expect(GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT).toHaveLength(12);
   });
 });
