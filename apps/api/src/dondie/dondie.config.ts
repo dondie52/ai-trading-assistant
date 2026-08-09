@@ -32,8 +32,17 @@ export const dondieConfig = {
   /** Wallet balance target for the one-time full-power cognition grant (PRO by default). */
   fullPowerTargetWalletUsd: Number(
     process.env.DONDIE_FULL_POWER_TARGET_WALLET_USD ?? process.env.DONDIE_PRO_MIN_BALANCE ?? "100"
-  )
+  ),
+  nfpWindowMinutesBefore: Number(process.env.DONDIE_NFP_WINDOW_MINUTES_BEFORE ?? "15"),
+  nfpWindowMinutesAfter: Number(process.env.DONDIE_NFP_WINDOW_MINUTES_AFTER ?? "120")
 } as const;
 
 /** Live env read so tests/ops can toggle without module reload. */
 export const isDondieFullPower = (): boolean => process.env.DONDIE_FULL_POWER === "true";
+
+/**
+ * When true (default), Dondie only submits orders around the monthly US Non-Farm
+ * Payrolls (NFP) release — first Friday of the month, 8:30am America/New_York.
+ * Outside that window scans still run but execution is skipped.
+ */
+export const isDondieNfpOnly = (): boolean => process.env.DONDIE_NFP_ONLY !== "false";

@@ -569,6 +569,7 @@ export type TradeSkipReasonCode =
   | "MISSING_MARKET_PRICE"
   | "MAX_TRADES_PER_DAY"
   | "UNIVERSE_UNAVAILABLE"
+  | "OUTSIDE_NFP_WINDOW"
   | "UNKNOWN";
 
 export type SchedulerRunStatus = "RUNNING" | "DELAYED" | "STOPPED";

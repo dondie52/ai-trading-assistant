@@ -19,7 +19,13 @@ import type {
   TradeActivity,
   UUID
 } from "@trading/types";
-import { buildDondieLifestyleWorld, classifySkipReason, isUsEquityMarketOpen, isUsEquityWeekend } from "@trading/shared";
+import {
+  buildDondieLifestyleWorld,
+  classifySkipReason,
+  isNfpTradingWindow,
+  isUsEquityMarketOpen,
+  isUsEquityWeekend
+} from "@trading/shared";
 import { PlatformService } from "../platform.service.js";
 import { PlatformStore } from "../store/platform.store.js";
 import {
@@ -28,7 +34,7 @@ import {
   selectAgentStrategyTemplate
 } from "./agent-strategy-catalog.js";
 import { DondieBrainService } from "./dondie-brain.service.js";
-import { dondieConfig, isDondieFullPower } from "./dondie.config.js";
+import { dondieConfig, isDondieFullPower, isDondieNfpOnly } from "./dondie.config.js";
 import { DondieMemoryService } from "./dondie-memory.service.js";
 import { DondieRepository } from "./dondie.repository.js";
 import { DondieScheduler } from "./dondie.scheduler.js";
@@ -883,9 +889,10 @@ export class DondieService implements OnModuleInit {
     });
 
     const orderIntentKey = `${userId}:${symbol}:${brainRun.signal.id}:${context.scanId}`;
+    const nfpWindowOpen = this.isNfpTradingAllowed();
     // Reuse the brain's signal — never regenerate, or BUY/SELL history can diverge from the trade path.
     const automation =
-      plan.action === "EXECUTE"
+      plan.action === "EXECUTE" && nfpWindowOpen
         ? this.schedulerStatus.claimOrderIntent(orderIntentKey)
           ? await this.platform.runAutomation(userId, {
               strategyId: agent.strategyId,
@@ -903,15 +910,26 @@ export class DondieService implements OnModuleInit {
               reason: "Duplicate order intent blocked by idempotency lock.",
               reasonCode: "ORDER_ALREADY_PENDING" as const
             }
-        : {
-            status: "SKIPPED" as const,
-            mode: "AUTO" as const,
-            strategyId: agent.strategyId,
-            symbol,
-            signal: brainRun.signal,
-            reason: plan.reasoning,
-            reasonCode: classifySkipReason(plan.reasoning)
-          };
+        : plan.action === "EXECUTE"
+          ? {
+              status: "SKIPPED" as const,
+              mode: "AUTO" as const,
+              strategyId: agent.strategyId,
+              symbol,
+              signal: brainRun.signal,
+              reason:
+                "Outside Dondie's NFP trading window — Dondie only trades around Non-Farm Payrolls releases (first Friday of the month, 8:30am ET).",
+              reasonCode: "OUTSIDE_NFP_WINDOW" as const
+            }
+          : {
+              status: "SKIPPED" as const,
+              mode: "AUTO" as const,
+              strategyId: agent.strategyId,
+              symbol,
+              signal: brainRun.signal,
+              reason: plan.reasoning,
+              reasonCode: classifySkipReason(plan.reasoning)
+            };
 
     if (automation.status === "SKIPPED") {
       const reasonCode =
@@ -1046,6 +1064,14 @@ export class DondieService implements OnModuleInit {
     };
     await this.memory.recordRun(updatedAgent, result);
     return result;
+  }
+
+  /** True unless NFP-only mode is on and `at` falls outside the configured NFP release window. */
+  private isNfpTradingAllowed(at: Date = new Date()): boolean {
+    if (!isDondieNfpOnly()) {
+      return true;
+    }
+    return isNfpTradingWindow(at, dondieConfig.nfpWindowMinutesBefore, dondieConfig.nfpWindowMinutesAfter);
   }
 
   private resolveSymbolUniverse(userId: UUID, agent: DondieAgent): readonly string[] {

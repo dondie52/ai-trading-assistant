@@ -24,6 +24,7 @@ export type TradeSkipReasonCode =
   | "MISSING_MARKET_PRICE"
   | "MAX_TRADES_PER_DAY"
   | "UNIVERSE_UNAVAILABLE"
+  | "OUTSIDE_NFP_WINDOW"
   | "UNKNOWN";
 
 export type ScanTriggerType =
@@ -80,7 +81,8 @@ const SKIP_PATTERNS: readonly { readonly code: TradeSkipReasonCode; readonly pat
   { code: "DATA_STALE", pattern: /stale|unavailable market data/i },
   { code: "BROKER_REJECTED", pattern: /broker rejected|alpaca.*reject|order rejected/i },
   { code: "SCHEDULER_LOCKED", pattern: /scheduler locked|scan already/i },
-  { code: "UNIVERSE_UNAVAILABLE", pattern: /universe scan|no usable market data|no actionable/i }
+  { code: "UNIVERSE_UNAVAILABLE", pattern: /universe scan|no usable market data|no actionable/i },
+  { code: "OUTSIDE_NFP_WINDOW", pattern: /nfp|non-farm payrolls/i }
 ];
 
 export const classifySkipReason = (reason: string | undefined | null): TradeSkipReasonCode => {

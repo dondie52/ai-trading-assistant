@@ -39,6 +39,7 @@ const createHarness = (): {
   process.env.AUTH_PROVIDER = "legacy";
   process.env.DONDIE_SCHEDULER_ENABLED = "false";
   process.env.DONDIE_FULL_POWER = "false";
+  process.env.DONDIE_NFP_ONLY = "false";
   delete process.env.DONDIE_LLM_API_KEY;
   const prisma = new PrismaService();
   const store = new PlatformStore();

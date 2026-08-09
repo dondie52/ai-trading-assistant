@@ -6,6 +6,7 @@ export * from "./dondie-lifestyle.js";
 export * from "./indicators.js";
 export * from "./market-hours.js";
 export * from "./money-format.js";
+export * from "./nfp-calendar.js";
 export * from "./risk.js";
 export * from "./signal.js";
 export * from "./trade-activity.js";
