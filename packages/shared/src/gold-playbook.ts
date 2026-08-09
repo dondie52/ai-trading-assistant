@@ -66,4 +66,4 @@ export const GOLD_SEASONALITY_TILT = 3;
 
 /** The historical average gold return (%) for the calendar month of `at`, UTC-based. */
 export const goldSeasonalityBiasPercent = (at: Date = new Date()): number =>
-  GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[at.getUTCMonth()];
+  GOLD_SEASONALITY_MONTHLY_BIAS_PERCENT[at.getUTCMonth()] ?? 0;
