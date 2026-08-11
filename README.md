@@ -213,6 +213,7 @@ See `docs/risk-controls.md`, `docs/paper-trading-validation.md`, and `docs/requi
 
 | Document | Purpose |
 |----------|---------|
+| [`context.md`](context.md) | Orientation brief for humans and AI agents |
 | [`docs/dondie-survival-model.md`](docs/dondie-survival-model.md) | Canonical survival economics |
 | [`01-project-vision.md`](01-project-vision.md) | Product vision |
 | [`02-mvp-scope.md`](02-mvp-scope.md) | MVP scope |
