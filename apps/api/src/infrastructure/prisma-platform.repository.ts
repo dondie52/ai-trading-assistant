@@ -65,40 +65,25 @@ export class PrismaPlatformRepository {
       return;
     }
 
+    // Sequential, not Promise.all: a constrained DB connection pool (e.g. connection_limit=1)
+    // cannot serve 15 concurrent queries and times out with Prisma error P2024, crashing the
+    // process during onModuleInit.
     const client = this.prisma.client();
-    const [
-      users,
-      sessions,
-      brokerAccounts,
-      portfolios,
-      strategies,
-      signals,
-      orders,
-      orderStatusEvents,
-      trades,
-      positions,
-      riskRules,
-      notifications,
-      watchlists,
-      passwordResetTokens,
-      auditLogs
-    ] = await Promise.all([
-      client.user.findMany(),
-      client.session.findMany(),
-      client.brokerAccount.findMany(),
-      client.portfolio.findMany(),
-      client.strategy.findMany(),
-      client.signal.findMany(),
-      client.order.findMany(),
-      client.orderStatusEvent.findMany(),
-      client.trade.findMany(),
-      client.position.findMany(),
-      client.riskRule.findMany(),
-      client.notification.findMany(),
-      client.watchlist.findMany(),
-      client.passwordResetToken.findMany(),
-      client.auditLog.findMany()
-    ]);
+    const users = await client.user.findMany();
+    const sessions = await client.session.findMany();
+    const brokerAccounts = await client.brokerAccount.findMany();
+    const portfolios = await client.portfolio.findMany();
+    const strategies = await client.strategy.findMany();
+    const signals = await client.signal.findMany();
+    const orders = await client.order.findMany();
+    const orderStatusEvents = await client.orderStatusEvent.findMany();
+    const trades = await client.trade.findMany();
+    const positions = await client.position.findMany();
+    const riskRules = await client.riskRule.findMany();
+    const notifications = await client.notification.findMany();
+    const watchlists = await client.watchlist.findMany();
+    const passwordResetTokens = await client.passwordResetToken.findMany();
+    const auditLogs = await client.auditLog.findMany();
 
     for (const user of users) {
       store.users.set(user.id, {

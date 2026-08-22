@@ -49,11 +49,12 @@ export class DondieRepository {
     if (!this.isEnabled()) {
       return;
     }
-    const [agents, ledger, memories] = await Promise.all([
-      this.prisma.client().dondieAgent.findMany(),
-      this.prisma.client().dondieWalletLedgerEntry.findMany(),
-      this.prisma.client().dondieMemory.findMany()
-    ]);
+    // Sequential, not Promise.all: a constrained DB connection pool (e.g. connection_limit=1)
+    // cannot serve these three queries concurrently and times out with Prisma error P2024,
+    // crashing the process during onModuleInit.
+    const agents = await this.prisma.client().dondieAgent.findMany();
+    const ledger = await this.prisma.client().dondieWalletLedgerEntry.findMany();
+    const memories = await this.prisma.client().dondieMemory.findMany();
     for (const agent of agents) {
       store.dondieAgents.set(agent.id, mapAgent(agent));
     }
