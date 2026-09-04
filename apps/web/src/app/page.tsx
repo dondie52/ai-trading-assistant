@@ -22,6 +22,7 @@ import {
   LogOut,
   Play,
   Plus,
+  Radio,
   Save,
   Settings2,
   Shield,
@@ -256,6 +257,17 @@ const automationNotice = (payload: AutomationRunResult): string => {
   return `Automation skipped for ${payload.symbol}: ${payload.reason ?? "No qualified setup."}${summary}`;
 };
 
+interface LiveFeedItem {
+  readonly id: string;
+  readonly at: string;
+  readonly kind: "SIGNAL" | "ORDER" | "TRADE";
+  readonly headline: string;
+  readonly detail: string;
+  readonly tone: "emerald" | "rose" | "amber" | "cyan" | "slate";
+}
+
+const LIVE_FEED_LIMIT = 40;
+
 const createIdempotencyKey = (strategyId: string, symbol: string, timeframe: MarketTimeframe): string => {
   const randomPart =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -294,6 +306,7 @@ export default function Page(): ReactElement {
   const [automationRunResult, setAutomationRunResult] = useState<AutomationRunResult | null>(null);
   const [lastAutonomy, setLastAutonomy] = useState<AutonomousBootstrapResult | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [liveFeed, setLiveFeed] = useState<readonly LiveFeedItem[]>([]);
   const autoHandsOffAttempted = useRef(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
@@ -616,6 +629,15 @@ export default function Page(): ReactElement {
       }
       socket.emit("market:subscribe", { symbols: [symbol], timeframe });
     };
+    const pushLiveFeed = (item: Omit<LiveFeedItem, "id" | "at">): void => {
+      setLiveFeed((previous) =>
+        [{ ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, at: new Date().toISOString() }, ...previous].slice(
+          0,
+          LIVE_FEED_LIMIT
+        )
+      );
+    };
+
     const handleRealtimeEvent = (event: RealtimeEvent): void => {
       switch (event.type) {
         case "market.price":
@@ -629,6 +651,17 @@ export default function Page(): ReactElement {
           ]);
           break;
         case "signal.updated":
+          pushLiveFeed({
+            kind: "SIGNAL",
+            headline: `${event.data.signal.symbol} signal: ${event.data.signal.signalType}`,
+            detail: `${event.data.signal.confidenceScore}% confidence`,
+            tone:
+              event.data.signal.signalType === "BUY"
+                ? "emerald"
+                : event.data.signal.signalType === "SELL"
+                  ? "rose"
+                  : "slate"
+          });
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: ["signals"] }),
             queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] }),
@@ -637,13 +670,41 @@ export default function Page(): ReactElement {
           ]);
           break;
         case "order.updated":
+          pushLiveFeed({
+            kind: "ORDER",
+            headline: `${event.data.order.symbol} order ${event.data.statusEvent.status}`,
+            detail: `${event.data.order.side} ${formatQty(event.data.order.quantity)} @ ${formatCurrency(event.data.order.price)}`,
+            tone:
+              event.data.statusEvent.status === "REJECTED" || event.data.statusEvent.status === "CANCELLED"
+                ? "rose"
+                : event.data.statusEvent.status === "FILLED"
+                  ? "emerald"
+                  : "amber"
+          });
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: ["orders"] }),
             queryClient.invalidateQueries({ queryKey: ["dondie-lifestyle"] }),
             queryClient.invalidateQueries({ queryKey: ["automation-settings"] })
           ]);
           break;
-        case "trade.executed":
+        case "trade.executed": {
+          const trade = "trade" in event.data ? event.data.trade : undefined;
+          const order = "order" in event.data ? event.data.order : undefined;
+          if (trade) {
+            pushLiveFeed({
+              kind: "TRADE",
+              headline: `${trade.symbol} filled ${trade.side} ${formatQty(trade.quantity)}`,
+              detail: `@ ${formatCurrency(trade.entryPrice)}${trade.closedAt ? ` · P&L ${formatCurrency(trade.pnl)}` : ""}`,
+              tone: trade.closedAt ? (trade.pnl >= 0 ? "emerald" : "rose") : "cyan"
+            });
+          } else if (order) {
+            pushLiveFeed({
+              kind: "TRADE",
+              headline: `${order.symbol} order filled`,
+              detail: `${order.side} ${formatQty(order.quantity)} @ ${formatCurrency(order.price)}`,
+              tone: "emerald"
+            });
+          }
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: ["trades"] }),
             queryClient.invalidateQueries({ queryKey: ["positions"] }),
@@ -653,6 +714,7 @@ export default function Page(): ReactElement {
             queryClient.invalidateQueries({ queryKey: ["dondie-wallet"] })
           ]);
           break;
+        }
         case "notification.created":
           void Promise.all([
             queryClient.invalidateQueries({ queryKey: ["notifications"] }),
@@ -1536,6 +1598,7 @@ export default function Page(): ReactElement {
     { id: "home", label: "Office", testId: "tab-home", icon: <Home className="h-4 w-4" aria-hidden="true" /> },
     { id: "signals", label: "Signals", testId: "tab-signals", icon: <Sparkles className="h-4 w-4" aria-hidden="true" /> },
     { id: "trade", label: "Trade", testId: "tab-trade", icon: <CandlestickChart className="h-4 w-4" aria-hidden="true" /> },
+    { id: "live", label: "Live", testId: "tab-live", icon: <Radio className="h-4 w-4" aria-hidden="true" /> },
     { id: "portfolio", label: "Portfolio", testId: "tab-portfolio", icon: <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" /> },
     { id: "market", label: "Market", testId: "tab-market", icon: <LineChart className="h-4 w-4" aria-hidden="true" /> },
     { id: "strategies", label: "Strategies", testId: "tab-strategies", icon: <Bot className="h-4 w-4" aria-hidden="true" /> },
@@ -2033,6 +2096,7 @@ export default function Page(): ReactElement {
   return (
     <main
       className={`min-h-screen overflow-x-hidden px-4 py-5 md:px-6 md:pb-5 ${
+        activeTab === "live" ||
         activeTab === "market" ||
         activeTab === "strategies" ||
         activeTab === "risk" ||
@@ -2237,6 +2301,112 @@ export default function Page(): ReactElement {
             )}
             {automationSettings.data?.mode === "AUTOPILOT" ? null : renderPaperDiagnostics()}
           </div>
+        </section>
+      ) : null}
+
+      {activeTab === "live" ? (
+        <section data-testid="live-view" className="space-y-5">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-panel/90 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span
+                data-testid="live-connection-dot"
+                className={`h-2.5 w-2.5 rounded-full ${realtimeConnected ? "bg-emerald-400" : "bg-rose-400"}`}
+                aria-hidden="true"
+              />
+              <StatusPill
+                label={realtimeConnected ? "LIVE" : "DISCONNECTED"}
+                tone={realtimeConnected ? "emerald" : "rose"}
+              />
+              <span className="text-xs text-slate-500">
+                {schedulerStatus.data?.tradingEnvironment ?? "PAPER"} · {schedulerStatus.data?.status ?? "UNKNOWN"}
+              </span>
+            </div>
+            <span className="font-mono text-xs text-slate-500">
+              Every qualifying breakout, any day — no NFP-only window
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={<WalletCards />}
+              label="Equity"
+              value={formatCurrency(primaryPortfolio?.portfolioValue, { microDetail: true })}
+              tone="emerald"
+            />
+            <MetricCard
+              icon={<LineChart />}
+              label="Unrealized P&L"
+              value={formatCurrency(primaryPortfolio?.unrealizedPnl, { microDetail: true })}
+              tone={((primaryPortfolio?.unrealizedPnl ?? 0) >= 0 ? "emerald" : "rose")}
+            />
+            <MetricCard
+              icon={<DollarSign />}
+              label="Realized P&L"
+              value={formatCurrency(primaryPortfolio?.realizedPnl, { microDetail: true })}
+              tone={((primaryPortfolio?.realizedPnl ?? 0) >= 0 ? "emerald" : "rose")}
+            />
+            <MetricCard
+              icon={<BriefcaseBusiness />}
+              label="Open Positions"
+              value={String(
+                new Map((positions.data ?? []).map((position) => [position.symbol.toUpperCase(), position])).size
+              )}
+              tone="cyan"
+            />
+          </div>
+
+          <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="space-y-5">
+              {renderPositions()}
+              <Panel title="Open Orders" icon={<ClipboardList className="h-5 w-5 text-cyan-300" aria-hidden="true" />}>
+                <div data-testid="live-open-orders" className="space-y-2">
+                  {(orders.data ?? []).filter(
+                    (order) => order.status === "PENDING" || order.status === "SUBMITTED" || order.status === "PARTIALLY_FILLED"
+                  ).length === 0 ? (
+                    <EmptyLine text="No working orders right now" />
+                  ) : (
+                    (orders.data ?? [])
+                      .filter((order) => order.status === "PENDING" || order.status === "SUBMITTED" || order.status === "PARTIALLY_FILLED")
+                      .map((order) => (
+                        <div
+                          key={order.id}
+                          className="grid grid-cols-2 gap-2 rounded-md border border-line bg-white/[0.03] px-3 py-2 text-sm sm:grid-cols-4"
+                        >
+                          <span className="font-mono text-white">{order.symbol}</span>
+                          <span>{order.side}</span>
+                          <span>{formatQty(order.quantity)} @ {formatCurrency(order.price)}</span>
+                          <StatusPill label={order.status} tone="amber" />
+                        </div>
+                      ))
+                  )}
+                </div>
+              </Panel>
+            </div>
+            <Panel title="Live Activity Feed" icon={<Radio className="h-5 w-5 text-emerald-300" aria-hidden="true" />}>
+              <ul data-testid="live-activity-feed" className="max-h-[32rem] space-y-2 overflow-y-auto text-sm">
+                {liveFeed.length === 0 ? (
+                  <EmptyLine text="Waiting for the next signal, order, or fill — this updates the instant it happens." />
+                ) : (
+                  liveFeed.map((item) => (
+                    <li
+                      key={item.id}
+                      data-testid="live-feed-item"
+                      className="rounded-md border border-line bg-white/[0.03] px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs text-slate-500">
+                          {new Date(item.at).toLocaleTimeString(undefined, { hour12: false })}
+                        </span>
+                        <StatusPill label={item.kind} tone={item.tone} />
+                      </div>
+                      <p className="mt-1 text-slate-100">{item.headline}</p>
+                      <p className="text-xs text-slate-400">{item.detail}</p>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </Panel>
+          </section>
         </section>
       ) : null}
 
