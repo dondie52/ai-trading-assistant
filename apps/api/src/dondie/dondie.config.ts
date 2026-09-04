@@ -41,8 +41,9 @@ export const dondieConfig = {
 export const isDondieFullPower = (): boolean => process.env.DONDIE_FULL_POWER === "true";
 
 /**
- * When true (default), Dondie only submits orders around the monthly US Non-Farm
- * Payrolls (NFP) release — first Friday of the month, 8:30am America/New_York.
- * Outside that window scans still run but execution is skipped.
+ * When true, Dondie only submits orders around the monthly US Non-Farm Payrolls (NFP)
+ * release — first Friday of the month, 8:30am America/New_York. Outside that window
+ * scans still run but execution is skipped. Defaults to false: Dondie trades every
+ * qualifying signal from the breakout strategy, any day, not just once a month.
  */
-export const isDondieNfpOnly = (): boolean => process.env.DONDIE_NFP_ONLY !== "false";
+export const isDondieNfpOnly = (): boolean => process.env.DONDIE_NFP_ONLY === "true";

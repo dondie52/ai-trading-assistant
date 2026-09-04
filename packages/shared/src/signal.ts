@@ -11,11 +11,45 @@ export interface GeneratedSignal {
 }
 
 const clampConfidence = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
+const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
+/** Bars used to build the breakout channel. Gold trends more persistently, so it gets a wider channel
+ * to avoid mistaking normal chop for a confirmed breakout. */
+const DEFAULT_BREAKOUT_LOOKBACK = 20;
+const GOLD_BREAKOUT_LOOKBACK = 30;
+
+/** A breakout only counts as confirmed when participation is meaningfully above average. */
+const VOLUME_CONFIRMATION_MULTIPLIER = 1.15;
+
+interface DonchianChannel {
+  readonly high: number | null;
+  readonly low: number | null;
+}
+
+/** Highest high / lowest low over the `lookback` bars preceding the most recent (still-forming) one. */
+const donchianChannel = (candles: readonly MarketCandle[], lookback: number): DonchianChannel => {
+  const priorCandles = candles.slice(Math.max(0, candles.length - 1 - lookback), candles.length - 1);
+  if (priorCandles.length < lookback) {
+    return { high: null, low: null };
+  }
+  return {
+    high: Math.max(...priorCandles.map((candle) => candle.high)),
+    low: Math.min(...priorCandles.map((candle) => candle.low))
+  };
+};
+
+/**
+ * Trend-following breakout technique: a BUY/SELL only fires when price closes outside its recent
+ * range (a Donchian breakout) in the direction of the prevailing trend (price vs. EMA20), backed
+ * by above-average volume. This trades far less often than an oscillator blend, but every trade
+ * has range expansion, trend, and participation all agreeing — the entries a breakout/trend
+ * strategy is built around. Exits (trend reversal / trailing stop) are handled downstream by the
+ * risk engine and order management, not by this signal.
+ */
 export const generateSignal = (
   symbol: string,
   candles: readonly MarketCandle[],
-  modelVersion = "mvp-baseline-1.0.0",
+  modelVersion = "trend-breakout-1.0.0",
   now: Date = new Date()
 ): GeneratedSignal => {
   const indicators = calculateIndicators(candles);
@@ -24,21 +58,31 @@ export const generateSignal = (
   const latestClose = latest?.close ?? 0;
   const previousClose = previous?.close ?? latestClose;
   const momentum = latestClose - previousClose;
-  const rsiValue = indicators.rsi ?? 50;
-  const macdHistogram = indicators.macd.histogram ?? 0;
-  const aboveTrend = indicators.ema === null ? false : latestClose > indicators.ema;
   const goldAware = isGoldSymbol(symbol);
 
-  // Gold trends more persistently than typical equities, so oscillators are allowed to run
-  // further before they're read as a reversal signal.
-  const rsiOverbought = goldAware ? GOLD_SIGNAL_TUNING.rsiOverbought : 72;
-  const rsiOversold = goldAware ? GOLD_SIGNAL_TUNING.rsiOversold : 28;
+  const aboveTrend = indicators.ema === null ? false : latestClose > indicators.ema;
+
+  const breakoutLookback = goldAware ? GOLD_BREAKOUT_LOOKBACK : DEFAULT_BREAKOUT_LOOKBACK;
+  const channel = donchianChannel(candles, breakoutLookback);
+
+  const volumeLatest = indicators.volume.latest;
+  const volumeAverage = indicators.volume.sma;
+  const volumeConfirmed =
+    volumeLatest !== null && volumeAverage !== null && volumeAverage > 0
+      ? volumeLatest >= volumeAverage * VOLUME_CONFIRMATION_MULTIPLIER
+      : false;
+
+  const breaksAbove = channel.high !== null && latestClose > channel.high;
+  const breaksBelow = channel.low !== null && latestClose < channel.low;
 
   let signalType: SignalType = "HOLD";
-  if ((aboveTrend && momentum > 0 && rsiValue < rsiOverbought) || macdHistogram > 0.15) {
+  let breakoutDirection: "UP" | "DOWN" | null = null;
+  if (breaksAbove && aboveTrend && volumeConfirmed) {
     signalType = "BUY";
-  } else if ((!aboveTrend && momentum < 0 && rsiValue > rsiOversold) || macdHistogram < -0.15) {
+    breakoutDirection = "UP";
+  } else if (breaksBelow && !aboveTrend && volumeConfirmed) {
     signalType = "SELL";
+    breakoutDirection = "DOWN";
   }
 
   // Trend/momentum confirmation counts for more on gold; a plain equity weighting would
@@ -50,12 +94,26 @@ export const generateSignal = (
     : goldAware
       ? GOLD_SIGNAL_TUNING.counterTrendWeight
       : -8;
-  const momentumScore = Math.max(-12, Math.min(12, momentum * 8));
-  const rsiScore = signalType === "BUY" ? 70 - rsiValue : rsiValue - 30;
+
+  // How decisively price cleared the channel edge, scaled by ATR so the same $ move counts for
+  // more on a quiet instrument than a volatile one.
+  const atrValue = indicators.atr;
+  const breakoutDistancePercent =
+    atrValue !== null && atrValue > 0 && breakoutDirection !== null
+      ? breakoutDirection === "UP"
+        ? ((latestClose - (channel.high ?? latestClose)) / atrValue) * 100
+        : (((channel.low ?? latestClose) - latestClose) / atrValue) * 100
+      : null;
+  const breakoutScore = breakoutDistancePercent !== null ? clamp(breakoutDistancePercent, 0, 20) : 0;
+
+  const volumeScore =
+    volumeLatest !== null && volumeAverage !== null && volumeAverage > 0
+      ? clamp(((volumeLatest - volumeAverage) / volumeAverage) * 100, -20, 20)
+      : 0;
 
   // Elevated ATR relative to price flags event-driven volatility (NFP/CPI/FOMC) — temper
   // conviction rather than treating gold's swings like an equity's.
-  const atrPercent = indicators.atr !== null && latestClose > 0 ? (indicators.atr / latestClose) * 100 : null;
+  const atrPercent = atrValue !== null && latestClose > 0 ? (atrValue / latestClose) * 100 : null;
   const volatilityPenalty =
     goldAware && atrPercent !== null && atrPercent > GOLD_SIGNAL_TUNING.atrVolatilityPercentThreshold
       ? GOLD_SIGNAL_TUNING.atrVolatilityPenalty
@@ -73,8 +131,8 @@ export const generateSignal = (
 
   const confidenceScore =
     signalType === "HOLD"
-      ? clampConfidence(48 + Math.abs(momentumScore) - volatilityPenalty)
-      : clampConfidence(58 + trendScore + momentumScore + Math.max(0, rsiScore / 3) - volatilityPenalty + seasonalTilt);
+      ? clampConfidence(42 + Math.abs(volumeScore) / 2 - volatilityPenalty)
+      : clampConfidence(55 + trendScore + breakoutScore + volumeScore / 2 - volatilityPenalty + seasonalTilt);
 
   return {
     symbol: symbol.toUpperCase(),
@@ -82,6 +140,7 @@ export const generateSignal = (
     confidenceScore,
     modelVersion,
     features: {
+      technique: "trend-breakout",
       latestClose,
       previousClose,
       momentum,
@@ -99,6 +158,12 @@ export const generateSignal = (
       volumeLatest: indicators.volume.latest,
       volumeSma20: indicators.volume.sma,
       volumeChangePercent: indicators.volume.changePercent,
+      volumeConfirmed,
+      breakoutLookback,
+      donchianHigh: channel.high,
+      donchianLow: channel.low,
+      breakoutDirection,
+      aboveTrend,
       timeframe: latest?.timeframe ?? "1m",
       goldAware,
       seasonalBiasPercent,

@@ -16,6 +16,7 @@ export type ControlRoomTab =
   | "trade"
   | "portfolio"
   | "settings"
+  | "live"
   | "market"
   | "strategies"
   | "risk"
@@ -36,6 +37,7 @@ const primaryTabs: readonly {
 ];
 
 const secondaryTabLabels: Partial<Record<ControlRoomTab, string>> = {
+  live: "Live",
   market: "Market",
   strategies: "Strategies",
   risk: "Risk",
@@ -53,6 +55,7 @@ export function BottomNav({
   readonly showAdmin?: boolean;
 }): ReactElement {
   const isSecondaryTab =
+    activeTab === "live" ||
     activeTab === "market" ||
     activeTab === "strategies" ||
     activeTab === "risk" ||

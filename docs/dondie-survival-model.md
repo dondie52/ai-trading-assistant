@@ -129,15 +129,34 @@ US cash equities are closed Saturday and Sunday. Instead of idling, ACTIVE agent
 * Surfaces in the office as activity `SIDE_HUSTLE` with animated desks
 * Disabled while NFP-only mode is on (`DONDIE_NFP_ONLY`, default `true`) — weekends never fall inside the NFP window
 
-### NFP-only mode
+### NFP-only mode (off by default)
 
-By default (`DONDIE_NFP_ONLY=true`), Dondie only submits orders around the monthly US Non-Farm
-Payrolls release — the first Friday of the month, 8:30am America/New_York:
+By default (`DONDIE_NFP_ONLY=false`), Dondie trades every qualifying breakout signal, any day —
+scans run on schedule, the brain evaluates symbols, and a confirmed BUY/SELL executes immediately
+subject to the risk engine. Set `DONDIE_NFP_ONLY=true` to instead restrict execution to the
+monthly US Non-Farm Payrolls release — the first Friday of the month, 8:30am America/New_York:
 
 * Scans still run on schedule; the brain still evaluates symbols and generates signals
 * Execution is skipped outside the release window with reason code `OUTSIDE_NFP_WINDOW`
 * The window width is configurable via `DONDIE_NFP_WINDOW_MINUTES_BEFORE` / `DONDIE_NFP_WINDOW_MINUTES_AFTER` (default `15` / `120`)
-* Set `DONDIE_NFP_ONLY=false` to return to trading on every qualifying signal, any day
+
+### Trading technique: trend-following breakout
+
+`generateSignal` (`@trading/shared` → `signal.ts`) trades a Donchian-channel breakout, not an
+oscillator blend:
+
+* **Entry condition** — a BUY (or SELL) only fires when three things agree on the same bar: price
+  closes outside its recent range (above the prior 20-bar high for gold, wider at 30 bars, since
+  gold trends more persistently), the close sits on the trend side of EMA20, and volume is at
+  least 15% above its 20-bar average confirming real participation behind the move.
+* **Confidence score** — scales with how decisively price cleared the channel edge (relative to
+  ATR), trend strength, and volume surge, then the same gold seasonality tilt as before as a minor
+  tiebreaker.
+* **Exits** — handled downstream by the existing risk engine and order management (stop-loss /
+  take-profit percent, trailing via re-evaluation each scan), not by the signal generator itself.
+* Because entries require range expansion + trend + volume all at once, this fires far less often
+  than the old indicator blend on any single bar — but with `DONDIE_NFP_ONLY=false` it now acts on
+  every one of those signals immediately instead of waiting for a monthly window.
 
 ### Gold trading knowledge
 
